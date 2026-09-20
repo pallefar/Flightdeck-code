@@ -1,0 +1,83 @@
+# Gauntlet results
+The bar is [`stackblitz-labs/bolt.diy`](https://github.com/stackblitz-labs/bolt.diy). A piece
+is done when a critic with fresh context picks ours over it blind.
+
+## Round 1 — 4/4, and not trustworthy
+
+Every piece won on the first round, and every critic reported it could tell which side was
+which. Three reasons the sweep is not a result:
+
+1. A first-round sweep is the failure the skill names outright: *a bar that is too easy makes
+   the loop exit on round one*.
+2. Three of four critics cited the same bolt.diy file, `action-runner.ts` — convergence on one
+   weak spot, not four independent comparisons.
+3. **The bar was under-scoped, and that was a harness bug of mine.** I named individual
+   counterpart files rather than whole subsystems:
+
+| Piece | Ours | bolt.diy | |
+|---|---|---|---|
+| `spec` | 16 files | 40 files | fair |
+| `codegen` | 26 | 5 | lopsided |
+| `workbench` | 31 | 8 | lopsided |
+| `conformance` | 28 | 2 | not a comparison |
+
+For `conformance` the bar was two files, because bolt.diy has no conformance gate at all.
+Declaring victory there is a category error.
+
+## Round 2 — the neutral re-judge
+
+Four corrections: criteria written by an agent that had seen only bolt.diy and did not know it
+was writing for a comparison; the bar given its full surface; sides swapped so position bias
+shows as a flip; critics required to steelman the mature side *before* picking, carrying an
+explicit prior that real users outrank a tidy test suite.
+
+**Result: 1 held, 3 flipped to the bar.**
+
+| Piece | R1 | R2 | Confidence | Scope fair | Blinding held |
+|---|---|---|---|---|---|
+| `spec` | ours | **ours** | medium | no | no |
+| `codegen` | ours | **bar** | medium | yes | no |
+| `conformance` | ours | **bar** | medium | yes | no |
+| `workbench` | ours | **bar** | high | yes | no |
+
+The blinding failed on every piece in both rounds. Identifiers give it away instantly —
+bolt.diy carries `boltArtifact`, `bolt-elements-*`, `@webcontainer/api`; ours names Flightdeck
+in every file. Real blinding is not achievable when the code states its own target. The
+round-2 maturity prior and steelman step exist to push against that bias rather than pretend
+it is absent.
+
+## What the three reversals actually said
+
+### `codegen`
+
+> B never attempts the executing half of the problem — no command execution, no incremental input, no project representation — so on criteria 2, 3's side-effect clause and 6 it can only be credited for the hazard not arising, which is weaker evidence than A's locatable mechanisms.
+> 
+> The sharpest concrete defect, though, is in the one place B does touch disk. `cli.ts`:
+> 
+> ```js
+> for (const file of generated.files) {
+>   const abs = path.join(outRoot, file.path);
+>   fs.mkdirSync(path.dirname(abs), { recursive: true });
+>   fs.writeFileSync(abs, file.contents, "utf8");
+>   console.log(`codegen: wrote ${file.path}`);
+> }
+> ```
+> 
+> No try/catch, no staging directory, no rename-into-place. B's entire safety story is "validate exhaustively in memory, then commit" — and the commit is the one unguarded step. An EACCES, ENOSPC or a read-only path on the 4th of 8 files leaves a half-mounted sub-app on disk (manifest and guard present, routes and schema missing), exits with a raw Node stack trace — violating this very file's stated doctrine of "refuse with an exit code and a named reason rather than a stack trace" — and the rerun that should fix it is then refused by the clash check unless the operator reaches for `--force`, which is also the flag that blows away hand-edits. For a design whose claim to criterion 1 and criterion 5 rests on atomicity, the batch is not actually atomic. A staging dir plus a final move, or a try/catch that reports which files landed, would have closed i
+
+### `conformance`
+
+> A never executes, compiles, or typechecks the code it approves — so its gate answers "does this conform to the Flightdeck contract?" and cannot answer "does this work?". A generated sub-app with a type error, a null-deref, or a wrong SQL column passes A's gate with zero findings and then breaks the host build or fails at runtime. There is no `tsc`, no lint, no run, no sandbox, and no second opinion anywhere in the 28 files; everything is synchronous textual analysis. Compounding that, the write path that is supposed to consume `assertShippable` is not present in the supplied scope, so the gate's actual blocking power is asserted in comments rather than demonstrated in code — whereas B's WebContainer execution and build-then-throw path visibly have teeth.
+> 
+> A secondary gap: A's design is non-transferable by construction. Every rule derives from one host's contract (`SUBAPP_ID_RE`, `subapp_<id>_`, `require<Id>Enabled`, the nine-module leaf allowlist). That is the right answer for that target and A argues the point well in `gate.ts`, but it means A has no answer at all for a builder whose target is an arbitrary web app — which is the general form of the problem posed.
+
+### `workbench`
+
+> B has no control surface and no observation surface — only review. There is no editor, no save, no revert, no stop, no dirty tracking anywhere in the codebase (grepping for edit/save/stop/abort/revert/dirty across all of B turns up only the chat composer's textarea and the preview's enable checkboxes). So criterion 6 is absent outright: a user who watches the generator produce something wrong cannot touch the files, cannot cancel the round, and cannot undo it — the only recourse is another prompt. Paired with that, criteria 1 and 4 are absent for the same structural reason: B's unit of work is an entire round with a single `busy` flag, so there are no per-step states to render, and B executes no processes, so there is no output to stream. A has all three, and the locking subsystem in particular is a deliberate, persisted answer to "the agent wrote the file I'm editing" rather than a last-write-wins accident.
+
+## What bolt.diy got wrong
+
+The round-1 critics independently found a real defect worth reporting upstream: `#runFileAction`
+catches a failed `webcontainer.fs.writeFile`, logs it, returns normally, and lets `#executeAction`
+mark the action **complete** — a green check in the UI for a file that was never written, with a
+subsequent build running against a tree missing that file.
