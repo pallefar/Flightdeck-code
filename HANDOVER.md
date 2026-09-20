@@ -377,3 +377,18 @@ prompt
 
 `packages/store` holds the shared file lock and atomic write, because approvals
 and registry both need durability and neither may depend on the other.
+
+⚠ **That diagram is a flow, not a dependency DAG — and the package graph is not
+one.** `envelope` and `guardrails` import each other:
+
+```
+guardrails/src/gates.ts:64   → envelope/src/build.ts        (buildEnvelope)
+envelope/src/build.ts:151    → guardrails/src/approval-pure (isNamedHuman)
+```
+
+At FILE level it is acyclic — `approval-pure.ts` imports only `./hash` — which
+is why it loads. It is cyclic at PACKAGE level and deliberately so: the second
+edge exists because there must be exactly ONE named-human rule (invariant 2
+above), and importing it was judged better than a fourth copy. If you ever
+reorganise these into enforced acyclic packages, that is the edge you will hit,
+and the copy is not the answer.
