@@ -103,10 +103,27 @@ export {
   type AssessTierOptions,
   type Tier,
   type TierAssessment,
+  type TierCoverage,
   type TierReason,
   type TierReasonCode,
+  PII_CLASSES_NOT_CHECKED,
   assessTier,
 } from "./tier";
+
+/** THE LIMITS, AS DATA. A caller should not have to read a comment to learn
+ * what the verdict did not look at: `TierAssessment.coverage` names it on
+ * every assessment, `PII_CLASSES_NOT_CHECKED` is the compiled-in list it
+ * draws from, and `TEXT_REPRESENTATIONS_DERIVED` is exactly which spellings
+ * of a payload the residual proof covers. Exported so the coverage claim is
+ * checkable rather than trusted. */
+export {
+  type RepresentationBudget,
+  type RepresentationScan,
+  TEXT_REPRESENTATIONS_DERIVED,
+  residualPiiEveryRepresentation,
+} from "./representations";
+
+export { TEXT_INDICATIONS, type TextIndication, textIndications } from "./indications";
 
 /** The host's scanner, transcribed and divergence-tested. Re-exported because
  * a caller that wants to re-prove a payload downstream should use the SAME
@@ -119,5 +136,14 @@ export {
   residualPiiFindings,
 } from "./host-mirror";
 
-/** Named so a caller can see which words a refusal was built from. */
-export { QUASI_IDENTIFIER_SIGNALS, SPECIAL_CATEGORY_SIGNALS, signalHits } from "./signals";
+/** Named so a caller can see which words a refusal was built from, and
+ * `signalStem` so they can see what each entry was actually reduced to
+ * rather than trusting that the reduction was sensible. */
+export {
+  PERSON_REFERENT_SIGNALS,
+  QUASI_IDENTIFIER_SIGNALS,
+  SPECIAL_CATEGORY_SIGNALS,
+  foldForSignals,
+  signalHits,
+  signalStem,
+} from "./signals";

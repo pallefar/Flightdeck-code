@@ -93,7 +93,13 @@ export interface RepresentationBudget {
 
 const DEFAULT_TEXT_CHARS = 1_000_000;
 const DEFAULT_ROUNDS = 3;
-const DEFAULT_BASE64_ATTEMPTS = 500;
+/** Decode attempts, not tokens: an ordinary long German compound word is
+ * base64-SHAPED and costs one attempt even though it decodes to rubbish. The
+ * bound has to sit far above what real prose produces or a long document
+ * refuses for no reason, and far below what makes a decode bomb pay — an
+ * attempt is one `atob` plus one UTF-8 decode of a short string, so 20k of
+ * them is a fraction of a second. */
+const DEFAULT_BASE64_ATTEMPTS = 20_000;
 const DEFAULT_READINGS = 64;
 
 /**

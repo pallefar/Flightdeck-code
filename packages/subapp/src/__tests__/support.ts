@@ -21,6 +21,8 @@ import { standInClearInstallRows, standInSetInstallRow } from "../server/subapps
 import type { ContractFolder, RegisterRoutesCtx, SubAppCapabilities } from "../server/subapps/types.js";
 import type { WorkspaceRuntime } from "../server/workspace/types.js";
 import { registerStudioRoutes } from "../server/subapps/studio/routes/index.js";
+import type { StudioBundle } from "../server/subapps/studio/service/bundle.js";
+import { bundleFrom, convertWorkflow, type StudioConversion } from "../studio/conversion.js";
 
 export const STUDIO_ENV = "SUBAPP_STUDIO_ENABLED";
 
@@ -214,3 +216,35 @@ export const ANSWERS: Record<string, string> = {
   navSection: "Contract pipeline",
   visibleToRoles: "wc_liaison, admin",
 };
+
+/* ══════════════════════════════════════════════════════════════════════════
+ * Bundles
+ *
+ * ⭐ BUILT BY RUNNING THE REAL ENGINE, not typed out by hand. The routes under
+ * test accept a bundle; the thing that produces one in production is
+ * `studio/conversion.ts`. A hand-written fixture would let the two drift —
+ * Studio could start emitting a bundle the host refuses and every test here
+ * would stay green. Running the conversion means the wire contract is
+ * exercised end to end on every run, in the one place both halves are
+ * importable at once.
+ *
+ * `at` is injected so a bundle is byte-identical between runs.
+ * ═══════════════════════════════════════════════════════════════════════ */
+
+export function readyConversion(
+  workflow: string = CONVERTIBLE_WORKFLOW,
+  answers: Record<string, string> = ANSWERS,
+): Extract<StudioConversion, { status: "ready" }> {
+  const conversion = convertWorkflow({ workflow, answers });
+  if (conversion.status !== "ready") {
+    throw new Error(`fixture workflow did not convert: ${conversion.status} ${JSON.stringify(conversion)}`);
+  }
+  return conversion;
+}
+
+export const BUNDLE_AT = "2026-09-20T09:00:00.000Z";
+
+export function studioBundle(options: { workflow?: string; source?: string } = {}): StudioBundle {
+  const ready = readyConversion(options.workflow ?? CONVERTIBLE_WORKFLOW);
+  return bundleFrom(ready, { at: BUNDLE_AT, ...(options.source === undefined ? {} : { source: options.source }) });
+}

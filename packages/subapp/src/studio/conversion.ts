@@ -1,4 +1,25 @@
-/** The conversion itself: one Cowork workflow in, one reviewable sub-app out.
+/** The conversion itself: one Cowork workflow in, one reviewable BUNDLE out.
+ *
+ * ⭐ THIS FILE RUNS IN STUDIO, NOT IN THE HOST. That is the one structural
+ * fact about it, and it is new. An earlier version of this module lived at
+ * `server/subapps/studio/service/pipeline.ts` — inside the EMITTED tree — and
+ * imported `@spec`, `@codegen/pure` and `@conformance/gate`. Those imports are
+ * `node:`-free, so the sub-app's route closure was clean and the app mounted.
+ * It still did not INSTALL. The three engine packages are forty-six modules of
+ * Studio's own source, authored against Studio's `moduleResolution: bundler`
+ * tsconfig, and putting them in a Flightdeck checkout meant vendoring all
+ * forty-six plus path aliases the host does not have. The host's own
+ * `npm run typecheck` then went red on the vendored tree — stack [4/5] of its
+ * compliance gate. A sub-app that imports sibling packages from the Studio
+ * repo is not a sub-app the host can build.
+ *
+ * So the line moved to where the work is. GENERATION is this file, and it
+ * stays here, where the engine already lives and already has tests. FILING is
+ * `server/subapps/studio/**`, which travels to the host, because filing is the
+ * half that needs a host at all: the kill switch, the install row, the consent
+ * screen, the audit chain and the Inbox. What crosses between them is a JSON
+ * bundle, and the host re-derives its own opinion of it rather than believing
+ * anything in it.
  *
  * ⭐ THREE STAGES, ALL IN MEMORY, NONE OF THEM TOUCHING A DISK.
  *
@@ -8,30 +29,21 @@
  *   @conformance judges that text against the contract before a byte of it
  *                goes anywhere.
  *
- * A route may import all three because all three are `node:`-free by
- * construction — `@codegen/pure` exists for exactly this reason, and
- * `@conformance`'s filesystem half lives in `ship.ts` and `verify/`, neither of
- * which is reachable from `gate.ts`. `__tests__/import-closure.test.ts` walks
- * the real closure of this file on every run rather than trusting that
- * sentence.
- *
- * ⛔ AND NOTHING HERE WRITES. Not because writing was hard to add, but because
- * the capability adapter a sub-app route is handed has no filesystem write on
- * it at all: `readContracts`, `writeInboxProposal`, `listOwnInboxProposals`,
- * `auditAppend`, `resolveSigningAuthority`. So generation produces text, the
- * text becomes ONE inbox proposal, and a human applies it. Contract rule 7 —
- * propose, don't mutate — is what this file is shaped around.
+ * ⛔ AND NOTHING HERE WRITES. Generation produces text, the text becomes a
+ * bundle, the bundle becomes ONE inbox proposal in the host, and a human
+ * applies it. Contract rule 7 — propose, don't mutate — is the shape of the
+ * whole product, not an obstacle it works around.
  *
  * ── THE MINI-APP FLOOR IS ENFORCED HERE, TWICE ──────────────────────────
  * A converted workflow is a MINI-APP: `manifest.ts`, `guard.ts`,
  * `routes/index.ts`, a web module — the `shell-reference` floor, with
  * `initSchema: () => {}` and no `schema.ts`, no DDL, no migration. Table
  * support is a different product and a converted workflow does not get one.
- * `@spec` already refuses to plan tables out of a workflow, and
- * `@codegen`'s `mini-app` profile already refuses a spec that declares them —
- * so this file checks BOTH the spec going in and the file set coming out. A
- * property that matters should not depend on one refusal two packages away
- * still being there.
+ * `@spec` already refuses to plan tables out of a workflow, and `@codegen`'s
+ * `mini-app` profile already refuses a spec that declares them — so this file
+ * checks BOTH the spec going in and the file set coming out. A property that
+ * matters should not depend on one refusal two packages away still being
+ * there.
  */
 import {
   parseWorkflowMarkdown,
@@ -49,9 +61,7 @@ import {
 } from "@codegen/pure";
 import { runConformanceGate } from "@conformance/gate";
 import type { Finding } from "@conformance/finding";
-
-/** The proposal's `kind`, and the first part of its filename. */
-export const STUDIO_PROPOSAL_KIND = "studio-mini-app";
+import { STUDIO_BUNDLE_SCHEMA, type StudioBundle } from "../server/subapps/studio/service/bundle.js";
 
 /** The one domain a converted workflow emits. Every generated route lives in
  * `routes/workflow.ts`; a workflow conversion never needs a second file. */
@@ -187,42 +197,6 @@ export type StudioConversion =
        * `blocked` and `rejected` arms above. */
       readonly warnings: readonly string[];
     };
-
-/* ══════════════════════════════════════════════════════════════════════════
- * Proposal naming
- *
- * One OPEN proposal per generated sub-app id, and the idempotency key is that
- * id rather than a hash of the markdown. Two consequences, both deliberate:
- *
- *   • Posting the same workflow twice files one proposal. That is the property
- *     asked for.
- *   • Posting a DIFFERENT workflow that derives the same id also files one —
- *     and answers with the proposal already on file rather than writing a
- *     second. That is not a near-miss of the first property, it is the
- *     stronger reading of it: two proposals for one sub-app id cannot both be
- *     applied, because the second would collide with the first on the nav path,
- *     the route prefix and the registry entry. Answering "already on file" is
- *     the honest outcome, and the response names the id so the person can see
- *     why.
- * ═══════════════════════════════════════════════════════════════════════ */
-
-export function proposalPrefixFor(subAppId: string): string {
-  return `${STUDIO_PROPOSAL_KIND}-${subAppId}-`;
-}
-
-export function proposalFileNameFor(subAppId: string, at: number): string {
-  return `${proposalPrefixFor(subAppId)}${String(at)}.json`;
-}
-
-/** The EXACT filename shape this sub-app writes, not a bare prefix test.
- * `wc-clock-` is a prefix of `wc-clock-2-…`, and a prefix test would report the
- * wrong app as already proposed. */
-export function findFiledProposal(fileNames: readonly string[], subAppId: string): string | null {
-  const prefix = proposalPrefixFor(subAppId);
-  return (
-    fileNames.find((name) => name.startsWith(prefix) && /^\d+\.json$/.test(name.slice(prefix.length))) ?? null
-  );
-}
 
 /* ══════════════════════════════════════════════════════════════════════════
  * Stage 1 -> 2: the derived spec, translated into what the generator parses
@@ -562,51 +536,100 @@ export function convertWorkflow(input: StudioConversionInput): StudioConversion 
   };
 }
 
+
 /* ══════════════════════════════════════════════════════════════════════════
- * The proposal body
+ * The bundle
+ *
+ * ⭐ THE ONE ARTEFACT THAT CROSSES THE REPOSITORY LINE. Everything above runs
+ * in Studio, against Studio's engine and Studio's tsconfig. Everything the
+ * host does runs against `server/subapps/studio/service/bundle.ts`, which is
+ * host-authored, imports nothing but `zod`, and does not know this file
+ * exists. The dependency is deliberately ONE-WAY: Studio reads the host's
+ * contract, the host never reads Studio's.
+ *
+ * So the schema is imported from the emitted tree rather than restated here.
+ * A bundle this function builds that the host's own schema would reject is a
+ * bug caught at Studio's typecheck instead of at somebody's 400, and
+ * `__tests__/bundle-contract.test.ts` parses a real one through the real
+ * schema on every run.
+ *
+ * ⛔ AND THE GATE BLOCK IS A CLAIM, NOT A CREDENTIAL. It travels so a
+ * reviewer can see what judged the files and what that judgement said. It
+ * buys the bundle nothing: the host refuses a bundle reporting a blocked
+ * gate, and admits one only on its OWN checks, which it re-derives from these
+ * same file contents. Studio cannot vouch for itself across a network, and
+ * this bundle does not pretend to.
  * ═══════════════════════════════════════════════════════════════════════ */
 
-export interface StudioProposalBody {
-  readonly kind: typeof STUDIO_PROPOSAL_KIND;
-  readonly subAppId: string;
-  readonly label: string;
-  readonly spec: StudioSpecSummary;
-  readonly workflowSource: string | null;
-  readonly files: readonly StudioGeneratedFile[];
-  readonly registry: StudioRegistryEdit;
-  readonly gate: {
-    readonly ok: boolean;
-    readonly checks: readonly string[];
-    readonly warnings: readonly Finding[];
-  };
-  readonly warnings: readonly string[];
-  readonly proposedBy: { readonly username: string; readonly displayName: string } | null;
-  readonly proposedAt: string;
-  /** Said inside the artefact, not only on the screen that produced it: whoever
-   * opens this file in the Inbox is the person who has to know it installs
-   * nothing by itself. */
-  readonly appliedBy: string;
+/** Named here rather than read from `package.json`: this file must not import
+ * anything that opens one, and a version string in an artefact is provenance
+ * for a human, not a dependency check. */
+export const STUDIO_PRODUCER = "flightdeck-studio/0.1.0";
+
+export interface BundleOptions {
+  /** Where the workflow came from. Provenance, rendered verbatim, never
+   * opened. */
+  readonly source?: string | undefined;
+  /** ISO timestamp. Injected so a bundle is byte-deterministic under test. */
+  readonly at?: string | undefined;
+  readonly producedBy?: string | undefined;
 }
 
-export function buildProposalBody(
+/** A `ready` conversion, rendered as the JSON a Flightdeck host will accept.
+ *
+ * Only `ready` — the other six arms are refusals, and a refusal has nothing to
+ * file. The type makes that a compile error rather than a runtime check. */
+export function bundleFrom(
   ready: Extract<StudioConversion, { status: "ready" }>,
-  proposedBy: { username: string; displayName: string } | null,
-  source: string | undefined,
-  at: string,
-): StudioProposalBody {
+  options: BundleOptions = {},
+): StudioBundle {
   return {
-    kind: STUDIO_PROPOSAL_KIND,
+    bundle: STUDIO_BUNDLE_SCHEMA,
+    producedBy: options.producedBy ?? STUDIO_PRODUCER,
+    producedAt: options.at ?? new Date().toISOString(),
     subAppId: ready.subAppId,
     label: ready.label,
-    spec: ready.spec,
-    workflowSource: source ?? null,
-    files: ready.files,
-    registry: ready.registry,
-    gate: { ok: ready.gate.ok, checks: ready.gate.checks, warnings: ready.gate.warnings },
-    warnings: ready.warnings,
-    proposedBy,
-    proposedAt: at,
-    appliedBy:
-      "a human. Filing this proposal installed nothing: these files are text until somebody writes them into the host repo and makes the registry.ts edit above.",
+    spec: {
+      id: ready.spec.id,
+      label: ready.spec.label,
+      icon: ready.spec.icon,
+      version: ready.spec.version,
+      minHostVersion: ready.spec.minHostVersion,
+      navSection: ready.spec.navSection,
+      routePrefix: ready.spec.routePrefix,
+      webModuleId: ready.spec.webModuleId,
+      enableEnvVar: ready.spec.enableEnvVar,
+      purpose: ready.spec.purpose,
+      capabilities: [...ready.spec.capabilities],
+      visibleToRoles: [...ready.spec.visibleToRoles],
+      steps: ready.spec.steps.map((step) => ({
+        ordinal: step.ordinal,
+        title: step.title,
+        kind: step.kind,
+        gated: step.gated,
+      })),
+    },
+    files: ready.files.map((file) => ({ path: file.path, kind: file.kind, contents: file.contents })),
+    registry: {
+      file: ready.registry.file,
+      importLine: ready.registry.importLine,
+      entryLines: [...ready.registry.entryLines],
+    },
+    gate: {
+      ok: ready.gate.ok,
+      checks: [...ready.gate.checks],
+      findings: ready.gate.findings.map((finding) => ({
+        rule: finding.rule,
+        severity: finding.severity,
+        file: finding.file,
+        line: finding.line,
+        column: finding.column,
+        message: finding.message,
+        evidence: finding.evidence,
+      })),
+      filesChecked: ready.gate.filesChecked,
+    },
+    warnings: [...ready.warnings],
+    workflowSource: options.source === undefined || options.source.length === 0 ? null : options.source,
   };
 }

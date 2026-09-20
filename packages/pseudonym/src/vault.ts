@@ -34,10 +34,24 @@
  *      quietly emit `{}`, which is what a plain object with hidden state
  *      would do and which is far worse, because it looks like it worked.
  *
- *   2. THE STORE IS SYMBOL-KEYED AND NON-ENUMERABLE. Nothing reaches the
- *      values through `Object.keys`, `Object.entries`, spread, `for...in`,
- *      or a structural clone. The symbol is module-private — declared here,
- *      never exported — so only this file can read the store at all.
+ *   2. THE STORE IS NOT ON THE OBJECT AT ALL. It lives in a module-level
+ *      `WeakMap` keyed by the Vault instance, so a Vault has NO own
+ *      properties of any kind: `Object.keys`, `Object.entries`, spread,
+ *      `for...in`, a structural clone AND `Object.getOwnPropertySymbols` all
+ *      come back empty.
+ *
+ *      ⚠ IT DID NOT USED TO BE. This defence previously read "the store is
+ *      symbol-keyed and non-enumerable… the symbol is module-private —
+ *      declared here, never exported — so only this file can read the store
+ *      at all", and that sentence was FALSE.
+ *      `Object.getOwnPropertySymbols` ignores enumerability, so
+ *      `vault[Object.getOwnPropertySymbols(vault)[0]]` handed back every
+ *      plaintext value and, because the state object it returned is mutable,
+ *      setting `sealed = false` re-opened a vault `tokenize` had sealed.
+ *      Non-enumerable is not private; a symbol key is not a capability. A
+ *      comment that overstates a defence is worse than no comment, because it
+ *      is the thing a reviewer checks INSTEAD of checking the code — so the
+ *      mechanism was replaced rather than the sentence softened.
  *
  *   3. `toString` AND `util.inspect` ARE OVERRIDDEN. `${vault}` in a prompt
  *      template and `console.log(vault)` are the two ways state leaks out of
@@ -58,7 +72,7 @@
  * and saying otherwise would be the overclaim this package exists to avoid.
  */
 
-import { VaultCapacityError, VaultSealedError, VaultSerializationError } from "./errors";
+import { PseudonymError, VaultCapacityError, VaultSealedError, VaultSerializationError } from "./errors";
 import { MAX_VAULT_ENTRIES, mintTag, type TagClass } from "./tags";
 
 /** One value the model never sees. NOT exported from `index.ts`. */
@@ -88,26 +102,42 @@ interface VaultState {
   readonly maxEntries: number;
 }
 
-/** Module-private. Declared here, never exported, so the store is unreachable
- * from any other file even by name. */
-const STORE = Symbol("pseudonym.vault.store");
+/**
+ * ⭐ THE STORE. A module-level `WeakMap`, not a property of the Vault.
+ *
+ * This is the difference between "hard to reach" and "not there". A symbol
+ * key — even a non-enumerable, never-exported one — is still an OWN PROPERTY,
+ * and `Object.getOwnPropertySymbols` enumerates own symbols regardless of
+ * enumerability. One line of ordinary reflection therefore read the whole
+ * store and could write to it.
+ *
+ * Keyed by the instance, so a Vault that becomes garbage takes its values
+ * with it, and holding a reference to the Vault is the ONLY way to reach the
+ * state — which is to say, code inside this module.
+ *
+ * ⚠ STILL NOT A CAPABILITY BOUNDARY, and the header says so: anything in this
+ * process can `import { vaultEntries } from "./vault"`. What changed is that
+ * reflection on the OBJECT no longer yields anything, so the claim in
+ * defence 2 is now a claim the code actually supports.
+ */
+const STORE = new WeakMap<Vault, VaultState>();
 
 const INSPECT: symbol = Symbol.for("nodejs.util.inspect.custom");
 
 export class Vault {
-  /** The store is installed NON-ENUMERABLY in the constructor rather than
-   * declared as a field: a declared field would be emitted as an own
-   * enumerable property, which is precisely what defence 2 is about. It is
-   * read only through `stateOf` below. */
+  /** No fields, declared or installed. A declared field would be an own
+   * enumerable property; an installed symbol-keyed one would be an own
+   * property `Object.getOwnPropertySymbols` hands out. The state goes into
+   * the module's `WeakMap` and is read only through `stateOf` below, so a
+   * Vault instance has nothing on it to find. */
   constructor(maxEntries: number = MAX_VAULT_ENTRIES) {
-    const state: VaultState = {
+    STORE.set(this, {
       byOrdinal: new Map(),
       byValue: new Map(),
       next: 1,
       sealed: false,
       maxEntries: Math.min(maxEntries, MAX_VAULT_ENTRIES),
-    };
-    Object.defineProperty(this, STORE, { value: state, enumerable: false, writable: false, configurable: false });
+    });
   }
 
   /** ⭐ Defence 1. `JSON.stringify` calls this at any depth. */
@@ -145,8 +175,22 @@ Object.defineProperty(Vault.prototype, INSPECT, {
 // Everything below reads or writes the store. `index.ts` re-exports none of it.
 // ─────────────────────────────────────────────────────────────────────────
 
+/** The one door to the state, and it is inside this module.
+ *
+ * A Vault built by some other means than the constructor — `Object.create`,
+ * a structured clone, a deserialised look-alike — is not in the `WeakMap`, so
+ * this throws rather than silently behaving like an empty vault. An empty
+ * vault that detokenizes to nothing and assesses as "no personal data" is the
+ * failure this refuses to produce. */
 function stateOf(vault: Vault): VaultState {
-  return (vault as unknown as Record<symbol, VaultState>)[STORE] as VaultState;
+  const state = STORE.get(vault);
+  if (state === undefined) {
+    throw new PseudonymError(
+      "refused: this object is not a Vault built by this module — its store does not exist, " +
+        "and treating it as an empty vault would silently report a payload as carrying nothing",
+    );
+  }
+  return state;
 }
 
 /**
@@ -235,7 +279,13 @@ export function vaultClasses(vault: Vault): readonly TagClass[] {
 }
 
 /** Close the vault. `tokenize` seals before returning, so a payload that has
- * been assessed cannot have entries added behind the assessment's back. */
+ * been assessed cannot have entries added behind the assessment's back.
+ *
+ * ⛔ ONE WAY. There is no `unsealVault`, and since the state is no longer an
+ * own property of the object there is no longer a way to reach `sealed` and
+ * set it back to `false` — which `Object.getOwnPropertySymbols(vault)[0]`
+ * used to be. A seal that can be lifted by reflection is a comment, not a
+ * seal. */
 export function sealVault(vault: Vault): Vault {
   stateOf(vault).sealed = true;
   return vault;

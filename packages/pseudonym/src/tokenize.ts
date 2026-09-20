@@ -104,7 +104,7 @@
  * suffer.
  */
 
-import { PseudonymError, TagCollisionError } from "./errors";
+import { PseudonymError, ResidualPiiError, TagCollisionError } from "./errors";
 import {
   PII_PATTERNS,
   type PiiPattern,
@@ -112,6 +112,7 @@ import {
   escapeRegExpLiteral,
   residualPiiFindings,
 } from "./host-mirror";
+import { residualPiiEveryRepresentation } from "./representations";
 import {
   HOST_CLASS_TO_TAG_CLASS,
   MAX_VAULT_ENTRIES,
@@ -261,6 +262,40 @@ export function tokenize(text: string, opts: TokenizeOptions = {}): TokenizeResu
   //     carrying CLASS NAMES only.
   assertNoResidualPii(masked, { names });
 
+  // 4b-ii. THE SAME GATE, OVER EVERY REPRESENTATION OF THOSE BYTES.
+  //
+  //   Step 4b above is the host's regex set applied to ONE SPELLING. That is
+  //   a proof about a spelling, and it was being reported as a proof about
+  //   the payload:
+  //
+  //       tokenize("Kontakt: anna%40acme.de")  → text unchanged, NO refusal
+  //
+  //   The address never left. `representations.ts` re-reads the same bytes as
+  //   percent-decoded, entity-decoded, escape-decoded, de-obfuscated,
+  //   base64-decoded and transliteration-folded text and runs the HOST'S OWN
+  //   `residualPiiFindings` over each, so a re-encoding is a refusal rather
+  //   than a silent pass.
+  //
+  //   ⚠ REFUSING, NOT TOKENIZING, IS THE DELIBERATE CHOICE. Rewriting an
+  //   encoded address into a tag would have to map the decoded span back onto
+  //   source bytes, and a wrong mapping produces an unrestorable payload. The
+  //   package's stated posture for "a gap nobody thought of" is to refuse
+  //   loudly naming the class, which is exactly what `patterns: []` already
+  //   does, so an encoded identifier gets the same answer as a missed one.
+  //
+  //   The findings carry HOST CLASS NAMES ONLY, the same shape 4b throws, so
+  //   a caller's error handling does not have to learn a second vocabulary.
+  const everyRepresentation = residualPiiEveryRepresentation(masked, { names });
+  if (everyRepresentation.findings.length > 0) {
+    throw new ResidualPiiError([...everyRepresentation.findings]);
+  }
+  if (everyRepresentation.budgetExhausted) {
+    throw new PseudonymError(
+      "refused: the representation walk over the payload did not finish within its budget, " +
+        "so the residual proof is incomplete — an unfinished proof is not a passing one",
+    );
+  }
+
   // 4c. The strict scan, on the unmasked bytes. 4b has already proved the
   //     masked scan clean — it throws otherwise — so ANY `declaredName` here
   //     is attributable to this package's own tags and nothing else. Not
@@ -303,6 +338,72 @@ function mapOutsideTags(text: string, fn: (gap: string) => string): string {
     last = m.index + m[0].length;
   }
   return out + fn(text.slice(last));
+}
+
+
+/**
+ * THE SURFACE FORMS OF ONE DECLARED NAME THAT DIFFER ONLY BY TRANSLITERATION.
+ *
+ * ─────────────────────────────────────────────────────────────────────────
+ * THE DEFECT THIS CLOSES
+ * ─────────────────────────────────────────────────────────────────────────
+ * Declare `["Anna Müller"]`, hand over "Anna Mueller und Anna Müller sind
+ * dieselbe Person." and the output was:
+ *
+ *     "<person:1> Mueller und <person:1> sind dieselbe Person."
+ *
+ * The given name matched, the transliterated surname did not, and step 4
+ * could not catch it either — the residual scan looks for the umlaut
+ * spelling, so a readable surname shipped and `assessTier` still reported a
+ * reduction. One value, two spellings, one of them checked: the same
+ * one-representation anchoring `representations.ts` exists for, here in the
+ * name-matching pass.
+ *
+ * `signals.ts` already folds `ue`/`oe`/`ae`/`ss` for its word lists. This
+ * does the same folding for declared names, in BOTH directions — a caller may
+ * declare either spelling and the document may carry either.
+ *
+ * ⚠ BOUNDED: whole-string substitutions, never a per-occurrence cartesian
+ * product, so a name with four umlauts yields four variants and not sixteen.
+ * ⚠ ADDITIVE: the declared form itself is always the first variant, so this
+ * can only widen what is tokenized, never narrow it.
+ * ⚠ THE REVERSE DIRECTION IS DELIBERATELY NAIVE. `ue` inside an ordinary word
+ * is not always a folded `ü`, so `Joel` yields a variant that matches
+ * nothing. That costs one dead alternation branch per name; guessing the
+ * other way would cost a missed surname.
+ */
+const LOSSY_TRANSLITERATION_MIN = 5;
+
+function transliterationVariants(form: string): string[] {
+  const variants = new Set<string>([form]);
+  // LOSSLESS-ISH: one spelling of a vowel swapped for the other spelling of
+  // the same vowel. Always taken, in both directions, because the caller may
+  // declare either and the document may carry either.
+  variants.add(
+    form
+      .replace(/\u00E4/g, "ae").replace(/\u00F6/g, "oe").replace(/\u00FC/g, "ue").replace(/\u00DF/g, "ss")
+      .replace(/\u00C4/g, "Ae").replace(/\u00D6/g, "Oe").replace(/\u00DC/g, "Ue"),
+  );
+  variants.add(
+    form
+      .replace(/ae/g, "\u00E4").replace(/oe/g, "\u00F6").replace(/ue/g, "\u00FC")
+      .replace(/Ae/g, "\u00C4").replace(/Oe/g, "\u00D6").replace(/Ue/g, "\u00DC"),
+  );
+  // LOSSY: the vowel loses a character entirely (`Müller`/`Mueller` both to
+  // `Muller`). This is the spelling a careless system actually produces, so
+  // it has to be covered — but it SHORTENS the form, and a short form can
+  // land on an ordinary word (`Baer` -> `Bar`, matched case-insensitively,
+  // would tokenize every "bar" in the document). Only taken when what is left
+  // is long enough for that collision to be implausible.
+  const bare = (t: string): string =>
+    t
+      .replace(/\u00E4/g, "a").replace(/\u00F6/g, "o").replace(/\u00FC/g, "u").replace(/\u00DF/g, "ss")
+      .replace(/\u00C4/g, "A").replace(/\u00D6/g, "O").replace(/\u00DC/g, "U")
+      .replace(/ae/g, "a").replace(/oe/g, "o").replace(/ue/g, "u")
+      .replace(/Ae/g, "A").replace(/Oe/g, "O").replace(/Ue/g, "U");
+  const bared = bare(form);
+  if (bared.length >= LOSSY_TRANSLITERATION_MIN) variants.add(bared);
+  return [...variants];
 }
 
 /** Which tag class words a declared name (or a part of one) is spelled
@@ -368,9 +469,18 @@ function replaceDeclaredNames(
   for (const name of names) {
     const trimmed = name.trim();
     if (trimmed.length < 2) continue; // a one-char "name" would match everything
-    push(trimmed, escapeRegExpLiteral(trimmed), trimmed);
+    // EVERY TRANSLITERATION OF THE DECLARED FORM, not just the declared one.
+    // All of them intern to the SAME canonical (`trimmed`), so "Anna Müller"
+    // and "Anna Mueller" are one person with one tag rather than two.
+    for (const variant of transliterationVariants(trimmed)) {
+      if (variant.length < 2) continue;
+      push(variant, escapeRegExpLiteral(variant), trimmed);
+    }
     for (const part of trimmed.split(/\s+/).filter((p) => p.length >= 3)) {
-      push(part, `\\b${escapeRegExpLiteral(part)}\\b`, trimmed);
+      for (const variant of transliterationVariants(part)) {
+        if (variant.length < 3) continue;
+        push(variant, `\\b${escapeRegExpLiteral(variant)}\\b`, trimmed);
+      }
     }
   }
   if (forms.size === 0) return text;

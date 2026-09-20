@@ -15,7 +15,7 @@
  * a 400. If the guard ran second, one or the other would differ. */
 import { afterEach, describe, expect, it } from "vitest";
 import { standInAuditEntries } from "../server/lib/flightdeckAudit.js";
-import { ANSWERS, CONVERTIBLE_WORKFLOW, buildHarness, type Harness } from "./support.js";
+import { buildHarness, studioBundle, type Harness } from "./support.js";
 
 let harness: Harness | null = null;
 
@@ -24,10 +24,12 @@ afterEach(async () => {
   harness = null;
 });
 
+const BUNDLE = studioBundle();
+
 const ROUTES = [
   { method: "GET" as const, url: "/api/apps/studio/proposals", payload: undefined },
-  { method: "POST" as const, url: "/api/apps/studio/preview", payload: { workflow: CONVERTIBLE_WORKFLOW } },
-  { method: "POST" as const, url: "/api/apps/studio/proposals", payload: { workflow: CONVERTIBLE_WORKFLOW } },
+  { method: "POST" as const, url: "/api/apps/studio/admit", payload: BUNDLE as unknown },
+  { method: "POST" as const, url: "/api/apps/studio/proposals", payload: BUNDLE as unknown },
 ];
 
 describe("every handler refuses before it does anything, layer 1 (the kill switch)", () => {
@@ -73,13 +75,13 @@ describe("every handler refuses before it does anything, layers 2 and 3 (the ins
 describe("first means FIRST, not first-among-the-interesting-statements", () => {
   it("a body that cannot pass the schema still answers 403, never 400", async () => {
     harness = await buildHarness({ killSwitch: false });
-    // `workflow` missing, an unknown key present, `answers` the wrong type —
-    // three separate reasons the Zod schema would refuse this. If the body were
+    // No `bundle` discriminator, no `spec`, no `files`, and an unknown key —
+    // four separate reasons the Zod schema would refuse this. If the body were
     // parsed before the guard, this would be a 400.
     const res = await harness.app.inject({
       method: "POST",
       url: "/api/apps/studio/proposals",
-      payload: { profile: "table-backed", answers: 7 },
+      payload: { profile: "table-backed", files: 7 },
     });
 
     expect(res.statusCode).toBe(403);
@@ -92,11 +94,11 @@ describe("first means FIRST, not first-among-the-interesting-statements", () => 
     const res = await harness.app.inject({
       method: "POST",
       url: "/api/apps/studio/proposals",
-      payload: { profile: "table-backed", answers: 7 },
+      payload: { profile: "table-backed", files: 7 },
     });
 
     expect(res.statusCode).toBe(400);
-    expect(res.json()).toMatchObject({ error: "invalid body" });
+    expect(res.json()).toMatchObject({ error: "invalid bundle" });
     expect(harness.caps.written.size).toBe(0);
   });
 
@@ -105,9 +107,9 @@ describe("first means FIRST, not first-among-the-interesting-statements", () => 
     const res = await harness.app.inject({
       method: "POST",
       url: "/api/apps/studio/proposals",
-      // A caller asking for tables must be told Studio did not read that,
-      // instead of getting a 200 for a database-free app they did not ask for.
-      payload: { workflow: CONVERTIBLE_WORKFLOW, tables: [{ name: "clocks" }] },
+      // A caller who sent `install: true` must be told the host did not read
+      // that, instead of getting a 200 and believing something was installed.
+      payload: { ...BUNDLE, install: true },
     });
 
     expect(res.statusCode).toBe(400);
@@ -150,8 +152,8 @@ describe("the refusal is audited, and never cached", () => {
     harness = await buildHarness({ killSwitch: true });
     const allowed = await harness.app.inject({
       method: "POST",
-      url: "/api/apps/studio/preview",
-      payload: { workflow: CONVERTIBLE_WORKFLOW, answers: ANSWERS },
+      url: "/api/apps/studio/admit",
+      payload: BUNDLE,
     });
     expect(allowed.statusCode).toBe(200);
 
@@ -160,8 +162,8 @@ describe("the refusal is audited, and never cached", () => {
     delete process.env.SUBAPP_STUDIO_ENABLED;
     const refused = await harness.app.inject({
       method: "POST",
-      url: "/api/apps/studio/preview",
-      payload: { workflow: CONVERTIBLE_WORKFLOW, answers: ANSWERS },
+      url: "/api/apps/studio/admit",
+      payload: BUNDLE,
     });
     expect(refused.statusCode).toBe(403);
     expect(refused.json()).toMatchObject({ code: "subapp_disabled" });

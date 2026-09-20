@@ -1,15 +1,29 @@
 /** Studio's page — the front end a person uses inside the console.
  *
- * Paste a Cowork workflow, see what Studio read out of it, see what the
- * contract gate said about the files it would generate, and file the proposal.
+ * ⭐ WHAT THIS PAGE IS FOR, AND WHY IT IS NOT A PROMPT BOX. Studio's engine —
+ * the workflow reader, the generator, the contract gate — is forty-six modules
+ * of Studio's own source. It does not travel into a Flightdeck checkout,
+ * because a sub-app that drags its authoring repo in behind it is a sub-app
+ * the host cannot build: the vendored tree fails the host's own
+ * `npm run typecheck`, which is a stack of its compliance gate. So generation
+ * happens in Studio and produces a BUNDLE, and this page is where that bundle
+ * is checked by the host and filed for review.
  *
  * ⭐ THE ONE THING THIS PAGE MUST NEVER LET SOMEBODY MISBELIEVE is that the
  * button installs an app. It does not. Studio runs as a sub-app, a sub-app
- * route reaches the host only through the injected capability adapter, and that
- * adapter has no filesystem write — so the furthest this page can go is ONE
- * file under `memory/proposals/`. A human applies it. That sentence is on the
- * screen before anything is pasted, on the button itself, and in the answer
- * afterwards, because it is the product's shape and not a disclaimer.
+ * route reaches the host only through the injected capability adapter, and
+ * that adapter has no filesystem write — so the furthest this page can go is
+ * ONE file under `memory/proposals/`. A human applies it. That sentence is on
+ * the screen before anything is pasted, on the button itself, and in the
+ * answer afterwards, because it is the product's shape and not a disclaimer.
+ *
+ * ⭐ THE SECOND THING IT MUST NOT LET SOMEBODY MISBELIEVE is that Studio's
+ * gate is this host's verdict. It is not. The bundle's `gate` block reports a
+ * run that happened somewhere this server cannot see; the `admission` block is
+ * what this host concluded, here, from the bundle's own bytes. The two are
+ * rendered as two panels with two headings, and the one with authority says
+ * so. Flattening them into a single green tick is the exact misreading the
+ * split exists to prevent.
  *
  * ── THREE DELIBERATE PROPERTIES, EACH FORCED BY THE HOST ────────────────
  * 1. It calls `fetch` through a local helper rather than the host's `api`
@@ -61,28 +75,37 @@ interface Refusal {
   detail: string;
 }
 
-interface Question {
-  id: string;
-  field: string;
+interface AdmissionFinding {
+  rule: string;
   severity: string;
-  question: string;
-  because: string;
-  options: string[] | null;
-}
-
-interface PlanWarning {
-  code: string;
+  file: string;
   message: string;
 }
 
-interface Finding {
+interface Admission {
+  ok: boolean;
+  checks: string[];
+  findings: AdmissionFinding[];
+  errors: AdmissionFinding[];
+  warnings: AdmissionFinding[];
+  filesChecked: number;
+}
+
+interface GateFinding {
   rule: string;
   severity: string;
   file: string;
   line: number;
-  column: number;
   message: string;
   evidence: string | null;
+}
+
+interface ReportedGate {
+  reportedBy: string;
+  reportedAt: string;
+  ok: boolean;
+  checks: string[];
+  findings: GateFinding[];
 }
 
 interface StepSummary {
@@ -108,15 +131,6 @@ interface SpecSummary {
   steps: StepSummary[];
 }
 
-interface GateSummary {
-  ok: boolean;
-  checks: string[];
-  findings: Finding[];
-  errors: Finding[];
-  warnings: Finding[];
-  filesChecked: number;
-}
-
 interface FileSummary {
   path: string;
   kind: string;
@@ -129,31 +143,17 @@ interface RegistryEdit {
   entryLines: string[];
 }
 
-type Conversion =
-  | { status: "needs_input"; understanding: string; questions: Question[]; warnings: PlanWarning[] }
-  | {
-      status: "blocked";
-      understanding: string;
-      rule: string;
-      explanation: string;
-      evidence: string;
-      evidenceGrounded: boolean;
-      contractRule: string;
-    }
-  | { status: "unreadable"; issues: string[] }
-  | { status: "rejected"; issues: string[] }
-  | { status: "gate_blocked"; subAppId: string; gate: GateSummary; warnings: string[] }
-  | {
-      status: "ready";
-      understanding: string;
-      subAppId: string;
-      label: string;
-      spec: SpecSummary;
-      fileSummaries: FileSummary[];
-      registry: RegistryEdit;
-      gate: GateSummary;
-      warnings: string[];
-    };
+interface Verdict {
+  status: "admissible" | "not_admissible";
+  subAppId: string;
+  label: string;
+  spec: SpecSummary;
+  fileSummaries: FileSummary[];
+  registry: RegistryEdit;
+  admission: Admission;
+  gate: ReportedGate;
+  warnings: string[];
+}
 
 interface Proposed {
   status: "proposed" | "already_proposed";
@@ -162,10 +162,10 @@ interface Proposed {
   note: string;
 }
 
-/** `POST /proposals` answers either arm: the proposal it filed, or the refusal
- * it would have shown in a preview — because the workflow in the textarea can
- * have been edited between the two calls. */
-function isProposed(answer: Conversion | Proposed): answer is Proposed {
+/** `POST /proposals` answers either arm: the proposal it filed, or the
+ * refusal it would have shown in a dry run — because the bundle in the
+ * textarea can have been edited between the two calls. */
+function isProposed(answer: Verdict | Proposed): answer is Proposed {
   return answer.status === "proposed" || answer.status === "already_proposed";
 }
 
@@ -202,9 +202,9 @@ async function call(method: string, path: string, body?: unknown): Promise<unkno
   } catch {
     parsed = null;
   }
-  // 422 is not a transport failure — it is the pipeline's considered refusal,
-  // and the body IS the answer. Only a genuine transport/permission problem
-  // becomes a Refusal.
+  // 422 is not a transport failure — it is the host's considered refusal of a
+  // well-formed bundle, and the body IS the answer. Only a genuine
+  // transport/permission problem becomes a Refusal.
   if (res.status === 422 && parsed !== null) return parsed;
   if (!res.ok) {
     const raw = parsed === null || !Array.isArray(parsed.issues) ? [] : (parsed.issues as Array<{ message?: string }>);
@@ -227,7 +227,7 @@ async function call(method: string, path: string, body?: unknown): Promise<unkno
 
 /** One sentence per REAL condition, routed on the status and the body's code. */
 function refusalText(r: Refusal): string {
-  if (r.status === 400) return "The server refused this input.";
+  if (r.status === 400) return "That is not a Studio bundle this host can read.";
   if (r.status === 403 && r.code === "subapp_disabled") return "Studio is not enabled for this workspace.";
   if (r.status === 403 && r.code === "capability_denied") {
     return "Studio's access to " + (r.scope ?? "a capability") + " is not granted here.";
@@ -298,14 +298,6 @@ const findingStyle: CSSProperties = {
   fontSize: 12,
   marginTop: 6,
 };
-const labelStyle: CSSProperties = { minWidth: 130, fontSize: 12, color: T.muted };
-const questionStyle: CSSProperties = {
-  padding: "12px 14px",
-  borderRadius: 12,
-  border: "1px solid " + T.line,
-  background: T.bg,
-  marginTop: 10,
-};
 
 function Chip({ tone, children }: { tone: string; children: ReactNode }) {
   return <span className={tone.length > 0 ? "chip " + tone : "chip"}>{children}</span>;
@@ -319,39 +311,62 @@ function RefusalBox({ refusal }: { refusal: Refusal }) {
   );
 }
 
-function FindingRow({ finding }: { finding: Finding }) {
+/** The host's own verdict. The panel with authority, and the one a reviewer
+ * should read first — so it is rendered first and said to be the host's. */
+function AdmissionPanel({ admission }: { admission: Admission }) {
   return (
-    <div style={findingStyle} data-rule={finding.rule} data-severity={finding.severity}>
-      <Chip tone={finding.severity === "error" ? "red" : "amber"}>{finding.rule}</Chip>{" "}
-      <span className="mono">{finding.file}</span>
-      {finding.line > 0 && <span className="muted">{":" + String(finding.line)}</span>} — {finding.message}
-      {finding.evidence !== null && finding.evidence.length > 0 && (
-        <div className="mono muted" style={{ marginTop: 4 }}>
-          {finding.evidence}
-        </div>
+    <div data-admission-ok={admission.ok ? "true" : "false"}>
+      <h4 style={{ margin: "16px 0 0" }}>What this host checked for itself</h4>
+      <p className="muted" style={{ margin: "4px 0 0", fontSize: 12 }}>
+        Re-derived here, from the bundle&apos;s own bytes, by code that ships with this server. This is the verdict that
+        decides whether a proposal can be filed.
+      </p>
+      <div style={rowStyle}>
+        <Chip tone={admission.ok ? "green" : "red"}>{admission.ok ? "Admitted" : "Refused"}</Chip>
+        <span className="muted">
+          {String(admission.checks.length)} checks ran over {String(admission.filesChecked)} files
+          {admission.errors.length > 0 && ", " + String(admission.errors.length) + " blocking"}
+          {admission.warnings.length > 0 && ", " + String(admission.warnings.length) + " advisory"}
+        </span>
+      </div>
+      {admission.checks.length > 0 && (
+        <p className="muted" style={{ margin: "6px 0 0", fontSize: 12 }}>
+          Checked: {admission.checks.join(", ")}.
+        </p>
       )}
+      {admission.findings.map((finding, i) => (
+        <div key={finding.rule + String(i)} style={findingStyle} data-rule={finding.rule} data-severity={finding.severity}>
+          <Chip tone={finding.severity === "error" ? "red" : "amber"}>{finding.rule}</Chip>{" "}
+          <span className="mono">{finding.file}</span> — {finding.message}
+        </div>
+      ))}
     </div>
   );
 }
 
-function GatePanel({ gate }: { gate: GateSummary }) {
+/** What the bundle SAYS about itself. Provenance, and labelled as such. */
+function ReportedGatePanel({ gate }: { gate: ReportedGate }) {
   return (
     <div data-gate-ok={gate.ok ? "true" : "false"}>
+      <h4 style={{ margin: "16px 0 0" }}>What the bundle reports about itself</h4>
+      <p className="muted" style={{ margin: "4px 0 0", fontSize: 12 }}>
+        A claim, not a credential: this run happened in{" "}
+        <span className="mono">{gate.reportedBy}</span>, somewhere this server cannot see, and it arrived in the same
+        request as the files it is about. It is recorded for the reviewer and it admits nothing on its own.
+      </p>
       <div style={rowStyle}>
-        <Chip tone={gate.ok ? "green" : "red"}>{gate.ok ? "Contract gate passed" : "Contract gate blocked"}</Chip>
+        <Chip tone={gate.ok ? "" : "red"}>{gate.ok ? "Reported clean" : "Reported blocked"}</Chip>
         <span className="muted">
-          {String(gate.checks.length)} checks ran over {String(gate.filesChecked)} files
-          {gate.errors.length > 0 && ", " + String(gate.errors.length) + " blocking"}
-          {gate.warnings.length > 0 && ", " + String(gate.warnings.length) + " advisory"}
+          {String(gate.checks.length)} checks reported, {String(gate.findings.length)} findings, at{" "}
+          <span className="mono">{gate.reportedAt}</span>
         </span>
       </div>
-      {gate.checks.length > 0 && (
-        <p className="muted" style={{ margin: "6px 0 0", fontSize: 12 }}>
-          Checked: {gate.checks.join(", ")}.
-        </p>
-      )}
       {gate.findings.map((finding, i) => (
-        <FindingRow key={finding.rule + String(i)} finding={finding} />
+        <div key={finding.rule + String(i)} style={findingStyle} data-rule={finding.rule} data-severity={finding.severity}>
+          <Chip tone={finding.severity === "error" ? "red" : "amber"}>{finding.rule}</Chip>{" "}
+          <span className="mono">{finding.file}</span>
+          {finding.line > 0 && <span className="muted">{":" + String(finding.line)}</span>} — {finding.message}
+        </div>
       ))}
     </div>
   );
@@ -379,14 +394,12 @@ function StepRail({ steps }: { steps: StepSummary[] }) {
 /* ── The page ───────────────────────────────────────────────────────────── */
 
 function StudioPage() {
-  const [workflow, setWorkflow] = useState("");
-  const [source, setSource] = useState("");
-  const [answers, setAnswers] = useState<Record<string, string>>({});
-  const [conversion, setConversion] = useState<Conversion | null>(null);
+  const [bundleText, setBundleText] = useState("");
+  const [verdict, setVerdict] = useState<Verdict | null>(null);
   const [filed, setFiled] = useState<Proposed | null>(null);
   const [onFile, setOnFile] = useState<string[] | null>(null);
   const [refusal, setRefusal] = useState<Refusal | null>(null);
-  const [busy, setBusy] = useState<"" | "preview" | "propose">("");
+  const [busy, setBusy] = useState<"" | "check" | "file">("");
 
   const loadProposals = useCallback(async () => {
     try {
@@ -395,8 +408,8 @@ function StudioPage() {
       setOnFile(list);
     } catch {
       // A page that cannot list what is on file is still a page that can
-      // convert. The refusal that matters is the one on the action a person
-      // just took, not on a background read they did not ask for.
+      // check a bundle. The refusal that matters is the one on the action a
+      // person just took, not on a background read they did not ask for.
       setOnFile(null);
     }
   }, []);
@@ -405,57 +418,74 @@ function StudioPage() {
     void loadProposals();
   }, [loadProposals]);
 
-  const body = useCallback((): Record<string, unknown> => {
-    const payload: Record<string, unknown> = { workflow };
-    if (Object.keys(answers).length > 0) payload.answers = answers;
-    if (source.trim().length > 0) payload.source = source.trim();
-    return payload;
-  }, [workflow, answers, source]);
+  /** Parsed in the browser purely so a typo is a local message rather than a
+   * round trip. The server parses it again, strictly, and that parse is the
+   * one that counts — nothing here is a validation the host relies on. */
+  const parseBundle = useCallback((): unknown | null => {
+    try {
+      return JSON.parse(bundleText) as unknown;
+    } catch (err) {
+      setRefusal({ status: null, code: "local_parse", scope: null, detail: (err as Error).message });
+      return null;
+    }
+  }, [bundleText]);
 
-  const preview = useCallback(
+  const check = useCallback(
     async (event?: FormEvent) => {
       event?.preventDefault();
-      if (busy !== "" || workflow.trim().length === 0) return;
-      setBusy("preview");
+      if (busy !== "" || bundleText.trim().length === 0) return;
+      setBusy("check");
       setRefusal(null);
       setFiled(null);
+      const body = parseBundle();
+      if (body === null) {
+        setBusy("");
+        setVerdict(null);
+        return;
+      }
       try {
-        setConversion((await call("POST", "/preview", body())) as Conversion);
+        setVerdict((await call("POST", "/admit", body)) as Verdict);
       } catch (err) {
-        setConversion(null);
+        setVerdict(null);
         setRefusal(refusalOf(err));
       } finally {
         setBusy("");
       }
     },
-    [busy, workflow, body],
+    [busy, bundleText, parseBundle],
   );
 
-  const propose = useCallback(async () => {
-    if (busy !== "" || conversion === null || conversion.status !== "ready") return;
-    setBusy("propose");
+  const file = useCallback(async () => {
+    if (busy !== "" || verdict === null || verdict.status !== "admissible") return;
+    setBusy("file");
     setRefusal(null);
+    const body = parseBundle();
+    if (body === null) {
+      setBusy("");
+      return;
+    }
     try {
-      const answer = (await call("POST", "/proposals", body())) as Conversion | Proposed;
+      const answer = (await call("POST", "/proposals", body)) as Verdict | Proposed;
       if (isProposed(answer)) {
         setFiled(answer);
         await loadProposals();
       } else {
-        // The workflow was edited between preview and file, and now refuses.
-        setConversion(answer);
+        // The bundle was edited between the check and the filing, and now
+        // refuses.
+        setVerdict(answer);
       }
     } catch (err) {
       setRefusal(refusalOf(err));
     } finally {
       setBusy("");
     }
-  }, [busy, conversion, body, loadProposals]);
+  }, [busy, verdict, parseBundle, loadProposals]);
 
   return (
     <div className="page">
       <div className="pagehead">
         <div className="eyebrow">Flightdeck Studio</div>
-        <h2>Convert a Cowork workflow into a mini-app</h2>
+        <h2>File a generated mini-app for review</h2>
       </div>
 
       {/* Said before anything is pasted, because it is the shape of the
@@ -476,46 +506,26 @@ function StudioPage() {
       </div>
 
       <div className="card">
-        <h3>The workflow</h3>
+        <h3>The bundle</h3>
         <p className="muted">
-          Paste a Cowork workflow — YAML frontmatter with <span className="mono">name</span> and{" "}
-          <span className="mono">description</span>, then a <span className="mono">## Procedure</span> of numbered
-          steps. Studio reads the markdown you post; it never opens a file, because a sub-app route has no filesystem
-          read.
+          Paste the JSON Studio produced when it converted the workflow. The conversion itself runs in Studio, not here:
+          its reader, generator and contract gate are forty-six modules of Studio&apos;s own source, and a sub-app that
+          dragged them into this repository would be a sub-app this host could not build. What travels is the result.
         </p>
-        <form onSubmit={(event) => void preview(event)}>
+        <form onSubmit={(event) => void check(event)}>
           <textarea
             style={areaStyle}
-            value={workflow}
+            value={bundleText}
             spellCheck={false}
-            aria-label="Workflow markdown"
-            placeholder={"---\nname: my-workflow\ndescription: …\n---\n\n## Procedure\n1. **Read state** — …"}
-            onChange={(event) => setWorkflow(event.target.value)}
+            aria-label="Studio bundle JSON"
+            placeholder={'{\n  "bundle": "studio-mini-app/1",\n  "subAppId": "wc-clock",\n  …\n}'}
+            onChange={(event) => setBundleText(event.target.value)}
           />
           <div style={rowStyle}>
-            <label style={labelStyle} htmlFor="studio-source">
-              Where it came from
-            </label>
-            <input
-              id="studio-source"
-              value={source}
-              placeholder="skills/orchestrate-workflow/SKILL.md"
-              onChange={(event) => setSource(event.target.value)}
-              style={{
-                flex: "1 1 260px",
-                padding: "6px 10px",
-                borderRadius: 8,
-                border: "1px solid " + T.line,
-                background: T.bg,
-                color: T.ink,
-              }}
-            />
-          </div>
-          <div style={rowStyle}>
-            <button type="submit" disabled={busy !== "" || workflow.trim().length === 0} aria-busy={busy === "preview"}>
-              {busy === "preview" ? "Reading…" : "Read the workflow"}
+            <button type="submit" disabled={busy !== "" || bundleText.trim().length === 0} aria-busy={busy === "check"}>
+              {busy === "check" ? "Checking…" : "Check this bundle"}
             </button>
-            <span className="muted">Runs the spec reader, the generator and the contract gate. Writes nothing.</span>
+            <span className="muted">Runs this host&apos;s own admission checks. Writes nothing.</span>
           </div>
         </form>
         {refusal !== null && <RefusalBox refusal={refusal} />}
@@ -538,161 +548,41 @@ function StudioPage() {
         </div>
       )}
 
-      {conversion !== null && conversion.status === "needs_input" && (
-        <div className="card" data-status="needs_input">
-          <h3>Studio needs a few answers first</h3>
-          <p className="muted">{conversion.understanding}</p>
-          <p className="muted">
-            None of these is guessable. <span className="mono">navSection</span> is matched by exact string equality
-            against the host&apos;s own five sections, and a manifest that gets a required field wrong takes the whole
-            server down at boot — so Studio asks instead of choosing.
-          </p>
-          {conversion.questions.map((question) => (
-            <div key={question.id} style={questionStyle} data-question={question.id}>
-              <div style={{ fontWeight: 600, fontSize: 13 }}>{question.question}</div>
-              <div className="muted" style={{ fontSize: 12, margin: "4px 0 8px" }}>
-                {question.because}
-              </div>
-              {question.options === null ? (
-                <input
-                  value={answers[question.id] ?? ""}
-                  aria-label={question.question}
-                  onChange={(event) => setAnswers((prev) => ({ ...prev, [question.id]: event.target.value }))}
-                  style={{
-                    width: "100%",
-                    padding: "6px 10px",
-                    borderRadius: 8,
-                    border: "1px solid " + T.line,
-                    background: T.surface,
-                    color: T.ink,
-                  }}
-                />
-              ) : (
-                <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-                  {question.options.map((option) => {
-                    const chosen = (answers[question.id] ?? "").split(/,\s*/).includes(option);
-                    return (
-                      <button
-                        key={option}
-                        type="button"
-                        aria-pressed={chosen}
-                        onClick={() =>
-                          setAnswers((prev) => {
-                            // Several roles can be right at once; one nav
-                            // section and one icon cannot. The field says
-                            // which, so the control follows the field rather
-                            // than asking the person to know.
-                            const multi = question.field === "visibleToRoles";
-                            if (!multi) return { ...prev, [question.id]: option };
-                            const current = (prev[question.id] ?? "").split(/,\s*/).filter((v) => v.length > 0);
-                            const next = current.includes(option)
-                              ? current.filter((v) => v !== option)
-                              : [...current, option];
-                            return { ...prev, [question.id]: next.join(", ") };
-                          })
-                        }
-                        style={{
-                          padding: "4px 10px",
-                          borderRadius: 99,
-                          border: "1px solid " + (chosen ? T.accent : T.line),
-                          background: chosen ? T.accent : T.surface,
-                          color: chosen ? "#0b0f16" : T.ink,
-                          fontSize: 12,
-                        }}
-                      >
-                        {option}
-                      </button>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-          ))}
-          <div style={rowStyle}>
-            <button type="button" disabled={busy !== ""} onClick={() => void preview()}>
-              {busy === "preview" ? "Reading…" : "Read it again with these answers"}
-            </button>
-          </div>
-        </div>
-      )}
-
-      {conversion !== null && conversion.status === "blocked" && (
-        <div className="card" data-status="blocked">
-          <h3>Refused</h3>
-          <div className="errorbox" role="alert">
-            {conversion.explanation}
-          </div>
-          <p className="muted" style={{ marginTop: 10 }}>
-            The sentence this is about{conversion.evidenceGrounded ? "" : " (paraphrased — not found verbatim)"}:
-          </p>
-          <blockquote className="mono" style={findingStyle}>
-            {conversion.evidence}
-          </blockquote>
-          <p className="muted">
-            {conversion.contractRule} — a mini-app may show a gated step and stop there. It may never advance, approve
-            or resolve one. This is not narrowed or asked about; it is refused.
-          </p>
-        </div>
-      )}
-
-      {conversion !== null && (conversion.status === "unreadable" || conversion.status === "rejected") && (
-        <div className="card" data-status={conversion.status}>
-          <h3>{conversion.status === "unreadable" ? "That does not read as a workflow" : "Not generatable"}</h3>
-          {conversion.issues.map((issue, i) => (
-            <div key={String(i)} className="errorbox" role="alert">
-              {issue}
-            </div>
-          ))}
-        </div>
-      )}
-
-      {conversion !== null && conversion.status === "gate_blocked" && (
-        <div className="card" data-status="gate_blocked">
-          <h3>The contract gate blocked this app</h3>
-          <p className="muted">
-            The files were generated and then judged, and they broke the sub-app contract. Nothing was written and no
-            proposal was filed. A generated sub-app that violates the manifest schema does not get skipped at boot — it
-            takes the whole Flightdeck server down, along with every other sub-app on it.
-          </p>
-          <GatePanel gate={conversion.gate} />
-        </div>
-      )}
-
-      {conversion !== null && conversion.status === "ready" && (
+      {verdict !== null && (
         <>
-          <div className="card" data-status="ready" data-subapp={conversion.subAppId}>
+          <div className="card" data-status={verdict.status} data-subapp={verdict.subAppId}>
             <h3>
-              {conversion.spec.icon} {conversion.label}
+              {verdict.spec.icon} {verdict.label}
             </h3>
-            <p className="muted">{conversion.understanding}</p>
+            <p className="muted">{verdict.spec.purpose}</p>
             <div style={gridStyle}>
               <div style={factStyle}>
                 <span className="muted">Sub-app id</span>
-                <span className="mono">{conversion.spec.id}</span>
+                <span className="mono">{verdict.spec.id}</span>
               </div>
               <div style={factStyle}>
                 <span className="muted">Nav section</span>
-                <span>{conversion.spec.navSection}</span>
+                <span>{verdict.spec.navSection}</span>
               </div>
               <div style={factStyle}>
                 <span className="muted">Route prefix</span>
-                <span className="mono">{conversion.spec.routePrefix}</span>
+                <span className="mono">{verdict.spec.routePrefix}</span>
               </div>
               <div style={factStyle}>
                 <span className="muted">Kill switch</span>
-                <span className="mono">{conversion.spec.enableEnvVar}</span>
+                <span className="mono">{verdict.spec.enableEnvVar}</span>
               </div>
               <div style={factStyle}>
                 <span className="muted">Host floor</span>
-                <span className="mono">{conversion.spec.minHostVersion}</span>
+                <span className="mono">{verdict.spec.minHostVersion}</span>
               </div>
               <div style={factStyle}>
                 <span className="muted">Capabilities</span>
                 <span>
-                  {conversion.spec.capabilities.length === 0 ? (
+                  {verdict.spec.capabilities.length === 0 ? (
                     <span className="muted">none — the app only shows things</span>
                   ) : (
-                    conversion.spec.capabilities.map((c) => (
+                    verdict.spec.capabilities.map((c) => (
                       <Chip key={c} tone="amber">
                         {c}
                       </Chip>
@@ -703,69 +593,76 @@ function StudioPage() {
               <div style={factStyle}>
                 <span className="muted">Visible to</span>
                 <span>
-                  {conversion.spec.visibleToRoles.map((r) => (
+                  {verdict.spec.visibleToRoles.map((r) => (
                     <Chip key={r} tone="">
                       {r}
                     </Chip>
                   ))}
                 </span>
               </div>
-              <div style={factStyle}>
-                <span className="muted">Tables</span>
-                <span>
-                  <Chip tone="green">none</Chip>{" "}
-                  <span className="muted">a mini-app is database-free: no schema.ts, no DDL, no migration</span>
-                </span>
-              </div>
             </div>
-            <p className="muted" style={{ marginTop: 12 }}>
-              {conversion.spec.purpose}
-            </p>
           </div>
 
-          <div className="card">
-            <h3>The procedure, as the app will show it</h3>
-            <p className="muted">
-              The steps in the document&apos;s own order and its own numbering. A step marked &ldquo;a person decides
-              this&rdquo; is rendered and stopped at — the generated page reports the order, it never enforces or
-              advances it.
-            </p>
-            <StepRail steps={conversion.spec.steps} />
-          </div>
+          {verdict.spec.steps.length > 0 && (
+            <div className="card">
+              <h3>The procedure, as the app will show it</h3>
+              <p className="muted">
+                The steps in the document&apos;s own order and its own numbering. A step marked &ldquo;a person decides
+                this&rdquo; is rendered and stopped at — the generated page reports the order, it never enforces or
+                advances it.
+              </p>
+              <StepRail steps={verdict.spec.steps} />
+            </div>
+          )}
 
           <div className="card">
             <h3>What would be proposed</h3>
             <ul style={gridStyle}>
-              {conversion.fileSummaries.map((file) => (
-                <li key={file.path} data-kind={file.kind}>
-                  <span className="mono">{file.path}</span> <Chip tone="">{file.kind}</Chip>{" "}
-                  <span className="muted">{String(file.bytes)} bytes</span>
+              {verdict.fileSummaries.map((f) => (
+                <li key={f.path} data-kind={f.kind}>
+                  <span className="mono">{f.path}</span> <Chip tone="">{f.kind}</Chip>{" "}
+                  <span className="muted">{String(f.bytes)} bytes</span>
                 </li>
               ))}
             </ul>
             <p className="muted" style={{ marginTop: 12 }}>
               Plus the edit a human still has to make by hand, because a sub-app is code-declared and{" "}
-              <span className="mono">{conversion.registry.file}</span> is a host file Studio cannot reach:
+              <span className="mono">{verdict.registry.file}</span> is a host file Studio cannot reach:
             </p>
             <pre className="mono" style={{ ...findingStyle, whiteSpace: "pre-wrap" }}>
-              {[conversion.registry.importLine, ...conversion.registry.entryLines].join("\n")}
+              {[verdict.registry.importLine, ...verdict.registry.entryLines].join("\n")}
             </pre>
-            <GatePanel gate={conversion.gate} />
-            {conversion.warnings.length > 0 && (
+
+            <AdmissionPanel admission={verdict.admission} />
+            <ReportedGatePanel gate={verdict.gate} />
+
+            {verdict.warnings.length > 0 && (
               <div style={gridStyle}>
-                {conversion.warnings.map((warning, i) => (
+                {verdict.warnings.map((warning, i) => (
                   <div key={String(i)} className="muted" style={{ fontSize: 12 }}>
                     <Chip tone="amber">narrowed</Chip> {warning}
                   </div>
                 ))}
               </div>
             )}
+
             <div style={rowStyle}>
-              <button type="button" disabled={busy !== ""} aria-busy={busy === "propose"} onClick={() => void propose()}>
-                {busy === "propose" ? "Filing…" : "File the proposal (installs nothing)"}
+              <button
+                type="button"
+                disabled={busy !== "" || verdict.status !== "admissible"}
+                aria-busy={busy === "file"}
+                onClick={() => void file()}
+              >
+                {busy === "file" ? "Filing…" : "File the proposal (installs nothing)"}
               </button>
               <span className="muted">
-                Writes one file to <span className="mono">memory/proposals/</span>. A human applies it.
+                {verdict.status === "admissible" ? (
+                  <>
+                    Writes one file to <span className="mono">memory/proposals/</span>. A human applies it.
+                  </>
+                ) : (
+                  <>This host refused the bundle, so there is nothing to file. The findings above are the reason.</>
+                )}
               </span>
             </div>
           </div>
