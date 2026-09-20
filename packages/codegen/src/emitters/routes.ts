@@ -57,11 +57,19 @@ export function emitRoutesIndex(plan: SubAppPlan): string {
 export function emitDomainRoutes(plan: SubAppPlan, domain: PlannedDomain): string {
   const usesCaps = domain.routes.some((r) => needsCaps(r));
   const usesCapabilityScope = domain.routes.some((r) => r.requiredScope !== null);
-  const usesDb = domain.routes.some((r) => r.table !== null);
+  // The `WorkspaceRuntime` type is needed by any handler that binds `rt`,
+  // which is every table-backed route AND every capability route — not just
+  // the table-backed ones. Getting this condition wrong emits a file that
+  // names a type it never imported.
+  const bindsRuntime = domain.routes.some((r) => r.table !== null || needsCaps(r));
   const usesTicket = domain.routes.some((r) => r.operation.kind === "propose");
   const ctxParam = usesCaps ? "ctx" : "_ctx";
 
   const schemaConsts: string[] = [];
+  // `z` is imported only when a schema is actually emitted: an unused
+  // import in generated code is the kind of small wrongness that teaches a
+  // reader not to trust the rest of the file.
+  const usesZod = domain.routes.some((r) => r.bodyConstName !== null || r.paramsConstName !== null);
   for (const route of domain.routes) {
     const body = emitBodySchema(route);
     if (body !== null) schemaConsts.push(body, "");
@@ -80,10 +88,10 @@ export function emitDomainRoutes(plan: SubAppPlan, domain: PlannedDomain): strin
         ? "Contracts, proposals and the audit log are reached ONLY through `ctx.capabilitiesFor(...)` — never a filesystem or reader-module import of this file's own."
         : "Nothing here reaches outside this sub-app's own tables; the capability adapter is used for audit only, which the host leaves ungated.",
     ]),
-    `import { z } from "zod";`,
+    usesZod ? `import { z } from "zod";` : null,
     `import type { FastifyInstance, FastifyReply } from "fastify";`,
     `import type { RegisterRoutesCtx } from "../../types.js";`,
-    usesDb ? `import type { WorkspaceRuntime } from "../../../workspace/types.js";` : null,
+    bindsRuntime ? `import type { WorkspaceRuntime } from "../../../workspace/types.js";` : null,
     usesCapabilityScope ? `import { CapabilityDeniedError } from "../../capabilities.js";` : null,
     `import { ${plan.names.disabledError}, ${plan.names.guardFn} } from "../guard.js";`,
     "",
@@ -186,12 +194,9 @@ function emitParamsSchema(route: PlannedRoute): string | null {
 }
 
 function emitHandler(plan: SubAppPlan, route: PlannedRoute): string {
-  const body = joinLines([
-    ...(route.summary !== null ? [`    // ${route.summary}`] : []),
-    ...emitGuardFirst(plan, route),
-    ...emitOperation(plan, route),
-  ]);
+  const body = joinLines([...emitGuardFirst(plan, route), ...emitOperation(plan, route)]);
   return joinLines([
+    ...(route.summary !== null ? [`  // ${route.summary}`] : []),
     `  app.${route.fastifyMethod}(${str(route.fullPath)}, async (req, reply) => {`,
     body,
     "  });",

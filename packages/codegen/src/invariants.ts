@@ -25,7 +25,7 @@ export interface GeneratedFile {
   /** Repo-relative path in the HOST repository. */
   path: string;
   contents: string;
-  kind: "manifest" | "guard" | "routes-index" | "routes-domain" | "schema" | "web-module" | "patch";
+  kind: "manifest" | "guard" | "routes-index" | "routes-domain" | "schema" | "web-module" | "host-test" | "patch";
 }
 
 export interface Violation {
@@ -60,6 +60,17 @@ function allowedImports(plan: SubAppPlan, file: GeneratedFile): readonly string[
       return ["../../db.js"];
     case "web-module":
       return ["react", "../registry"];
+    case "host-test":
+      // A TEST may read source from disk; a ROUTE may not. `node:fs` is
+      // admitted here and in no other emitted file.
+      return [
+        "node:fs",
+        "node:path",
+        "vitest",
+        "../../../server/subapps/types.js",
+        "../../../server/subapps/registry.js",
+        `../../../server/subapps/${plan.id}/manifest.js`,
+      ];
     case "patch":
       return null;
   }
@@ -76,12 +87,18 @@ export function checkEmittedInvariants(files: readonly GeneratedFile[], plan: Su
 
   for (const file of files) {
     if (file.kind === "patch") continue;
-    checkImports(file, codeOf(file), add);
+    checkImports(file, codeOf(file), plan, add);
+    // The runtime checks apply to the sub-app's own code. The emitted host
+    // test is a test: it reads source from disk and quotes the very
+    // identifiers the runtime rules forbid, which is its job.
+    if (file.kind === "host-test") continue;
     checkNoCachedBooleans(file, codeOf(file), add);
     checkSql(file, codeOf(file), plan, add);
   }
 
   for (const file of files.filter((f) => f.kind === "routes-domain")) {
+    checkSymbolsImported(file, codeOf(file), plan, add);
+    checkImportsUsed(file, codeOf(file), add);
     checkNoTemplateLiterals(file, codeOf(file), add);
     checkAuditRoute(file, codeOf(file), add);
     checkZodStrict(file, codeOf(file), add);
@@ -209,6 +226,60 @@ function checkAuditRoute(file: GeneratedFile, code: string, add: Add): void {
   for (const body of extractCallArguments(code, "auditAppend({")) {
     if (body.includes("parsed.data.")) {
       add(file.path, "audit-names-not-values", "an audit event reads a parsed body VALUE — events name fields (Object.keys), never their contents");
+    }
+  }
+}
+
+/** Every symbol an emitted route file can name, and where it must come
+ * from. This check exists because the emitter got it wrong once: a domain
+ * whose routes were all capability-backed bound `rt: WorkspaceRuntime`
+ * while the import of that type was gated on the domain having a TABLE. The
+ * file was well-formed, read correctly, passed every other rule here — and
+ * would not have compiled in the host. A named-symbol check is cheap and
+ * catches the whole class. */
+const ROUTE_SYMBOL_SOURCES: Record<string, string> = {
+  z: "zod",
+  FastifyInstance: "fastify",
+  FastifyReply: "fastify",
+  RegisterRoutesCtx: "../../types.js",
+  WorkspaceRuntime: "../../../workspace/types.js",
+  CapabilityDeniedError: "../../capabilities.js",
+};
+
+function checkSymbolsImported(file: GeneratedFile, code: string, plan: SubAppPlan, add: Add): void {
+  const imported = new Set<string>();
+  for (const match of code.matchAll(/^import\s+(?:type\s+)?\{([^}]*)\}\s+from/gm)) {
+    for (const raw of (match[1] as string).split(",")) {
+      const name = raw.replace(/^\s*type\s+/, "").trim();
+      if (name.length > 0) imported.add(name);
+    }
+  }
+  const expected: Record<string, string> = {
+    ...ROUTE_SYMBOL_SOURCES,
+    [plan.names.guardFn]: "../guard.js",
+    [plan.names.disabledError]: "../guard.js",
+  };
+  for (const [symbol, from] of Object.entries(expected)) {
+    if (!new RegExp(`\\b${symbol}\\b`).test(code)) continue;
+    if (!imported.has(symbol)) {
+      add(file.path, "symbol-imported", `uses "${symbol}" but never imports it from "${from}"`);
+    }
+  }
+}
+
+/** The mirror of `checkSymbolsImported`. An import nothing uses is small,
+ * harmless and corrosive: it is the first sign that the emitter's import
+ * list and its body are computed from different conditions, which is
+ * exactly how the `WorkspaceRuntime` bug happened in the other direction. */
+function checkImportsUsed(file: GeneratedFile, code: string, add: Add): void {
+  for (const match of code.matchAll(/^import\s+(?:type\s+)?\{([^}]*)\}\s+from\s+"([^"]+)";$/gm)) {
+    for (const raw of (match[1] as string).split(",")) {
+      const name = raw.replace(/^\s*type\s+/, "").trim();
+      if (name.length === 0) continue;
+      const uses = code.match(new RegExp(`\\b${name}\\b`, "g")) ?? [];
+      if (uses.length < 2) {
+        add(file.path, "import-used", `imports "${name}" from "${match[2] as string}" but never uses it`);
+      }
     }
   }
 }

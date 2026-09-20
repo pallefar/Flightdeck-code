@@ -15,13 +15,24 @@
  *    and this generator emits exactly two host edits: the sub-app's own
  *    directories and the registry patch. A page that quietly required a
  *    third would be a page that does not actually drop in.
- * 2. Its strings are literal English, not `t()` keys. A `t()` key that no
- *    locale file defines renders as the key — visibly broken — and adding
- *    the entries is another host edit. Literal English is the same choice
- *    the contract makes for `label`.
+ * 2. Its strings are literal English, not `t()` keys — and this one is
+ *    forced, not preferred. `import.meta.glob` covers the web MODULE but
+ *    not i18n: a dictionary needs a hand-written static import plus a
+ *    spread in `web/src/i18n.ts`, AND an update to the frozen key counts
+ *    in `tests/subapps/i18nSplit.test.ts`, which assert EXACT totals
+ *    (`TOTAL_KEYS = 4071`, not `toBeGreaterThan`). A generated sub-app
+ *    shipping one i18n key turns a host test red until a human edits two
+ *    more files. The contract's own reading: emit the count delta, or emit
+ *    no i18n at all. This emitter emits none, which is why `registry.ts`
+ *    stays the ONLY host edit codegen asks for — and why `shell-reference`,
+ *    the documented floor, ships no dictionary either.
  *    ⚠ KNOWN GAP, stated rather than hidden: a generated page is therefore
- *    English-only. Wiring i18n is adoption work, and the emitted header
- *    says so in the file itself.
+ *    English-only, and the emitted header says so in the file itself.
+ * 3. It ships NO stylesheet. `web/src/subapps` contains zero `.css` files;
+ *    every sub-app's CSS lives in a banner-delimited region of the shared
+ *    `web/src/theme.css`, and `tests/keyboardOperability.test.tsx` reads
+ *    only that file. So this page uses the existing class names
+ *    (`page`, `card`, `muted`, `mono`, `errorbox`, `okbox`) and adds none.
  *
  * Refusals are routed on STATUS and the body's `code`, never on prose —
  * the discipline `shell-reference/index.tsx` sets, kept here because it is
@@ -46,7 +57,8 @@ export function emitWebModule(plan: SubAppPlan): string {
       "",
       "Every panel below is derived from the spec. The renderer under it is fixed text, identical in every generated sub-app.",
       "",
-      "⚠ English-only: strings here are literal, not `t()` keys, because adding locale entries is an edit to a host file this generator deliberately does not make. Wiring i18n is adoption work.",
+      "⚠ English-only, deliberately. A dictionary would need a static import and a spread in `web/src/i18n.ts` AND an update to the EXACT frozen key counts in `tests/subapps/i18nSplit.test.ts` — so shipping one i18n key turns a host test red. Emitting none is what keeps `registry.ts` the only host edit this sub-app asks for.",
+      "No stylesheet ships with this page: sub-app CSS lives in a banner-delimited region of the shared `web/src/theme.css`. The class names below are the existing ones.",
       "",
       "Refusals are routed on the HTTP status and the body's `code` — never on the server's prose, which is developer-facing English and must not land inside a translated sentence later.",
     ]),

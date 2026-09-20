@@ -18,14 +18,6 @@ export function joinLines(lines: readonly (string | null)[]): string {
   return lines.filter((line): line is string => line !== null).join("\n");
 }
 
-export function indentLines(text: string, spaces: number): string {
-  const pad = " ".repeat(spaces);
-  return text
-    .split("\n")
-    .map((line) => (line.length === 0 ? line : pad + line))
-    .join("\n");
-}
-
 /** A JSDoc banner block. Paragraphs are wrapped at 76 columns so emitted
  * headers read like the hand-written ones they sit beside, and a blank
  * string becomes a bare ` *` separator line. */
@@ -100,7 +92,7 @@ export interface ObjectField {
   comment?: readonly string[];
 }
 
-export function tsObject(fields: readonly ObjectField[], indent = 0): string {
+export function tsObject(fields: readonly ObjectField[]): string {
   const out: string[] = ["{"];
   for (const field of fields) {
     assertSafeTsIdentifier(field.key, "object key");
@@ -110,7 +102,7 @@ export function tsObject(fields: readonly ObjectField[], indent = 0): string {
     out.push(`  ${field.key}: ${field.value},`);
   }
   out.push("}");
-  return indent === 0 ? out.join("\n") : indentLines(out.join("\n"), indent).trimStart();
+  return out.join("\n");
 }
 
 /** `["a", "b"]` on one line — every array a manifest carries is short. */

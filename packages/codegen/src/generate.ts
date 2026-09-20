@@ -15,6 +15,7 @@
  * module it should not, the generator fails loudly here rather than
  * shipping source into somebody's Fastify host. */
 import { emitGuard } from "./emitters/guard";
+import { emitHostTest } from "./emitters/hostTest";
 import { emitManifest } from "./emitters/manifest";
 import { emitDomainRoutes, emitRoutesIndex } from "./emitters/routes";
 import { emitSchema } from "./emitters/schema";
@@ -42,6 +43,12 @@ export interface GeneratedSubApp {
   warnings: string[];
 }
 
+/** `wc-clock` -> `wcClock`, the host's test-file naming (`advantageBoard`,
+ * `docusignFields`). */
+function camelFile(id: string): string {
+  return id.replace(/-([a-z0-9])/g, (_, c: string) => c.toUpperCase());
+}
+
 export function generateSubApp(input: unknown, options: GenerateOptions = {}): GeneratedSubApp {
   const plan = planSubApp(input);
   const server = serverDir(plan.id);
@@ -56,6 +63,9 @@ export function generateSubApp(input: unknown, options: GenerateOptions = {}): G
       kind: "routes-domain" as const,
     })),
     { path: `${webDir(plan.webModuleId)}/index.tsx`, contents: emitWebModule(plan), kind: "web-module" },
+    // Contract §10: a sub-app's tests live in `tests/subapps/<id>/`, never
+    // the flat `tests/` root. The vitest glob is already recursive.
+    { path: `tests/subapps/${plan.id}/${camelFile(plan.id)}Conformance.test.ts`, contents: emitHostTest(plan), kind: "host-test" },
   ];
   if (plan.tables.length > 0) {
     files.push({ path: `${server}/schema.ts`, contents: emitSchema(plan), kind: "schema" });

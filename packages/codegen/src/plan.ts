@@ -108,8 +108,6 @@ export interface SubAppPlan {
   manifestData: SubAppManifestData;
   tables: PlannedTable[];
   domains: PlannedDomain[];
-  /** True when any route calls `ctx.capabilitiesFor(...)`. */
-  usesCapabilities: boolean;
   warnings: string[];
   names: {
     manifestConst: string;
@@ -197,7 +195,6 @@ export function planSubApp(input: unknown): SubAppPlan {
     manifestData,
     tables,
     domains,
-    usesCapabilities: domains.some((d) => d.routes.some((r) => r.operation.kind === "list-contracts" || r.operation.kind === "propose" || r.operation.kind === "insert-row")),
     warnings,
     names: {
       manifestConst: names.manifestConstName(spec.id),
