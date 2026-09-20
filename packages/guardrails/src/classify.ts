@@ -64,6 +64,62 @@ import {
   tierOf,
 } from "./findings";
 
+/**
+ * KEYS AND VALUES SWAP ROLES BETWEEN A RECORD AND A SCHEMA, and getting this
+ * wrong makes the classifier useless in one direction and blind in the other.
+ *
+ *   record  `{ salaryEur: 82000 }`            — the KEY is the field name.
+ *   schema  `{ name: "salaryEur", type: … }`  — the key is metadata; the
+ *                                               VALUE is the field name.
+ *
+ * Applied in one mode only, each produces a characteristic failure:
+ *
+ *   record-mode on a spec  — every `tables[].name` and `columns[].name` hits
+ *     the host's `name` segment, so EVERY mini-app spec classifies tier 3 and
+ *     every registration needs an approval. A gate that fires on everything
+ *     gets rubber-stamped, which is the same end state as no gate. (This was
+ *     not hypothetical: it is what `gates.test.ts` caught on the first run.)
+ *
+ *   schema-mode on a record — `{ status: "person" }` would read an ordinary
+ *     enum value as a field name.
+ *
+ * So the mode is explicit, and each gate picks the one matching what it is
+ * actually handed: `gateRegistration` reads a schema, `gateModelRequest` reads
+ * a record. Both modes walk every node either way — the SEC-V5-02 property is
+ * about SCOPE, and neither mode narrows the scope.
+ */
+export type ClassifyMode = "record" | "schema";
+
+/**
+ * Keys that are metadata ABOUT a field rather than a field. Only tokens that
+ * actually collide with the host's segment list belong here, which today is
+ * exactly one: `name`.
+ *
+ * ⚠ The suppression is narrow on purpose. It drops only the tier-3 SEGMENT
+ * hit produced by the metakey itself. A tier-4 substring hit is never
+ * suppressed (`salaryName` still reports `salary`), and the value under the
+ * metakey is scanned in its place — so `{ name: "salaryEur" }` is tier 4, by
+ * the value, which is where the disclosure actually is.
+ *
+ * ⚠ STATED RESIDUAL: `{ name: "Erika Musterfrau" }` in a schema is not
+ * detectable here. A person's name is not a pattern — no regex recognises one
+ * — and this package does not pretend otherwise. The cover for the known case
+ * is `declaredNames`, the same bargain the host strikes in `redact({ names })`.
+ */
+export const SCHEMA_METAKEYS: readonly string[] = ["name"];
+
+/** A string value shaped like a field reference: `salaryEur`,
+ * `employee.salary_eur`, `rows[0].iban`. Anything with a space, or starting
+ * with a digit, is prose or data and is not read as a field name. */
+const FIELD_POINTER = /^[A-Za-z_$][A-Za-z0-9_$.[\]-]{0,63}$/;
+
+/** Exported for the code scanner, which asks the same question of a string
+ * LITERAL it finds in emitted source. One definition, so "what counts as a
+ * field reference" cannot mean two things. */
+export function looksLikeFieldPointer(value: string): boolean {
+  return FIELD_POINTER.test(value);
+}
+
 export interface ClassifyOptions {
   /** Names the caller KNOWS are in the data — the ticket's person, the
    * requester. Same contract as the host's `redact({ names })`: declaring
@@ -76,6 +132,8 @@ export interface ClassifyOptions {
   /** Path the findings are reported relative to. Used by `gateGeneratedArtifacts`
    * so a finding says which FILE it is in. */
   readonly rootPath?: string;
+  /** See `ClassifyMode`. Default `record`. */
+  readonly mode?: ClassifyMode;
 }
 
 const DEFAULT_MAX_NODES = 50_000;
@@ -199,10 +257,16 @@ export function classifyText(text: string, where: string): Finding[] {
  * `date` does not match, so it is still reported here — and splitting a denied
  * token across two keys remains a detected evasion rather than a loophole.
  */
-function findingsForPath(rawPath: string, safePath: string, parentRawPath: string): Finding[] {
+function findingsForPath(
+  rawPath: string,
+  safePath: string,
+  parentRawPath: string,
+  suppressMetakey: string | null = null,
+): Finding[] {
   const inherited = new Set(parentRawPath === "" ? [] : nameHits(parentRawPath).map((h) => h.token));
   return nameHits(rawPath)
     .filter((h) => !inherited.has(h.token))
+    .filter((h) => !(suppressMetakey !== null && h.tier === 3 && h.via === "field-name" && h.token === suppressMetakey))
     .map((h) => ({
       class: h.token,
       tier: h.tier,
@@ -218,6 +282,7 @@ function findingsForPath(rawPath: string, safePath: string, parentRawPath: strin
 export function classify(input: unknown, options: ClassifyOptions = {}): Classification {
   const declaredNames = options.declaredNames ?? [];
   const maxNodes = options.maxNodes ?? DEFAULT_MAX_NODES;
+  const mode = options.mode ?? "record";
   const root = options.rootPath ?? "";
   const findings: Finding[] = [];
   const seen = new WeakSet<object>();
@@ -233,7 +298,15 @@ export function classify(input: unknown, options: ClassifyOptions = {}): Classif
     }
 
     if (typeof value === "string") {
-      findings.push(...classifyText(value, safePath === "" ? "<root>" : safePath));
+      const where = safePath === "" ? "<root>" : safePath;
+      findings.push(...classifyText(value, where));
+      // In a schema, a field-pointer-shaped VALUE is a field name and gets the
+      // host's denylists applied to it — that is where the disclosure lives.
+      if (mode === "schema" && FIELD_POINTER.test(value)) {
+        for (const h of nameHits(value)) {
+          findings.push({ class: h.token, tier: h.tier, via: h.via, where });
+        }
+      }
       return;
     }
     if (value === null || typeof value !== "object") return;
@@ -254,7 +327,12 @@ export function classify(input: unknown, options: ClassifyOptions = {}): Classif
       const safeKey = sanitizePathSegment(key, ordinal, declaredNames);
       const childRaw = joinPath(rawPath, key);
       const childSafe = joinPath(safePath, safeKey);
-      findings.push(...findingsForPath(childRaw, childSafe === "" ? "<root>" : childSafe, rawPath));
+      const normalizedKey = normalizeToken(key);
+      const suppress =
+        mode === "schema" && SCHEMA_METAKEYS.includes(normalizedKey) ? normalizedKey : null;
+      findings.push(
+        ...findingsForPath(childRaw, childSafe === "" ? "<root>" : childSafe, rawPath, suppress),
+      );
       visit(child, childRaw, childSafe);
     });
   };

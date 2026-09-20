@@ -154,12 +154,12 @@ describe("a harness IS a ModelProvider", () => {
   });
 
   it("takes no provider in playback — the compiler says so", () => {
+    // @ts-expect-error a playback provider has nothing to fall through to.
     const player = harnessProvider({
       mode: "playback",
       model: MODEL,
       fixturesDir: dir,
       env: {},
-      // @ts-expect-error a playback provider has nothing to fall through to.
       provider: fakeProvider("should never run"),
     });
     expect(player.name).toBe("harness(playback)");

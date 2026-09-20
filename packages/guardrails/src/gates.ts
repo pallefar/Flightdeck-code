@@ -49,7 +49,7 @@
  */
 
 import { classify, type ClassifyOptions } from "./classify";
-import { classifyMarkdown } from "./markdown";
+import { classifyCode, classifyMarkdown } from "./markdown";
 import { type Classification, type Finding, type Tier, dedupe, sanitizePath, tierOf } from "./findings";
 import { redactTree } from "./scrub";
 import { type Approval, type ApprovalCheck, checkApproval, contentHash } from "./approval";
@@ -215,7 +215,12 @@ function subjectOf(value: unknown, fallback: string): string {
  * only understands the shape it was told about is a gate with a blind spot.
  */
 export function gateRegistration(spec: unknown, ctx: GateContext): GateDecision {
-  const options: ClassifyOptions = ctx.declaredNames ? { declaredNames: ctx.declaredNames } : {};
+  // `schema` mode: a spec DECLARES field names as values (`{ name: "salaryEur" }`).
+  // See `ClassifyMode` for what reading it as a record instead does to every
+  // registration in the system.
+  const options: ClassifyOptions = ctx.declaredNames
+    ? { declaredNames: ctx.declaredNames, mode: "schema" }
+    : { mode: "schema" };
   return resolve("registration", subjectOf(spec, "<unidentified-spec>"), classify(spec, options), ctx, spec);
 }
 
@@ -270,7 +275,15 @@ export function gateModelRequest(
   if (mode === "refuse") return resolve("model-request", subject, first, ctx, request);
 
   const names = ctx.declaredNames ?? [];
-  const { value, droppedClasses } = redactTree(request, names.length > 0 ? { names } : {});
+  // Drop at the LOWEST tier this config is redacting rather than refusing.
+  // A config that redacts tier 3 but only drops tier-4 names would leave
+  // `person.surname` standing, fail its own re-scan every time, and turn
+  // "redact" into a slower "refuse".
+  const dropTier: 3 | 4 = (config.onTier3 ?? "refuse") === "redact" ? 3 : 4;
+  const { value, droppedClasses } = redactTree(
+    request,
+    names.length > 0 ? { names, dropTier } : { dropTier },
+  );
   const after = classify(value, options);
 
   if (after.tier >= 3) {
@@ -373,7 +386,11 @@ export function gateGeneratedArtifacts(
     const safe = sanitizePath(file.path, names);
     // The path, judged as a field name — `nameHits` via classify's rootPath.
     all.push(...classify(null, { rootPath: file.path, declaredNames: names }).findings);
-    // The content, judged as prose.
+    // The content, judged as CODE — emitted TypeScript does not quote its
+    // object keys, and a prose scanner reads straight past `{ salaryEur: 1 }`.
+    // A generated `.md` gets the prose pass as well: the union is the point,
+    // since guessing a file's genre from its extension is one more anchor.
+    all.push(...classifyCode(file.content, safe));
     all.push(...classifyMarkdown(file.content, safe));
   }
   const findings = dedupe(all);

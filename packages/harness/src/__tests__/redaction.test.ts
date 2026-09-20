@@ -17,6 +17,7 @@ import { REDACTED, collectEnvSecrets, redactString, redactValue, resolveSecrets 
  * synthetic. */
 const j = (...parts: string[]): string => parts.join("");
 const SECRETS: ReadonlyArray<readonly [string, string]> = [
+  ["Anthropic", j("sk-", "ant-", "api03-", "Zx9QpLmT4vR8wN2bK7jF6hC1sD0aG5eY3uI")],
   ["OpenAI", j("sk-", "proj-", "9aBcDeFgHiJkLmNoPqRsTuVwXyZ0123456789")],
   ["AWS access key id", j("AKIA", "IOSFODNN7", "EXAMPLE")],
   ["Google", j("AIza", "SyD-9tSrke72PouQMnMX-", "a7eZSW0jkFMBWY")],
@@ -27,9 +28,10 @@ const SECRETS: ReadonlyArray<readonly [string, string]> = [
 ];
 
 describe("shapes that are credentials", () => {
-  it.each([
-    ["Anthropic", "sk-ant-api03-Zx9QpLmT4vR8wN2bK7jF6hC1sD0aG5eY3uI"],
-  ])("scrubs a %s key out of prose", (_name, secret) => {
+  // ⛔ `SECRETS`, not a literal list. An earlier edit extracted these to satisfy
+  // push protection but left the loop iterating over one inline case, so seven
+  // of the eight patterns stopped being exercised while the suite stayed green.
+  it.each(SECRETS)("scrubs a %s key out of prose", (_name, secret) => {
     const scrubbed = redactString(`the caller sent ${secret} in the header`);
     expect(scrubbed).not.toContain(secret);
     expect(scrubbed).toContain(REDACTED);
@@ -73,10 +75,10 @@ describe("names that are credentials", () => {
 
   it("reaches into nested structures", () => {
     const redacted = redactValue({
-      messages: [{ role: "user", content: "key sk-ant-api03-Zx9QpLmT4vR8wN2bK7jF6hC1sD0aG5eY3uI" }],
+      messages: [{ role: "user", content: `key ${SECRETS[0]?.[1] ?? ""}` }],
       headers: { "x-api-key": "abc" },
     });
-    expect(JSON.stringify(redacted)).not.toContain("sk-ant-api03");
+    expect(JSON.stringify(redacted)).not.toContain(SECRETS[0]?.[1] ?? "");
     expect(JSON.stringify(redacted)).not.toContain('"abc"');
   });
 });

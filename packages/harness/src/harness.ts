@@ -250,7 +250,21 @@ export function createHarness<Req extends ProviderCallShape, Res>(
       response: redactWithSecrets(serialized, secrets),
     };
 
-    await writeFixtureAt(path, record);
+    try {
+      await writeFixtureAt(path, record);
+    } catch (error) {
+      // The provider answered and the call was paid for, but the answer is not
+      // replayable — which is the one thing a live run is FOR. Saying so beats
+      // handing back a response that a later playback will miss on.
+      throw new Error(
+        [
+          "harness live: the provider answered, but the recording could not be written.",
+          `  fixture: ${path}`,
+          `  cause:   ${(error as Error).message}`,
+        ].join("\n"),
+        { cause: error },
+      );
+    }
     events.push({ kind: "recorded", key, model: request.model, path, durationMs });
     return config.roundTrip === true ? revive(record.response) : response;
   }

@@ -19,12 +19,13 @@
  * host test in `tests/subapps/` does the same. */
 import { banner, joinLines, str } from "../emit";
 import { tablePrefix } from "../naming";
+import { isMiniApp } from "../profile";
 import type { SubAppPlan } from "../plan";
 
 export function emitHostTest(plan: SubAppPlan): string {
   const domainFiles = plan.domains.map((d) => `routes/${d.fileName}`);
   const hasTables = plan.tables.length > 0;
-  const miniApp = plan.profile === "mini-app";
+  const miniApp = isMiniApp(plan.profile);
   return joinLines([
     banner([
       `${plan.label} conformance — GENERATED, and meant to stay. Re-derives the sub-app contract's non-negotiables from the files on disk, so a later hand-edit cannot quietly drop one.`,

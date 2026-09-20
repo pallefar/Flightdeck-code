@@ -8,11 +8,19 @@
  * `schema.ts`, no DDL, no migration: a spec that declares tables is refused
  * by name unless it says `profile: "table-backed"` (see `profile.ts`).
  *
- * Nothing here writes to disk. `generateSubApp` returns text, which is what
- * lets Studio run as a sub-app of the host it generates for: a sub-app
- * route reaches the world only through the injected capability adapter,
- * which has no filesystem write. The generated set becomes ONE inbox
- * proposal that a human applies.
+ * Nothing in the GENERATOR writes to disk. `generateSubApp` returns text,
+ * which is what lets Studio run as a sub-app of the host it generates for:
+ * a sub-app route reaches the world only through the injected capability
+ * adapter, which has no filesystem write. The generated set becomes ONE
+ * inbox proposal that a human applies.
+ *
+ * ⛔ BUT DO NOT IMPORT THIS MODULE FROM A ROUTE. This file re-exports
+ * `apply.ts` — the CLI half, the part a human runs — and `apply.ts`
+ * imports `node:fs`. The host fails a sub-app whose static import closure
+ * merely CONTAINS the filesystem, called or not
+ * (`tests/subapps/subappImportClosure.test.ts`). A Studio route imports
+ * `./pure` instead, whose closure is checked on every run by
+ * `__tests__/pure-closure.test.ts`.
  *
  * `docs/FLIGHTDECK-SUBAPP-CONTRACT.md` is the law this package implements.
  * The rules it cannot let an emitted sub-app break — guard first, no cached
@@ -97,3 +105,4 @@ export {
   type TableSpec,
 } from "./spec-contract";
 export * as naming from "./naming";
+

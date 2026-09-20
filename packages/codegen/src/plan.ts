@@ -703,7 +703,7 @@ function planWorkflow(
       `${domain.name} ${route.method} ${route.subPath} proposes, but no workflow step names it — it renders under "Other actions" instead of in the step rail`,
     );
   }
-  if (proposalsPath === null && steps.some((s) => s.action?.proposalPrefix !== null && s.action !== null)) {
+  if (proposalsPath === null && steps.some((s) => s.action !== null && s.action.proposalPrefix !== null)) {
     warnings.push(
       `no "list-proposals" route is declared, so the step rail can file proposals but cannot show which steps already have one — add a GET route with operation { kind: "list-proposals" } to give the steps real state`,
     );

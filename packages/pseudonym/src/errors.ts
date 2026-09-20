@@ -75,28 +75,6 @@ export class TagCollisionError extends PseudonymError {
   }
 }
 
-/** A declared name — or one of its parts — is spelled the same as a tag class.
- *
- * This cannot be allowed through, and it cannot be silently worked around.
- * The proof in step C scans the TRANSMITTED text with the host's scanner and
- * the caller's declared names; if a declared name is `Date`, then every tag
- * this package mints (`<date:2>`) trips the caller's own name check and the
- * proof can never pass. Weakening the proof to exclude our own tags would
- * make the proof a formality. Refusing is the honest move, and it is rare:
- * the colliding set is exactly the seven words in `TAG_CLASSES`.
- *
- * `classes` is from the compiled-in vocabulary; the name is NOT echoed. */
-export class DeclaredNameCollisionError extends PseudonymError {
-  constructor(readonly classes: readonly string[]) {
-    super(
-      `refused: a declared name (or one of its parts) is spelled identically to a tag ` +
-        `class: ${classes.join(", ")}. Residual proof cannot distinguish the name from ` +
-        `this package's own tags, so the payload cannot be proved clean.`,
-    );
-    this.name = "DeclaredNameCollisionError";
-  }
-}
-
 /** More distinct values than the vault will hold.
  *
  * The ceiling is not arbitrary — see `MAX_VAULT_ENTRIES` in `tags.ts`. It is

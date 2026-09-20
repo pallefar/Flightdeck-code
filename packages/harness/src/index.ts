@@ -1,14 +1,17 @@
 /** `@harness` — Studio's model calls, made reproducible.
  *
  * ```ts
- * // One harness, two modes. Nothing else in the call site changes.
- * const harness = createHarness<ProviderRequest, ProviderResponse>(
+ * // A recording provider IS a `@providers` ModelProvider, so nothing
+ * // downstream — including @spec's planner — knows the difference.
+ * const provider = harnessProvider(
  *   resolveMode() === "live"
- *     ? { mode: "live", provider: anthropic, fixturesDir: FIXTURES }
- *     : { mode: "playback", fixturesDir: FIXTURES },
+ *     ? { mode: "live", provider: new AnthropicProvider(), model: DEFAULT_MODEL, fixturesDir: FIXTURES }
+ *     : { mode: "playback", model: DEFAULT_MODEL, fixturesDir: FIXTURES },
  * );
+ * const outcome = await planFromPrompt({ prompt }, plannerLlm(provider));  // free, offline, deterministic
  *
- * const answer = await harness.call({ model, system, messages });   // free, offline, deterministic
+ * // Under it, a harness over any request shape with a `model`.
+ * const harness = createHarness<Req, Res>({ mode: "playback", fixturesDir: FIXTURES });
  *
  * // And because a recording is an artifact, not a cache: hold it fixed and
  * // change exactly one thing.
@@ -40,9 +43,10 @@
  *    the third case was invisible; see `docs/HARNESS-NOTES.md`.
  *
  * Consequence worth stating out loud: **identical requests replay identically.**
- * Two calls with the same keyed fields share one recording, by design. When two
- * calls must differ, the difference belongs in the request — see how
- * `planner-adapter.ts` puts `attempt` in `output_config`.
+ * Two calls with the same keyed fields share one recording, by design — so a
+ * planner's draft and its repair round-trip are two recordings because their
+ * prompts differ, not because the harness counts calls. When two calls must
+ * answer differently, the difference has to be IN the request.
  */
 
 export { canonicalDigest, canonicalStringify, CanonicalizeError } from "./canonical";

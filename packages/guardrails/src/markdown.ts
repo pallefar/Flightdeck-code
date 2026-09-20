@@ -47,7 +47,7 @@ import {
   normalizeToken,
 } from "./lists";
 import { type Finding, dedupe } from "./findings";
-import { classifyText, nameHits } from "./classify";
+import { SCHEMA_METAKEYS, classifyText, looksLikeFieldPointer, nameHits } from "./classify";
 
 /**
  * Provenance markers: a document that describes itself as coming from a
@@ -118,27 +118,81 @@ function normalizeDocument(markdown: string): string {
   return normalizeToken(markdown);
 }
 
-export function classifyMarkdown(markdown: string, where = "<intake>"): Finding[] {
+/**
+ * PROSE vs CODE — two conventions for where a field name lives, and a scanner
+ * that knows only one of them has a hole in it.
+ *
+ *   prose  `**Salary:** €82.000`     — a label at the start of a line.
+ *   code   `const rows = [{ salaryEur: 82000 }];`
+ *                                     — an unquoted identifier key, mid-line.
+ *
+ * Scanning emitted TypeScript with the prose rules was a real hole, caught by
+ * `__tests__/second-path.test.ts`: the JSON fixture copy of a record was
+ * refused because its keys are quoted, while the IDENTICAL data in the `.ts`
+ * file beside it was allowed, because a `.ts` object literal does not quote
+ * its keys. That is the SEC-V5-02 shape with the two paths one directory
+ * apart — the same data, one copy seen and one not, the suite green.
+ *
+ * The two styles also differ on `name`, in opposite directions and for good
+ * reasons in both cases:
+ *   - in a workflow doc, `Name:` labels a person, so it is a tier-3 finding;
+ *   - in generated code, `name:` is the schema metakey of a table or column,
+ *     and the field name is the VALUE beside it. See `SCHEMA_METAKEYS`.
+ */
+export type TextStyle = "prose" | "code";
+
+/** Unquoted identifier keys: `salaryEur:`, `{ iban:`, `, dob:`. Anchored on a
+ * preceding delimiter so `http://x` and a ternary's `? a : b` do not register.
+ * Global and mid-line, unlike the prose label rules. */
+const CODE_KEY = /(?:^|[{,;(\[\s])([A-Za-z_$][A-Za-z0-9_$]{0,40})\s*:/gm;
+/** String and template literals, short enough to be an identifier. */
+const CODE_LITERAL = /["'`]([^"'`\n]{1,64})["'`]/g;
+
+function scanText(text: string, where: string, style: TextStyle): Finding[] {
   const findings: Finding[] = [];
 
-  // 1. Value shapes, anywhere in the document.
-  findings.push(...classifyText(markdown, where));
+  // 1. Value shapes, anywhere in the text. Style-independent: an IBAN is an
+  //    IBAN in a sentence, in a comment and in a string literal.
+  findings.push(...classifyText(text, where));
 
-  // 2. Field names, in label positions only.
-  for (const label of labelsOf(markdown)) {
-    for (const hit of nameHits(label.text)) {
-      if (hit.tier === 2) continue; // business vocabulary in a label is not a finding
-      findings.push({
-        class: hit.token,
-        tier: hit.tier,
-        via: hit.via === "special-category" ? "special-category" : "label",
-        where: `${where}:line ${label.line}`,
-      });
+  // 2. Field names, wherever this style puts them.
+  const push = (token: string, tier: 2 | 3 | 4, via: "field-name" | "special-category", at: string): void => {
+    if (tier === 2) return; // business vocabulary is not a finding in free text
+    findings.push({
+      class: token,
+      tier,
+      via: via === "special-category" ? "special-category" : "label",
+      where: at,
+    });
+  };
+
+  if (style === "prose") {
+    for (const label of labelsOf(text)) {
+      for (const hit of nameHits(label.text)) push(hit.token, hit.tier, hit.via, `${where}:line ${label.line}`);
+    }
+  } else {
+    const lineAt = (index: number): number => text.slice(0, index).split("\n").length;
+    for (const m of text.matchAll(CODE_KEY)) {
+      const key = m[1];
+      if (!key) continue;
+      const metakey = SCHEMA_METAKEYS.includes(normalizeToken(key));
+      for (const hit of nameHits(key)) {
+        // A metakey's own tier-3 segment hit is suppressed; the field name is
+        // the value beside it, picked up by the literal pass below. A tier-4
+        // substring hit is never suppressed.
+        if (metakey && hit.tier === 3 && hit.via === "field-name") continue;
+        push(hit.token, hit.tier, hit.via, `${where}:line ${lineAt(m.index ?? 0)}`);
+      }
+    }
+    for (const m of text.matchAll(CODE_LITERAL)) {
+      const literal = m[1];
+      if (!literal || !looksLikeFieldPointer(literal)) continue;
+      for (const hit of nameHits(literal)) push(hit.token, hit.tier, hit.via, `${where}:line ${lineAt(m.index ?? 0)}`);
     }
   }
 
-  // 3. Unambiguous Art. 9 compounds and recording provenance, whole document.
-  const normalized = normalizeDocument(markdown);
+  // 3. Unambiguous Art. 9 compounds and recording provenance, whole text.
+  const normalized = normalizeDocument(text);
   for (const token of SPECIAL_CATEGORY_SUBSTRINGS) {
     if (normalized.includes(token)) {
       findings.push({ class: token, tier: 4, via: "special-category", where });
@@ -151,6 +205,16 @@ export function classifyMarkdown(markdown: string, where = "<intake>"): Finding[
   }
 
   return dedupe(findings);
+}
+
+/** A pasted Cowork workflow, a README, a comment — prose rules. */
+export function classifyMarkdown(markdown: string, where = "<intake>"): Finding[] {
+  return scanText(markdown, where, "prose");
+}
+
+/** Emitted source, tests, fixtures, snapshots — code rules. */
+export function classifyCode(source: string, where = "<artifact>"): Finding[] {
+  return scanText(source, where, "code");
 }
 
 /** Exported so a caller can see exactly which vocabularies prose is judged

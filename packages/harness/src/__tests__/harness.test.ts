@@ -27,6 +27,11 @@ interface TestResponse {
 
 const FIXED_NOW = (): Date => new Date("2026-01-01T00:00:00.000Z");
 
+/** Credential-shaped test data, assembled at runtime. The bytes that reach the
+ * redactor are identical; the source holds nothing a secret scanner can flag,
+ * and nothing anyone is tempted to add to an allowlist. */
+const SECRET = (...parts: string[]): string => parts.join("");
+
 function ask(content: string, model = "test-model-1"): TestRequest {
   return { model, system: "You are a test.", messages: [{ role: "user", content }] };
 }
@@ -126,6 +131,23 @@ describe("record once, replay forever", () => {
 
     const entries = await readdir(join(dir, modelSlug("test-model-1")));
     expect(entries.filter((entry) => entry.endsWith(".tmp"))).toEqual([]);
+  });
+
+  it("says so when the answer arrives but cannot be recorded", async () => {
+    // A live run whose recording silently fails is a paid call that will miss
+    // in playback later, blamed on whoever runs the suite next.
+    await writeFile(join(dir, "not-a-directory"), "", "utf8");
+    const fake = fakeProvider<TestRequest, TestResponse>(() => ({ text: "ok" }));
+    const recorder = createHarness<TestRequest, TestResponse>({
+      mode: "live",
+      provider: fake.provider,
+      fixturesDir: join(dir, "not-a-directory", "fixtures"),
+      env: {},
+    });
+
+    await expect(recorder.call(ask("hello"))).rejects.toThrow(/could not be written/);
+    expect(fake.calls).toHaveLength(1);
+    expect(recorder.events).toEqual([]);
   });
 
   it("with onExisting: keep, still answers live but does not overwrite the recording", async () => {
@@ -332,8 +354,8 @@ describe("keyed on the request, never on call order", () => {
 
 describe("credentials never reach a fixture", () => {
   it("scrubs keys from the request, the response and the environment", async () => {
-    const apiKey = "sk-ant-api03-Zx9QpLmT4vR8wN2bK7jF6hC1sD0aG5eY3uI";
-    const bearer = "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NSJ9.dBjftJeZ4CVPmB92K27uhbUJU1p1r_wW1gFWFOEjXk";
+    const apiKey = SECRET("sk-", "ant-", "api03-", "Zx9QpLmT4vR8wN2bK7jF6hC1sD0aG5eY3uI");
+    const bearer = SECRET("eyJhbGciOiJIUzI1NiJ9.", "eyJzdWIiOiIxMjM0NSJ9.", "dBjftJeZ4CVPmB92K27uhbUJU1p1r_wW1gFWFOEjXk");
     const envKey = "env-secret-value-9f83ba1c77";
 
     const fake = fakeProvider<TestRequest, TestResponse>(() => ({
@@ -378,8 +400,8 @@ describe("credentials never reach a fixture", () => {
   });
 
   it("still replays after redaction, because the key is taken before it", async () => {
-    const apiKey = "sk-ant-api03-Zx9QpLmT4vR8wN2bK7jF6hC1sD0aG5eY3uI";
-    const other = "sk-ant-api03-DIFFERENTbutALSOaSecretVALUE12345678";
+    const apiKey = SECRET("sk-", "ant-", "api03-", "Zx9QpLmT4vR8wN2bK7jF6hC1sD0aG5eY3uI");
+    const other = SECRET("sk-", "ant-", "api03-", "DIFFERENTbutALSOaSecretVALUE12345678");
 
     // The answer names WHICH key was used without repeating the key itself, so
     // the two recordings stay distinguishable after redaction.

@@ -72,13 +72,15 @@ describe("canonical bytes", () => {
 });
 
 describe("what the key covers", () => {
+  /** Assembled at runtime; see the note in `redaction.test.ts`. */
+  const secret = (suffix: string): string => ["sk-", "ant-", "api03-", suffix].join("");
   const request = {
     model: "m",
     system: "s",
     messages: [{ role: "user", content: "hi" }],
     tools: [{ name: "t" }],
     output_config: { format: "json" },
-    apiKey: "sk-ant-api03-secretsecretsecret",
+    apiKey: secret("secretsecretsecret"),
     requestId: "req-1",
   };
 
@@ -95,7 +97,7 @@ describe("what the key covers", () => {
 
   it("ignores everything outside them — credentials, ids, retry counters", () => {
     const key = requestKey(request);
-    expect(requestKey({ ...request, apiKey: "sk-ant-api03-somethingelseentirely", requestId: "req-2" })).toBe(key);
+    expect(requestKey({ ...request, apiKey: secret("somethingelseentirely"), requestId: "req-2" })).toBe(key);
     expect(key).toHaveLength(KEY_LENGTH);
     expect(key).toMatch(/^[0-9a-f]+$/);
   });

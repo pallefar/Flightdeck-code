@@ -41,7 +41,10 @@
  * (`{ Mariusz: {...} }`) is identifier-shaped and IS echoed unless the caller
  * declares it via `declaredNames`. Declaring known names is the caller's one
  * obligation here, exactly as `redact({ names })` makes it the caller's one
- * obligation in the host. See README of this package.
+ * obligation in the host. The same residual is restated where it bites in
+ * `classify.ts` (`SCHEMA_METAKEYS`) and asserted as current behaviour in
+ * `__tests__/no-value-leak.test.ts` — an undeclared name is reported
+ * positionally, never verbatim.
  */
 
 import { PII_PATTERNS } from "./lists";

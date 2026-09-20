@@ -40,10 +40,18 @@
  * the caller's ONE obligation; everything else is handled or refused."
  */
 
-export { classify, classifyText, deniedPiiField, nameHits, requiresApproval } from "./classify";
-export type { ClassifyOptions, NameHit } from "./classify";
+export {
+  SCHEMA_METAKEYS,
+  classify,
+  classifyText,
+  deniedPiiField,
+  looksLikeFieldPointer,
+  nameHits,
+  requiresApproval,
+} from "./classify";
+export type { ClassifyMode, ClassifyOptions, NameHit } from "./classify";
 
-export { dedupe, initials, joinPath, maxTier, sanitizePathSegment, tierOf } from "./findings";
+export { dedupe, initials, joinPath, maxTier, sanitizePath, sanitizePathSegment, tierOf } from "./findings";
 export type { Classification, Finding, FindingVia, Tier } from "./findings";
 
 export {
@@ -61,7 +69,14 @@ export type { PiiPattern } from "./lists";
 export { MAX_TEXT_CHARS, redactTree, scrub } from "./scrub";
 export type { RedactTreeResult, ScrubOptions } from "./scrub";
 
-export { PROSE_SCOPES, RECORDING_PROVENANCE_TOKENS, classifyMarkdown, labelsOf } from "./markdown";
+export {
+  PROSE_SCOPES,
+  RECORDING_PROVENANCE_TOKENS,
+  classifyCode,
+  classifyMarkdown,
+  labelsOf,
+} from "./markdown";
+export type { TextStyle } from "./markdown";
 
 export { canonicalJson, checkApproval, contentHash, isNamedHuman } from "./approval";
 export type { Approval, ApprovalCheck, ApprovalProblem } from "./approval";
@@ -96,6 +111,8 @@ export {
   readHostPiiPatterns,
   readHostSource,
   readNumberConst,
+  readRegexLiteral,
   readStringArray,
+  stripCommentLines,
 } from "./host-source";
 export type { HostAvailability, HostPattern } from "./host-source";

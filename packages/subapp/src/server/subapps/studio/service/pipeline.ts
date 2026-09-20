@@ -1,0 +1,608 @@
+/** The conversion itself: one Cowork workflow in, one reviewable sub-app out.
+ *
+ * ⭐ THREE STAGES, ALL IN MEMORY, NONE OF THEM TOUCHING A DISK.
+ *
+ *   @spec        reads the workflow markdown and derives a database-free
+ *                `MiniAppSpec` whose `steps` are the workflow's own steps.
+ *   @codegen     turns that spec into the sub-app's source TEXT.
+ *   @conformance judges that text against the contract before a byte of it
+ *                goes anywhere.
+ *
+ * A route may import all three because all three are `node:`-free by
+ * construction — `@codegen/pure` exists for exactly this reason, and
+ * `@conformance`'s filesystem half lives in `ship.ts` and `verify/`, neither of
+ * which is reachable from `gate.ts`. `__tests__/import-closure.test.ts` walks
+ * the real closure of this file on every run rather than trusting that
+ * sentence.
+ *
+ * ⛔ AND NOTHING HERE WRITES. Not because writing was hard to add, but because
+ * the capability adapter a sub-app route is handed has no filesystem write on
+ * it at all: `readContracts`, `writeInboxProposal`, `listOwnInboxProposals`,
+ * `auditAppend`, `resolveSigningAuthority`. So generation produces text, the
+ * text becomes ONE inbox proposal, and a human applies it. Contract rule 7 —
+ * propose, don't mutate — is what this file is shaped around.
+ *
+ * ── THE MINI-APP FLOOR IS ENFORCED HERE, TWICE ──────────────────────────
+ * A converted workflow is a MINI-APP: `manifest.ts`, `guard.ts`,
+ * `routes/index.ts`, a web module — the `shell-reference` floor, with
+ * `initSchema: () => {}` and no `schema.ts`, no DDL, no migration. Table
+ * support is a different product and a converted workflow does not get one.
+ * `@spec` already refuses to plan tables out of a workflow, and
+ * `@codegen`'s `mini-app` profile already refuses a spec that declares them —
+ * so this file checks BOTH the spec going in and the file set coming out. A
+ * property that matters should not depend on one refusal two packages away
+ * still being there.
+ */
+import {
+  parseWorkflowMarkdown,
+  planFromWorkflow,
+  type ClarifyingQuestion,
+  type MiniAppSpec as DerivedSpec,
+  type PlanWarning,
+  type SpecStep,
+} from "@spec/index";
+import {
+  CodegenInvariantError,
+  RESERVED_SUBAPP_IDS,
+  SpecRejectedError,
+  generateSubApp,
+} from "@codegen/pure";
+import { runConformanceGate } from "@conformance/gate";
+import type { Finding } from "@conformance/finding";
+
+/** The proposal's `kind`, and the first part of its filename. */
+export const STUDIO_PROPOSAL_KIND = "studio-mini-app";
+
+/** The one domain a converted workflow emits. Every generated route lives in
+ * `routes/workflow.ts`; a workflow conversion never needs a second file. */
+const WORKFLOW_DOMAIN = "workflow";
+
+/** `@codegen`'s `workflowStepSchema` caps `n` at 99. A document numbering past
+ * that is not a procedure anybody holds in their head. */
+const MAX_STEP_ORDINAL = 99;
+
+export interface StudioConversionInput {
+  /** The workflow's markdown, as POSTED. Never a path: a sub-app route has no
+   * filesystem read, so Studio cannot open a skill file even if it wanted to,
+   * and reading the repo from a route would be a capability escape. */
+  readonly workflow: string;
+  /** Answers to questions from an earlier `needs_input`, keyed by question id. */
+  readonly answers?: Readonly<Record<string, string>>;
+  /** Where the workflow came from, e.g. `skills/orchestrate-workflow/SKILL.md`.
+   * Rendered verbatim as provenance in the generated files; never opened. */
+  readonly source?: string;
+}
+
+export interface StudioGeneratedFile {
+  /** Repo-relative path in the HOST, which is where a human will place it. */
+  readonly path: string;
+  readonly contents: string;
+  readonly kind: string;
+}
+
+export interface StudioFileSummary {
+  readonly path: string;
+  readonly kind: string;
+  readonly bytes: number;
+}
+
+export interface StudioStepSummary {
+  readonly ordinal: string;
+  readonly title: string;
+  readonly kind: SpecStep["kind"];
+  /** True when the source says a PERSON decides this step. The generated page
+   * shows it and stops there; it is never a licence to advance it. */
+  readonly gated: boolean;
+}
+
+/** What the review screen renders. Deliberately not the whole `MiniAppSpec`:
+ * the spec carries `sourcePrompt`, which is the entire posted markdown, and
+ * echoing it back on every preview is bytes nobody reads. */
+export interface StudioSpecSummary {
+  readonly id: string;
+  readonly label: string;
+  readonly icon: string;
+  readonly version: string;
+  readonly minHostVersion: string;
+  readonly navSection: string;
+  readonly routePrefix: string;
+  readonly webModuleId: string;
+  readonly enableEnvVar: string;
+  readonly purpose: string;
+  readonly capabilities: readonly string[];
+  readonly visibleToRoles: readonly string[];
+  readonly steps: readonly StudioStepSummary[];
+}
+
+export interface StudioGateSummary {
+  readonly ok: boolean;
+  /** Names of the checks that RAN. A gate that quietly skipped half its rules
+   * and reported "no findings" would be worse than no gate, so a partial run
+   * can never be mistaken for a clean one. */
+  readonly checks: readonly string[];
+  readonly findings: readonly Finding[];
+  readonly errors: readonly Finding[];
+  readonly warnings: readonly Finding[];
+  readonly filesChecked: number;
+}
+
+/** The registry edit a human still has to make. Studio cannot make it: a
+ * sub-app is code-declared, `registry.ts` is a host file, and the capability
+ * adapter has no way to touch it. So the two lines travel WITH the proposal. */
+export interface StudioRegistryEdit {
+  readonly file: string;
+  readonly importLine: string;
+  readonly entryLines: readonly string[];
+}
+
+export type StudioConversion =
+  /** The document does not say something the manifest requires. No manifest
+   * field is ever guessed: `navSection` is an exact-match join key against five
+   * host literals and no workflow carries one. */
+  | {
+      readonly status: "needs_input";
+      readonly understanding: string;
+      readonly questions: readonly ClarifyingQuestion[];
+      readonly warnings: readonly PlanWarning[];
+    }
+  /** A step asks the mini-app to advance, approve or resolve a gated or
+   * statutory step by itself. Refused outright, naming the sentence. */
+  | {
+      readonly status: "blocked";
+      readonly understanding: string;
+      readonly rule: string;
+      readonly explanation: string;
+      readonly evidence: string;
+      readonly evidenceGrounded: boolean;
+      readonly contractRule: string;
+    }
+  /** The markdown is not a workflow this reader can read. */
+  | { readonly status: "unreadable"; readonly issues: readonly string[] }
+  /** The derived spec is not generatable — including the mini-app floor
+   * refusals this file makes itself. */
+  | { readonly status: "rejected"; readonly issues: readonly string[] }
+  /** The files were generated and the contract gate found ERROR findings.
+   * Nothing is written, and the findings are the answer. */
+  | {
+      readonly status: "gate_blocked";
+      readonly subAppId: string;
+      readonly gate: StudioGateSummary;
+      readonly warnings: readonly string[];
+    }
+  | {
+      readonly status: "ready";
+      readonly understanding: string;
+      readonly subAppId: string;
+      readonly label: string;
+      readonly spec: StudioSpecSummary;
+      readonly files: readonly StudioGeneratedFile[];
+      readonly fileSummaries: readonly StudioFileSummary[];
+      readonly registry: StudioRegistryEdit;
+      readonly gate: StudioGateSummary;
+      /** Narrowings and omissions, in English. Never a refusal — those are the
+       * `blocked` and `rejected` arms above. */
+      readonly warnings: readonly string[];
+    };
+
+/* ══════════════════════════════════════════════════════════════════════════
+ * Proposal naming
+ *
+ * One OPEN proposal per generated sub-app id, and the idempotency key is that
+ * id rather than a hash of the markdown. Two consequences, both deliberate:
+ *
+ *   • Posting the same workflow twice files one proposal. That is the property
+ *     asked for.
+ *   • Posting a DIFFERENT workflow that derives the same id also files one —
+ *     and answers with the proposal already on file rather than writing a
+ *     second. That is not a near-miss of the first property, it is the
+ *     stronger reading of it: two proposals for one sub-app id cannot both be
+ *     applied, because the second would collide with the first on the nav path,
+ *     the route prefix and the registry entry. Answering "already on file" is
+ *     the honest outcome, and the response names the id so the person can see
+ *     why.
+ * ═══════════════════════════════════════════════════════════════════════ */
+
+export function proposalPrefixFor(subAppId: string): string {
+  return `${STUDIO_PROPOSAL_KIND}-${subAppId}-`;
+}
+
+export function proposalFileNameFor(subAppId: string, at: number): string {
+  return `${proposalPrefixFor(subAppId)}${String(at)}.json`;
+}
+
+/** The EXACT filename shape this sub-app writes, not a bare prefix test.
+ * `wc-clock-` is a prefix of `wc-clock-2-…`, and a prefix test would report the
+ * wrong app as already proposed. */
+export function findFiledProposal(fileNames: readonly string[], subAppId: string): string | null {
+  const prefix = proposalPrefixFor(subAppId);
+  return (
+    fileNames.find((name) => name.startsWith(prefix) && /^\d+\.json$/.test(name.slice(prefix.length))) ?? null
+  );
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+ * Stage 1 -> 2: the derived spec, translated into what the generator parses
+ *
+ * The two packages model the same app from different ends, so this is a real
+ * translation rather than a cast. `@spec` describes a workflow reading —
+ * routes with a `kind`, steps with a `gated` flag. `@codegen` describes an
+ * emission — domains of routes bound to a CLOSED union of operations, and a
+ * workflow whose steps name the route that performs them. The closed operation
+ * union is the generator's whole safety argument: a generated route cannot
+ * express "read this file" because no operation kind means it.
+ * ═══════════════════════════════════════════════════════════════════════ */
+
+interface TranslationResult {
+  readonly spec: Record<string, unknown>;
+  readonly warnings: readonly string[];
+}
+
+function truncate(value: string, max: number): string {
+  return value.length <= max ? value : `${value.slice(0, max - 1)}…`;
+}
+
+/** `"2b"` -> `2`. The document's own numbering is kept on screen; this is only
+ * the sort key the generator binds actions to. */
+function ordinalNumber(ordinal: string): number | null {
+  const digits = ordinal.replace(/[^0-9]/g, "");
+  if (digits.length === 0) return null;
+  const n = Number(digits);
+  return Number.isInteger(n) && n >= 1 && n <= MAX_STEP_ORDINAL ? n : null;
+}
+
+function translate(spec: DerivedSpec, workflowName: string, source: string | undefined): TranslationResult {
+  const warnings: string[] = [];
+  const reads = spec.capabilities.includes("read:contracts");
+  const proposes = spec.capabilities.includes("write:inbox-proposal");
+
+  /* ── Routes ───────────────────────────────────────────────────────────
+   * A workflow conversion produces a small, fixed route set, and every one of
+   * them maps onto a capability-only operation. Nothing table-backed can be
+   * reached from here: `list-rows`, `get-row` and `insert-row` are not emitted
+   * for any input, which is the mini-app floor expressed as code rather than
+   * as a comment. */
+  const routes: Array<Record<string, unknown>> = [];
+  for (const route of spec.routes) {
+    if (route.kind === "propose") {
+      if (!proposes) {
+        warnings.push(
+          `dropped the ${route.method} ${route.path} route: it files a proposal, but the app does not declare write:inbox-proposal`,
+        );
+        continue;
+      }
+      routes.push({
+        method: "POST",
+        path: route.path,
+        summary: truncate(route.summary, 200),
+        operation: {
+          kind: "propose",
+          proposalKind: "step",
+          ticketField: "ticket",
+          fields: [
+            { name: "ticket", type: "string", maxLength: 64 },
+            { name: "step", type: "string", maxLength: 48 },
+            { name: "note", type: "string", optional: true, maxLength: 500 },
+          ],
+          // FIELD NAMES only ever reach an audit event, never values
+          // (contract rule 8). The generator enforces that; the name is
+          // namespaced under the sub-app id because the host's audit reader
+          // groups on it.
+          auditEvent: `${spec.id}.step-proposed`,
+        },
+      });
+      continue;
+    }
+    if (route.capabilities.includes("read:contracts")) {
+      if (!reads) {
+        warnings.push(
+          `dropped the ${route.method} ${route.path} route: it reads contract folders, but the app does not declare read:contracts`,
+        );
+        continue;
+      }
+      routes.push({ method: "GET", path: route.path, summary: truncate(route.summary, 200), operation: { kind: "list-contracts" } });
+      continue;
+    }
+    // Everything else a workflow reading produces is the app reading its own
+    // text out loud — the `/steps` route is the whole `## Procedure`, which the
+    // generated page already carries as a data literal. A route that answers
+    // what the page already knows is a round trip for nothing, and buying a
+    // capability to serve it would put a line on the consent screen nobody
+    // asked for.
+    warnings.push(
+      `dropped the ${route.method} ${route.path} route: the generated page renders the procedure from its own step data, so the route would answer what the page already has`,
+    );
+  }
+  if (proposes) {
+    // The step rail's only honest source of state. A mini-app stores nothing,
+    // so "this step has been proposed" can only be read back from the
+    // proposals this app itself wrote. Gated by `write:inbox-proposal`, which
+    // the app already declares — so the read costs no extra consent.
+    routes.push({
+      method: "GET",
+      path: "/proposals",
+      summary: "Proposals this app has already filed for its steps",
+      operation: { kind: "list-proposals" },
+    });
+  }
+
+  /* ── Steps ────────────────────────────────────────────────────────────── */
+  const steps: Array<Record<string, unknown>> = [];
+  const seen = new Set<number>();
+  for (const step of spec.steps ?? []) {
+    const n = ordinalNumber(step.ordinal);
+    if (n === null) {
+      warnings.push(`dropped step "${step.ordinal}": the generator numbers steps 1-${String(MAX_STEP_ORDINAL)}`);
+      continue;
+    }
+    if (seen.has(n)) {
+      warnings.push(`dropped step "${step.ordinal}": step ${String(n)} is already on the rail`);
+      continue;
+    }
+    seen.add(n);
+
+    const entry: Record<string, unknown> = {
+      n,
+      title: truncate(step.title, 120),
+      // `gated` is "the source says a person decides this". Anything else is
+      // "the source names no human gate" — which is what `auto` means to the
+      // generator. Neither one lets the page advance anything: the rail shows
+      // the step and stops, because nothing in a mini-app may resolve a gate.
+      gate: step.gated ? "human" : "auto",
+    };
+    if (step.detail.length > 0) entry.detail = truncate(step.detail, 600);
+    if (step.kind === "propose" && proposes) {
+      const target = routes.find((r) => r.method === "POST");
+      if (target !== undefined) {
+        entry.action = { domain: WORKFLOW_DOMAIN, method: "POST", path: target.path };
+      }
+    } else if (step.kind === "read" && reads) {
+      const target = routes.find((r) => r.method === "GET" && r.path !== "/proposals");
+      if (target !== undefined) {
+        entry.action = { domain: WORKFLOW_DOMAIN, method: "GET", path: target.path };
+      }
+    }
+    steps.push(entry);
+  }
+
+  const workflow: Record<string, unknown> = {
+    name: truncate(workflowName, 80),
+    description: truncate(spec.purpose, 600),
+    steps,
+  };
+  if (source !== undefined && source.length > 0) workflow.source = truncate(source, 200);
+
+  return {
+    warnings,
+    spec: {
+      // Named, not defaulted. The generator's `mini-app` profile is what
+      // refuses tables, and a spec that relied on the default to be
+      // database-free would become table-backed the day the default moved.
+      profile: "mini-app",
+      id: spec.id,
+      label: spec.label,
+      version: spec.version,
+      icon: spec.icon,
+      navSection: spec.navSection,
+      summary: truncate(spec.purpose, 300),
+      capabilities: [...spec.capabilities],
+      visibleToRoles: [...spec.visibleToRoles],
+      webModuleId: spec.derived.webModuleId,
+      workflow,
+      domains: [{ name: WORKFLOW_DOMAIN, title: truncate(spec.label, 80), routes }],
+    },
+  };
+}
+
+function summarize(spec: DerivedSpec): StudioSpecSummary {
+  return {
+    id: spec.id,
+    label: spec.label,
+    icon: spec.icon,
+    version: spec.version,
+    minHostVersion: spec.minHostVersion,
+    navSection: spec.navSection,
+    routePrefix: spec.derived.routePrefix,
+    webModuleId: spec.derived.webModuleId,
+    enableEnvVar: spec.derived.enableEnvVar,
+    purpose: spec.purpose,
+    capabilities: [...spec.capabilities],
+    visibleToRoles: [...spec.visibleToRoles],
+    steps: (spec.steps ?? []).map((step) => ({
+      ordinal: step.ordinal,
+      title: step.title,
+      kind: step.kind,
+      gated: step.gated,
+    })),
+  };
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+ * The conversion
+ * ═══════════════════════════════════════════════════════════════════════ */
+
+export function convertWorkflow(input: StudioConversionInput): StudioConversion {
+  // Read the document once for its own name before planning, so a file that is
+  // not a workflow at all is answered as such rather than as a spec problem.
+  const parsed = parseWorkflowMarkdown(input.workflow);
+  if (!parsed.ok) return { status: "unreadable", issues: parsed.issues };
+  const workflowName = parsed.doc.frontmatter.name ?? parsed.doc.title ?? "workflow";
+
+  const planInput: Parameters<typeof planFromWorkflow>[0] = {
+    workflow: input.workflow,
+    // Studio cannot enumerate the host's `SUBAPP_MANIFESTS` from a route —
+    // importing the registry is a sibling-import violation and there is no
+    // filesystem read either way. So the collision list is the generator's own
+    // reserved set plus Studio itself, and the REAL fence is the human who
+    // applies the proposal into a repo where a duplicate id would not compile.
+    existingSubAppIds: [...RESERVED_SUBAPP_IDS, "studio"],
+    ...(input.answers === undefined ? {} : { answers: input.answers }),
+  };
+  const outcome = planFromWorkflow(planInput);
+
+  if (outcome.status === "needs_input") {
+    return {
+      status: "needs_input",
+      understanding: outcome.understanding,
+      questions: outcome.questions,
+      warnings: outcome.warnings,
+    };
+  }
+  if (outcome.status === "blocked") {
+    return {
+      status: "blocked",
+      understanding: outcome.understanding,
+      rule: outcome.rule,
+      explanation: outcome.explanation,
+      evidence: outcome.evidence,
+      evidenceGrounded: outcome.evidenceGrounded,
+      contractRule: outcome.contractRule,
+    };
+  }
+  if (outcome.status === "invalid_draft") {
+    return { status: "unreadable", issues: outcome.issues };
+  }
+
+  const derived = outcome.spec;
+
+  // ⛔ THE MINI-APP FLOOR, ON THE WAY IN. `@spec` plans no tables out of a
+  // workflow, so this is unreachable-by-design — which is exactly why it is
+  // written down. The database-free property should not depend on a refusal in
+  // another package still being there.
+  if (derived.tables.length > 0) {
+    return {
+      status: "rejected",
+      issues: [
+        `the derived spec declares ${String(derived.tables.length)} table(s) (${derived.tables
+          .map((t) => t.name)
+          .join(", ")}). A converted workflow is a mini-app: database-free, no schema.ts, no DDL, no migration. Table support is not the mini-app path.`,
+      ],
+    };
+  }
+  if (derived.steps === undefined || derived.steps.length === 0) {
+    return {
+      status: "rejected",
+      issues: [
+        "the derived spec carries no steps, so there is no procedure to convert. A Cowork workflow needs a '## Procedure' section of numbered steps.",
+      ],
+    };
+  }
+
+  const translation = translate(derived, workflowName, input.source);
+
+  let generated: ReturnType<typeof generateSubApp>;
+  try {
+    generated = generateSubApp(translation.spec);
+  } catch (err) {
+    if (err instanceof SpecRejectedError) {
+      return { status: "rejected", issues: err.issues.length > 0 ? err.issues : [err.message] };
+    }
+    if (err instanceof CodegenInvariantError) {
+      // The generator checked its OWN output against the contract and refused.
+      // This is a Studio bug, not a bad workflow — so it is reported with the
+      // rule ids intact rather than flattened into "could not generate".
+      return {
+        status: "rejected",
+        issues: err.violations.map((v) => `[${v.rule}] ${v.file}: ${v.detail}`),
+      };
+    }
+    throw err;
+  }
+
+  // ⛔ THE MINI-APP FLOOR, ON THE WAY OUT. The `mini-app` profile already
+  // refuses to emit a `schema.ts`; this reads the file set that actually came
+  // back rather than trusting that it did.
+  const schemaFile = generated.files.find((file) => file.kind === "schema" || file.path.endsWith("/schema.ts"));
+  if (schemaFile !== undefined) {
+    return {
+      status: "rejected",
+      issues: [`the generator emitted ${schemaFile.path}; a mini-app is database-free and must ship no schema`],
+    };
+  }
+
+  const files: StudioGeneratedFile[] = generated.files.map((file) => ({
+    path: file.path,
+    contents: file.contents,
+    kind: file.kind,
+  }));
+
+  const report = runConformanceGate({ files: files.map((file) => ({ path: file.path, contents: file.contents })) });
+  const gate: StudioGateSummary = {
+    ok: report.ok,
+    checks: report.checks,
+    findings: report.findings,
+    errors: report.errors,
+    warnings: report.warnings,
+    filesChecked: report.filesChecked,
+  };
+  const warnings = [...translation.warnings, ...generated.warnings];
+
+  if (!gate.ok) {
+    return { status: "gate_blocked", subAppId: derived.id, gate, warnings };
+  }
+
+  return {
+    status: "ready",
+    understanding: outcome.understanding,
+    subAppId: derived.id,
+    label: derived.label,
+    spec: summarize(derived),
+    files,
+    fileSummaries: files.map((file) => ({ path: file.path, kind: file.kind, bytes: file.contents.length })),
+    registry: {
+      file: generated.registryPatch.file,
+      importLine: generated.registryPatch.importLine,
+      entryLines: generated.registryPatch.entryLines,
+    },
+    gate,
+    warnings,
+  };
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+ * The proposal body
+ * ═══════════════════════════════════════════════════════════════════════ */
+
+export interface StudioProposalBody {
+  readonly kind: typeof STUDIO_PROPOSAL_KIND;
+  readonly subAppId: string;
+  readonly label: string;
+  readonly spec: StudioSpecSummary;
+  readonly workflowSource: string | null;
+  readonly files: readonly StudioGeneratedFile[];
+  readonly registry: StudioRegistryEdit;
+  readonly gate: {
+    readonly ok: boolean;
+    readonly checks: readonly string[];
+    readonly warnings: readonly Finding[];
+  };
+  readonly warnings: readonly string[];
+  readonly proposedBy: { readonly username: string; readonly displayName: string } | null;
+  readonly proposedAt: string;
+  /** Said inside the artefact, not only on the screen that produced it: whoever
+   * opens this file in the Inbox is the person who has to know it installs
+   * nothing by itself. */
+  readonly appliedBy: string;
+}
+
+export function buildProposalBody(
+  ready: Extract<StudioConversion, { status: "ready" }>,
+  proposedBy: { username: string; displayName: string } | null,
+  source: string | undefined,
+  at: string,
+): StudioProposalBody {
+  return {
+    kind: STUDIO_PROPOSAL_KIND,
+    subAppId: ready.subAppId,
+    label: ready.label,
+    spec: ready.spec,
+    workflowSource: source ?? null,
+    files: ready.files,
+    registry: ready.registry,
+    gate: { ok: ready.gate.ok, checks: ready.gate.checks, warnings: ready.gate.warnings },
+    warnings: ready.warnings,
+    proposedBy,
+    proposedAt: at,
+    appliedBy:
+      "a human. Filing this proposal installed nothing: these files are text until somebody writes them into the host repo and makes the registry.ts edit above.",
+  };
+}

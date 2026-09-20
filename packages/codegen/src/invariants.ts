@@ -19,6 +19,7 @@
  * emitted file of each kind may reach, full stop, and anything else is a
  * violation whether or not it looked dangerous. */
 import { tablePrefix, underscored } from "./naming";
+import { isMiniApp } from "./profile";
 import type { SubAppPlan } from "./plan";
 
 export interface GeneratedFile {
@@ -133,7 +134,7 @@ type Add = (file: string, rule: string, detail: string) => void;
  * branch, this is what turns that into a thrown error at generation time
  * rather than a table in somebody's workspace. */
 function checkProfile(files: readonly GeneratedFile[], code: ReadonlyMap<string, string>, plan: SubAppPlan, add: Add): void {
-  if (plan.profile !== "mini-app") return;
+  if (!isMiniApp(plan.profile)) return;
 
   for (const file of files) {
     if (file.kind === "schema" || file.path.endsWith("/schema.ts")) {

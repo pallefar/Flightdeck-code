@@ -47,6 +47,17 @@ export interface ScrubOptions {
    * rather than one AI text fact, where truncating would corrupt the file it
    * is trying to clean. */
   readonly truncate?: boolean;
+  /**
+   * The lowest tier of FIELD-NAME hit that gets dropped key-and-value.
+   * Default 4.
+   *
+   * It is a parameter rather than a constant because the caller's config
+   * decides which tiers it is redacting at all, and dropping less than it
+   * refuses would be incoherent: a gate configured to redact tier 3 that left
+   * `person.surname` standing would then refuse its own redaction on the
+   * re-scan, every time, and "redact" would silently mean "refuse".
+   */
+  readonly dropTier?: 3 | 4;
 }
 
 export function scrub(raw: string, opts: ScrubOptions = {}): string {
@@ -75,18 +86,19 @@ export interface RedactTreeResult {
   readonly droppedClasses: readonly string[];
 }
 
-function isTierFourName(rawPath: string): string | null {
+function droppableName(rawPath: string, dropTier: 3 | 4): string | null {
   for (const hit of nameHits(rawPath)) {
-    if (hit.tier === 4) return hit.token;
+    if (hit.tier >= dropTier) return hit.token;
   }
   return null;
 }
 
 /**
- * Drop tier-4-by-name branches, scrub every surviving string. Pure: the input
- * is not mutated.
+ * Drop by-name branches at or above `dropTier`, scrub every surviving string.
+ * Pure: the input is not mutated.
  */
 export function redactTree(input: unknown, opts: ScrubOptions = {}): RedactTreeResult {
+  const dropTier = opts.dropTier ?? 4;
   const dropped = new Set<string>();
 
   const walk = (value: unknown, rawPath: string): unknown => {
@@ -97,13 +109,30 @@ export function redactTree(input: unknown, opts: ScrubOptions = {}): RedactTreeR
     const out: Record<string, unknown> = {};
     for (const [key, child] of Object.entries(value as Record<string, unknown>)) {
       const childPath = rawPath === "" ? key : `${rawPath}.${key}`;
-      const token = isTierFourName(childPath);
+      const token = droppableName(childPath, dropTier);
       if (token !== null) {
         // Only the CLASS is recorded. Not the key, not the value.
         dropped.add(token);
         continue;
       }
-      out[key] = walk(child, childPath);
+      // ⚠ THE KEY GOES THROUGH THE SCRUBBER TOO. Redacting only values leaves
+      // `{ "Erika Musterfrau": { … } }` fully intact, and the host has already
+      // paid for this lesson once: `envelope.ts`'s closed key policy records
+      // that a fact key "was a free-text channel straight to (1) the wire,
+      // (2) the append-only hash-chained audit event, (3) the refusal
+      // messages … and (4) the edge function's 400 bodies". A redactor that
+      // hands back a payload keyed by a person's name has redacted nothing.
+      // Caught by `__tests__/no-value-leak.test.ts`, not by review.
+      let safeKey = scrub(key, { ...opts, truncate: false });
+      if (safeKey !== key && Object.hasOwn(out, safeKey)) {
+        // Two distinct keys can scrub to the same placeholder. Suffix rather
+        // than silently drop one: losing a field is a correctness bug, and a
+        // redactor that loses data quietly is one nobody will trust.
+        let n = 2;
+        while (Object.hasOwn(out, `${safeKey}#${n}`)) n += 1;
+        safeKey = `${safeKey}#${n}`;
+      }
+      out[safeKey] = walk(child, childPath);
     }
     return out;
   };

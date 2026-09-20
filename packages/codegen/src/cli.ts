@@ -31,6 +31,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { applyGeneratedFiles, fingerprint, type ApplyReport } from "./apply";
 import { generateSubApp } from "./generate";
+import { MINI_APP_FLOOR } from "./profile";
 import { CodegenInvariantError } from "./invariants";
 import { serverDir, webDir } from "./naming";
 import { SpecRejectedError } from "./plan";
@@ -145,6 +146,16 @@ export function main(): void {
   }
 
   for (const warning of generated.warnings) console.warn(`codegen: warning — ${warning}`);
+
+  // Which SHAPE is about to land, said before anything lands. The person
+  // running this is the one the propose-don't-mutate design hands the
+  // decision to, and "does this app own tables in my workspace?" is the
+  // part of that decision they cannot get back once it boots.
+  console.log(
+    generated.plan.profile === "mini-app"
+      ? `codegen: ${generated.plan.id} — mini-app, database-free (${MINI_APP_FLOOR})`
+      : `codegen: ${generated.plan.id} — profile "table-backed": ships a schema.ts whose DDL runs on every boot in every workspace. This is NOT the mini-app path.`,
+  );
 
   // Ctrl-C between the first and last file is exactly the hazard this
   // command is built around, so it is wired to the applier's cancellation
