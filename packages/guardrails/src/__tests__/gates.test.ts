@@ -14,7 +14,7 @@ import {
   gateModelRequest,
   gateRegistration,
   gateWorkflowIntake,
-} from "../gates";
+} from "../index";
 import { contentHash } from "../approval";
 import type { Approval } from "../approval";
 

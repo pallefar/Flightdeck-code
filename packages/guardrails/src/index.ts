@@ -113,17 +113,67 @@ export type { TextStyle } from "./markdown";
 
 export { canonicalJson, checkApproval, contentHash, isNamedHuman } from "./approval";
 export type { Approval, ApprovalCheck, ApprovalProblem } from "./approval";
+export { nodeDigest } from "./approval";
+export type { Digest } from "./hash";
+
+import { nodeDigest } from "./approval";
+import {
+  gateGeneratedArtifacts as rawGateGeneratedArtifacts,
+  gateModelRequest as rawGateModelRequest,
+  gateRegistration as rawGateRegistration,
+  gateWorkflowIntake as rawGateWorkflowIntake,
+  type GateContext,
+  type GateDecision,
+  type GeneratedFile,
+  type ModelRequestConfig,
+  type ModelRequestDecision,
+  type WorkflowIntakeOptions,
+} from "./gates";
 
 export { MAX_LOCATIONS_IN_EVENT, auditBody, classesOf, locationsOf } from "./audit";
 export type { AuditBodyInput, GuardrailAuditBody, GuardrailEventName } from "./audit";
 
-export {
-  GATE_POLICY,
-  gateGeneratedArtifacts,
-  gateModelRequest,
-  gateRegistration,
-  gateWorkflowIntake,
-} from "./gates";
+/**
+ * ⭐ THE NODE-SIDE GATES. Same functions, with `node:crypto` supplied.
+ *
+ * `./gates` is now pure — it hashes with `ctx.digest` and imports no builtin —
+ * because `packages/conformance` lists "crypto" in `NODE_BUILTINS` and FD-C001
+ * refuses a mounted sub-app module that imports one. Until this split, a Studio
+ * ROUTE could not call a single gate in this package, and ~136 passing tests
+ * never noticed: they all run in Node, where the builtin is simply present.
+ *
+ * Import from HERE on the CLI and host side and nothing changes. Import from
+ * `./pure` inside a sub-app and pass your own digest.
+ */
+export { GATE_POLICY } from "./gates";
+
+/** One line each, explicit, because a clever generic over four different
+ * signatures types worse than four functions and reads worse too. */
+const onNode = (ctx: GateContext): GateContext => ({ ...ctx, digest: ctx.digest ?? nodeDigest });
+
+export function gateRegistration(spec: unknown, ctx: GateContext): GateDecision {
+  return rawGateRegistration(spec, onNode(ctx));
+}
+
+export function gateModelRequest(
+  request: unknown,
+  ctx: GateContext,
+  config: ModelRequestConfig = {},
+): ModelRequestDecision {
+  return rawGateModelRequest(request, onNode(ctx), config);
+}
+
+export function gateWorkflowIntake(
+  markdown: string,
+  ctx: GateContext,
+  options: WorkflowIntakeOptions = {},
+): GateDecision {
+  return rawGateWorkflowIntake(markdown, onNode(ctx), options);
+}
+
+export function gateGeneratedArtifacts(files: readonly GeneratedFile[], ctx: GateContext): GateDecision {
+  return rawGateGeneratedArtifacts(files, onNode(ctx));
+}
 export type {
   GateContext,
   GateDecision,

@@ -23,7 +23,7 @@ import { describe, expect, it } from "vitest";
 import { buildEnvelope } from "../build";
 import { APPROVAL_REASON_CODES } from "../build";
 import { MAX_TEXT_CHARS } from "../allowlists";
-import { gateModelRequest } from "../../../guardrails/src/gates";
+import { gateModelRequest } from "../../../guardrails/src/index";
 import type { CoverageReportLike } from "../types";
 import type { TierAssessment } from "../../../pseudonym/src/tier";
 

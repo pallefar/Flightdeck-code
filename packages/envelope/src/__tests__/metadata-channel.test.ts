@@ -56,7 +56,7 @@ import {
   MAX_PROVENANCE_CHARS,
   PROVENANCE_STATEMENT_CODES,
 } from "../coverage";
-import { gateModelRequest } from "../../../guardrails/src/gates";
+import { gateModelRequest } from "../../../guardrails/src/index";
 import type { CoverageReportLike } from "../types";
 
 const TOKENISED = "Step one: <person:1> opens the ticket and notifies <org:1>.";

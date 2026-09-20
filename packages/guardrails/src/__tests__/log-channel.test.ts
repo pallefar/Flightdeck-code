@@ -16,7 +16,7 @@
  */
 import { describe, expect, it } from "vitest";
 import { sanitizePathSegment } from "../findings";
-import { gateModelRequest } from "../gates";
+import { gateModelRequest } from "../index";
 import { FACT_KEY_ALLOWLIST } from "../../../envelope/src/allowlists";
 
 const CTX = { actor: "karsten.haldan" } as never;

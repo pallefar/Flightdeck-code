@@ -40,7 +40,7 @@ import { classify } from "../classify";
 import { classifyCode, classifyMarkdown, classifyProseAndCode } from "../markdown";
 import { FINDING_CLASSES } from "../classify";
 import { type Tier, tierOf } from "../findings";
-import { gateModelRequest, gateRegistration, gateWorkflowIntake } from "../gates";
+import { gateModelRequest, gateRegistration, gateWorkflowIntake } from "../index";
 
 const ACTOR = { actor: "karsten.haldan" };
 

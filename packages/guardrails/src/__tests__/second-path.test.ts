@@ -32,7 +32,7 @@
 
 import { describe, expect, it } from "vitest";
 import { classify } from "../classify";
-import { gateGeneratedArtifacts, gateModelRequest, gateRegistration } from "../gates";
+import { gateGeneratedArtifacts, gateModelRequest, gateRegistration } from "../index";
 
 const ACTOR = { actor: "karsten.haldan" };
 

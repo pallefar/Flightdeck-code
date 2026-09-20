@@ -47,7 +47,7 @@
  */
 
 import { classify, type ClassifyOptions } from "./classify";
-import { canonicalJson } from "./approval";
+import { canonicalJson } from "./hash";
 import { type Classification, type Finding, dedupe, tierOf } from "./findings";
 import { classifyCode, classifyMarkdown } from "./markdown";
 

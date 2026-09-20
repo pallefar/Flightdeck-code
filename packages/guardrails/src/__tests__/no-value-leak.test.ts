@@ -28,7 +28,7 @@ import {
   gateModelRequest,
   gateRegistration,
   gateWorkflowIntake,
-} from "../gates";
+} from "../index";
 import {
   BUSINESS_SEGMENTS,
   PII_DENIED_SEGMENTS,

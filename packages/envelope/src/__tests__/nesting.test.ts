@@ -20,7 +20,7 @@
 
 import { describe, expect, it } from "vitest";
 import { classify } from "../../../guardrails/src/classify";
-import { gateModelRequest } from "../../../guardrails/src/gates";
+import { gateModelRequest } from "../../../guardrails/src/index";
 import { buildEnvelope } from "../build";
 
 const ACTOR = { actor: "karsten.haldan" };

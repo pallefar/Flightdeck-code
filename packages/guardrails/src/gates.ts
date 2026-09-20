@@ -58,11 +58,30 @@
 import { classify, type ClassifyOptions } from "./classify";
 import { classifyProseAndCode } from "./markdown";
 import { type Classification, type Finding, type Tier, dedupe, sanitizePath, tierOf } from "./findings";
-import { type Approval, type ApprovalCheck, checkApproval, contentHash } from "./approval";
+import { type Approval, type ApprovalCheck, checkApprovalWith } from "./approval-pure";
+import { type Digest, contentHashWith } from "./hash";
 import { type GuardrailAuditBody, type GuardrailEventName, auditBody } from "./audit";
 import { buildEnvelope } from "../../envelope/src/build";
 import { FACT_KEY_ALLOWLIST } from "../../envelope/src/allowlists";
 import type { Envelope, ExpressionFailure } from "../../envelope/src/types";
+
+/** The digest a gate hashes with. Absent means "we are on the Node side", which
+ * is every CLI caller and every existing test; `pure.ts` makes it required so a
+ * route cannot fall back to an import it is not allowed to have. */
+function digestOf(ctx: { readonly digest?: Digest }): Digest {
+  if (ctx.digest !== undefined) return ctx.digest;
+  throw new GuardrailDigestMissingError();
+}
+
+export class GuardrailDigestMissingError extends Error {
+  constructor() {
+    super(
+      "guardrails: no digest supplied. Import the gates from \"@guardrails\" (Node, supplies node:crypto) " +
+        "or pass ctx.digest. A mounted sub-app may not import node:crypto — see hash.ts.",
+    );
+    this.name = "GuardrailDigestMissingError";
+  }
+}
 
 export type GateName = "registration" | "model-request" | "workflow-intake" | "generated-artifacts";
 export type GateDecisionKind = "allow" | "refuse" | "approval-required";
@@ -103,6 +122,20 @@ export interface GateContext {
   readonly actor: string;
   readonly approval?: Approval;
   readonly declaredNames?: readonly string[];
+  /**
+   * ⭐ SUPPLIED, NOT IMPORTED — and that is what makes this package usable.
+   *
+   * This file used to `import { contentHash } from "./approval"`, which imports
+   * `node:crypto`. `packages/conformance` lists "crypto" in `NODE_BUILTINS` and
+   * FD-C001 refuses a mounted sub-app module that imports one, so NO GATE HERE
+   * COULD BE CALLED FROM A STUDIO ROUTE — the process the contract says this
+   * work happens in. ~136 tests passed throughout, because every one of them
+   * runs in Node where the builtin is simply there.
+   *
+   * Leave it out and the Node digest is used, so every existing caller is
+   * unaffected; `pure.ts` requires it, so a route cannot forget.
+   */
+  readonly digest?: Digest;
 }
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -158,7 +191,7 @@ function resolve(
   ctx: GateContext,
   proposal: unknown,
 ): GateDecision {
-  const hash = contentHash(proposal);
+  const hash = contentHashWith(digestOf(ctx), proposal);
   const policy = GATE_POLICY[gate];
   const disposition = classification.tier === 4 ? policy.tier4 : classification.tier === 3 ? policy.tier3 : "allow";
 
@@ -196,7 +229,7 @@ function resolve(
     return build("refuse", reason);
   }
 
-  const check = checkApproval(proposal, gate as Approval["scope"], ctx.approval);
+  const check = checkApprovalWith(digestOf(ctx), proposal, gate as Approval["scope"], ctx.approval);
   if (check.ok) return build("allow", REASONS.approved, check);
   return build("approval-required", REASONS.needsApproval, check);
 }
@@ -311,7 +344,7 @@ function modelRequestDecision(
   reason: string,
   extra: { envelope?: Envelope; failures?: readonly ExpressionFailure[] } = {},
 ): ModelRequestDecision {
-  const hash = contentHash(proposal);
+  const hash = contentHashWith(digestOf(ctx), proposal);
   return {
     gate: "model-request",
     decision: kind,
