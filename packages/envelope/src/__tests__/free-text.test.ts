@@ -207,20 +207,61 @@ describe("⭐ a bounded text fact is NOT as safe as a fieldName fact, and says s
     // came down, so send it". There is no such thing as complete coverage of
     // free prose for personal names, and a control that accepts the claim has
     // certified rather than refused.
-    const optimistic: CoverageReportLike[] = [
-      { ...REPORT, payloadTier: 2 },
-      { ...REPORT, payloadTier: 1, reduced: true },
-      { ...REPORT, coverage: { ...REPORT.coverage, unchecked: [] } },
-      { ...REPORT, payloadTier: 2, coverage: { ...REPORT.coverage, unchecked: [] }, statement: "clean" },
+    //
+    // ⭐ THREE OF THESE FOUR ARE NOW REFUSED OUTRIGHT rather than downgraded,
+    // and the difference matters. `payloadTier` was the one field of a
+    // coverage report nothing looked at: every other field is admitted
+    // against a closed vocabulary, but the tier was a number the caller wrote
+    // and `buildEnvelope` read it to choose the disposition. Handing back
+    // `requires-human-approval` treated a FORGED report as a pessimistic one.
+    // A claim the producer cannot emit is not a cautious claim — it is
+    // evidence the report did not come from the producer, and the request
+    // goes no further. See `tier-claim.ts`.
+    //
+    // `TOKENISED` carries `<person:1>`, so the producer would floor it at 3
+    // (`pseudonymised-natural-person`); any claim below that contradicts the
+    // bytes. Tier 1 is refused whatever the text says — two unconditional
+    // floor-2 reasons mean `assessTier` cannot emit it at all.
+    const optimistic: readonly {
+      readonly assessment: CoverageReportLike;
+      readonly outcome: "refused" | "requires-human-approval";
+      readonly code?: string;
+    }[] = [
+      { assessment: { ...REPORT, payloadTier: 2 }, outcome: "refused", code: "text-tier-contradicted-by-payload" },
+      {
+        assessment: { ...REPORT, payloadTier: 1, reduced: true },
+        outcome: "refused",
+        code: "text-tier-below-producer-floor",
+      },
+      // Honest tier, dishonest coverage: still builds, still stops for a
+      // human. The tier check is not a substitute for the rest of the file.
+      { assessment: { ...REPORT, coverage: { ...REPORT.coverage, unchecked: [] } }, outcome: "requires-human-approval" },
+      {
+        assessment: { ...REPORT, payloadTier: 2, coverage: { ...REPORT.coverage, unchecked: [] }, statement: "clean" },
+        outcome: "refused",
+        code: "text-tier-contradicted-by-payload",
+      },
     ];
-    for (const assessment of optimistic) {
-      const result = buildEnvelope({ task: "studio.workflow.summarise", text: [{ key: "workflow", text: TOKENISED, assessment }] });
-      expect(result.ok).toBe(true);
-      if (!result.ok) continue;
-      expect(result.disposition, `${JSON.stringify(assessment)} produced a sendable envelope`).toBe(
-        "requires-human-approval",
-      );
-      expect(result.approvalReasons).toContain(APPROVAL_REASON_CODES.boundedText);
+    for (const { assessment, outcome, code } of optimistic) {
+      const label = JSON.stringify(assessment);
+      const result = buildEnvelope({
+        task: "studio.workflow.summarise",
+        text: [{ key: "workflow", text: TOKENISED, assessment }],
+      });
+      // ⭐ THE INVARIANT THE CASE IS NAMED FOR, asserted before the
+      // case-by-case detail and independently of it: whatever else happens,
+      // nothing here is sendable.
+      expect(result.ok && result.disposition === "ready", `${label} produced a sendable envelope`).toBe(false);
+      if (outcome === "refused") {
+        expect(result.ok, `${label} should be refused, not downgraded`).toBe(false);
+        if (result.ok) continue;
+        expect(result.failures.map((f) => f.code)).toContain(code);
+      } else {
+        expect(result.ok, `${label} should build`).toBe(true);
+        if (!result.ok) continue;
+        expect(result.disposition).toBe("requires-human-approval");
+        expect(result.approvalReasons).toContain(APPROVAL_REASON_CODES.boundedText);
+      }
     }
   });
 

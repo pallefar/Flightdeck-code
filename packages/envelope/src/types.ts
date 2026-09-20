@@ -303,6 +303,16 @@ export type RefusalCode =
   | "text-key-is-not-a-text-key"
   | "text-missing-coverage-report"
   | "text-coverage-report-malformed"
+  /** A coverage report claimed a `payloadTier` the producer cannot emit.
+   * `assessTier` pushes two unconditional floor-2 reasons before it reads
+   * anything, so tier 1 is not one of its outputs — a report carrying it was
+   * written by the caller, not produced. */
+  | "text-tier-below-producer-floor"
+  /** The claimed `payloadTier` contradicts the bytes it describes: the text
+   * carries a personal pseudonym tag, which the producer floors at 3, and the
+   * report claims less. The text is NOT echoed — the contradiction is named
+   * by code, like every other refusal here. */
+  | "text-tier-contradicted-by-payload"
   | "text-payload-tier-restricted"
   | "text-over-max-chars"
   /** The whole text entry — bounded text PLUS bounded provenance — is over

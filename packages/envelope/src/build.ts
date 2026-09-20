@@ -104,6 +104,7 @@
  * control may refuse and may never certify.
  */
 
+import { admitTierClaim } from "./tier-claim";
 import {
   AI_TASKS,
   COUNT_LADDER,
@@ -265,7 +266,7 @@ function isAuthorship(value: unknown): value is TextAuthorship {
   return (TEXT_AUTHORSHIPS as readonly string[]).includes(value as string);
 }
 
-function admitCoverageReport(value: unknown, authorship: TextAuthorship): ReportAdmission {
+function admitCoverageReport(value: unknown, authorship: TextAuthorship, text: string): ReportAdmission {
   const malformed = { ok: false, code: "text-coverage-report-malformed" } as const;
   if (!isPlainObject(value)) return malformed;
   const coverage = own(value, "coverage");
@@ -296,6 +297,17 @@ function admitCoverageReport(value: unknown, authorship: TextAuthorship): Report
   if (checked === null) return { ok: false, code: "text-coverage-detector-not-in-vocabulary" };
   const representations = admitCoverageList(rawRepresentations, COVERAGE_REPRESENTATION_VOCABULARY);
   if (representations === null) return { ok: false, code: "text-representation-not-in-vocabulary" };
+
+  // ── ⭐ THE CLAIM, AGAINST THE BYTES. Every check above admits a STRING
+  // against a compiled-in vocabulary, so a caller cannot invent a class or a
+  // detector. `payloadTier` is a NUMBER, and until this line nothing looked
+  // at it: a caller who copied a real report's coverage and wrote
+  // `payloadTier: 2` over arbitrary text got `ready`, because the four
+  // conditions for `ready` all read a field the caller had authored. See
+  // `tier-claim.ts` for the two producer invariants this checks and why it
+  // errs wide.
+  const claim = admitTierClaim(payloadTier, text);
+  if (!claim.ok) return { ok: false, code: claim.code };
 
   return {
     ok: true,
@@ -625,7 +637,7 @@ export function buildEnvelope(input: unknown, opts: BuildOptions = {}): BuildRes
         const authorship: TextAuthorship = isAuthorship(rawAuthorship)
           ? rawAuthorship
           : "third-party-content";
-        const admitted = admitCoverageReport(rawReport, authorship);
+        const admitted = admitCoverageReport(rawReport, authorship, text);
         if (!admitted.ok) {
           failures.push({ code: admitted.code, at: `text.${key}` });
           continue;
