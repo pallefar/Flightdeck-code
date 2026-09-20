@@ -25,10 +25,41 @@
  * UNIQUE tags, kept host-side in a vault that is never transmitted, and
  * restored into the model's answer.
  *
- *   const { text, vault } = tokenize(source, { names: ["Jane Doe"] });
- *   const verdict = assessTier(text, vault);      // ask BEFORE sending
- *   const answer  = await model(text);            // the vault does not go
- *   const { text: final, report } = detokenize(answer, vault);
+ * ─────────────────────────────────────────────────────────────────────────
+ * ⭐ THE SURFACE IS ONE FUNCTION, AND THAT IS THE SAFETY PROPERTY
+ * ─────────────────────────────────────────────────────────────────────────
+ *   const { text, report } = await withPseudonymisation(
+ *     source,
+ *     { names: ["Jane Doe"] },
+ *     async ({ text, assessment }) => {
+ *       audit(assessment.statement);   // tags, codes and counts only
+ *       return await model(text);      // no vault exists out here
+ *     },
+ *   );
+ *
+ * The vault is created inside that call, is never returned and never passed
+ * to `send`, and is destroyed in a `finally` — on the returning path, on the
+ * refusing path, and on the path where `send` throws.
+ *
+ * ⚠ IT USED TO BE FOUR FUNCTIONS, AND THAT WAS THE BUG. `tokenize`,
+ * `detokenize`, `Vault` and `vaultClasses` were all exported. Holding a Vault
+ * and being able to call `detokenize` on it IS the capability to read every
+ * value in it, because a tag is one of seven compiled-in class words plus a
+ * counter and can be written out by hand:
+ *
+ *     for (const cls of vaultClasses(vault))
+ *       for (let i = 1; i <= vault.size; i++)
+ *         out.push(detokenize(`<${cls}:${i}>`, vault).text);   // the vault
+ *
+ * The previous fix made `detokenize` refuse an input that restores two or
+ * more entries while carrying nothing of the model's own. That inspects THE
+ * SHAPE OF ONE CALL, so it refuses the one-line spelling and is silent about
+ * the loop, which asks for one tag at a time. A check on the shape of a call
+ * is one `for` loop away from being irrelevant — the same lesson
+ * `packages/approvals` records as "a validating `if` is one edit away from
+ * being forgotten". So the capability is no longer handed out. The refusal
+ * stays as a second line of defence (`VaultDumpError`), but it is no longer
+ * what the claim rests on.
  *
  * ─────────────────────────────────────────────────────────────────────────
  * THE THREE THINGS TO UNDERSTAND BEFORE USING IT
@@ -37,57 +68,51 @@
  *    can be re-attributed using additional information is still personal
  *    data. The vault IS that additional information. The transmitted payload
  *    gets a real, useful tier reduction — the model never sees the values —
- *    and the vault is category 4 forever. `assessTier` says both, every time.
+ *    and the vault is category 4 for the few milliseconds it exists.
  *
- * 2. THE TIER REDUCTION IS EARNED PER PAYLOAD, NOT GRANTED BY THE TOOL.
- *    `assessTier` refuses to reduce when quasi-identifiers remain and refuses
- *    to reduce at all when Art. 9 prose remains. 4 → 1 is never claimed. If
- *    you want a function that always returns "safe", this is the wrong
- *    package and there should not be a right one.
+ * 2. THE TIER REDUCTION IS EARNED PER PAYLOAD, NOT GRANTED BY THE TOOL, and
+ *    it is now ENFORCED rather than advised. `assessTier` runs inside
+ *    `withPseudonymisation`, before `send`, and a payload above
+ *    `maxPayloadTier` (default 3) raises `PayloadTierError` with nothing
+ *    transmitted. It refuses to reduce when quasi-identifiers remain, refuses
+ *    to reduce at all when Art. 9 prose remains, and refuses when the caller
+ *    declared no names over name-shaped text. 4 → 1 is never claimed.
  *
- * 3. NOTHING HERE IS TRUSTED TO HAVE WORKED. `tokenize` proves its own output
- *    clean with the HOST'S OWN scanner before returning, and refuses on
- *    residue. `detokenize` treats model output as hostile and restores
- *    strictly by vault lookup.
+ * 3. NOTHING HERE IS TRUSTED TO HAVE WORKED. Tokenization proves its own
+ *    output clean with the HOST'S OWN scanner, over every representation of
+ *    the payload, before anything is sent, and refuses on residue.
+ *    Restoration treats model output as hostile and restores strictly by
+ *    vault lookup.
  *
  * ─────────────────────────────────────────────────────────────────────────
- * WHAT IS DELIBERATELY NOT EXPORTED, AND THE CLAIM THAT DEPENDS ON IT
+ * ⚠ WHAT IS CLAIMED, EXACTLY
  * ─────────────────────────────────────────────────────────────────────────
- * `vaultEntries`, `lookupOrdinal` and `internValue` read or write the values.
- * `detokenize` and `assessTier` need them and import them directly from
- * `./vault`; they are not part of the package's surface.
+ * THE OBVIOUS WAY TO USE THIS PACKAGE IS ALSO THE SAFE ONE — and now for a
+ * structural reason rather than a policed one: there is no expression a
+ * consumer can write whose value is a `Vault`, so there is nothing for a
+ * dumping loop to run against. The only text that ever enters a vault is text
+ * the caller passed to `withPseudonymisation` in the same call, so the most a
+ * hostile `send` can obtain is the caller's own source text, which it
+ * supplied a moment earlier.
  *
- * ⚠ `vaultTags` USED TO BE ON THIS SURFACE AND IS NOT ANY MORE. It returned
- * the vault's whole tag list, and it sat one export below `detokenize`, which
- * trades tags for values. Together they were a two-line reader for every
- * plaintext value in any `Vault` a caller happened to be holding:
- *
- *     detokenize(vaultTags(vault).join(" "), vault).text   // the whole vault
- *
- * The sentence that used to stand here — "the obvious way to use this package
- * is also the safe one" — was therefore false as written, so the SURFACE was
- * changed rather than the sentence. A caller who wants tags for a report
- * already has them: `TokenizeResult.findings` carries one per entry, and
- * those are available only to the caller who supplied the source text in the
- * first place. `vaultClasses` stays: a class name is a compiled-in constant
- * and cannot be traded back for anything.
- *
- * Removing an export is not on its own enough, and pretending otherwise would
- * be the same overclaim again: a tag is a word from a seven-word vocabulary
- * plus a counter, so anyone holding a bare `Vault` can write the list out by
- * hand. `detokenize` therefore refuses an input that is a tag list rather
- * than a reply (`VaultDumpError`), and takes `onTagOnlyOutput: "restore"` from
- * a caller who means it.
- *
- * ⚠ WHAT IS CLAIMED, EXACTLY: the obvious way to use this package is also the
- * safe one, and reading a vault has to be ASKED FOR rather than fallen into.
- * NOT that a vault cannot be read — anything in this process can
- * `import { vaultEntries } from "./vault"`. That is a guard rail, not a
- * boundary; see the header of `vault.ts` for exactly what is and is not
- * claimed.
+ * WHAT IS NOT CLAIMED, stated rather than omitted:
+ *   - THIS IS A SURFACE, NOT A SANDBOX. Anything in this process can
+ *     `import { vaultEntries } from "./vault"`. Module privacy is not a
+ *     capability boundary in a bundled JavaScript process, and this package
+ *     has never pretended otherwise — see the header of `vault.ts`. The
+ *     package's own tests drive `tokenize` and `detokenize` through exactly
+ *     that door. What changed is that a CONSUMER is no longer offered the
+ *     pieces, so assembling a dump now means editing this package rather than
+ *     calling it.
+ *   - `send` SEES THE TOKENIZED PAYLOAD and may keep it. That is what goes to
+ *     the model either way, and `assessTier` has already ruled on it.
+ *   - THE RESTORED TEXT CONTAINS REAL VALUES. That is the feature. Only the
+ *     REPORT is safe to log: every field of it is a tag, a class name from
+ *     the closed vocabulary, a reason code or a count.
  */
 
 export {
+  PayloadTierError,
   PseudonymError,
   ResidualPiiError,
   TagCollisionError,
@@ -98,6 +123,20 @@ export {
   VaultSerializationError,
 } from "./errors";
 
+/** ⭐ THE SURFACE. One function, one round trip, one vault lifetime. */
+export {
+  type PseudonymisationReport,
+  type PseudonymisationResult,
+  type PseudonymisedPayload,
+  type SendPseudonymised,
+  type WithPseudonymisationOptions,
+  withPseudonymisation,
+} from "./with-pseudonymisation";
+
+/** The vocabulary a tag is built from. Compiled-in constants and a pure
+ * string function: a tag minted out here buys nothing, because nothing on
+ * this surface will trade one for a value. Exported so a downstream scanner
+ * can recognise this package's tags rather than guess at them. */
 export {
   MAX_VAULT_ENTRIES,
   PERSONAL_TAG_CLASSES,
@@ -109,33 +148,31 @@ export {
   mintTag,
 } from "./tags";
 
-/** The handle only. The store, and every function that can read it — INCLUDING
- * `vaultTags`, which handed out the whole key ring — stay in `./vault`.
- * `size`, `toString()` and `vaultClasses` are the whole of what a Vault will
- * tell you about itself, and `JSON.stringify` on one throws. */
-export { Vault, vaultClasses } from "./vault";
-
-export { type TokenizeFinding, type TokenizeOptions, type TokenizeResult, tokenize } from "./tokenize";
+/** ⛔ `Vault`, `vaultClasses`, `vaultTags`, `tokenize` and `detokenize` ARE
+ * NOT HERE, and their absence is the fix rather than tidying — see the header.
+ * They stay module-internal: `withPseudonymisation` composes them, and the
+ * package's tests import the modules directly. The TYPES below are the shapes
+ * of what `withPseudonymisation` hands back, none of which can be traded for
+ * a value: a `TokenizeFinding` is a tag, a class and a count. */
+export { type TokenizeFinding, type TokenizeOptions } from "./tokenize";
 
 export {
-  type DetokenizeOptions,
   type DetokenizeReport,
-  type DetokenizeResult,
   type RejectedTag,
   type RestoredTag,
   type TagRejectReason,
-  detokenize,
 } from "./detokenize";
 
+/** The verdict's shapes. `assessTier` itself is no longer exported: it takes
+ * a `Vault`, and there is no longer a way for a consumer to be holding one.
+ * That is deliberate — it ran as advice before and runs as a gate now. */
 export {
-  type AssessTierOptions,
   type Tier,
   type TierAssessment,
   type TierCoverage,
   type TierReason,
   type TierReasonCode,
   PII_CLASSES_NOT_CHECKED,
-  assessTier,
 } from "./tier";
 
 /** THE LIMITS, AS DATA. A caller should not have to read a comment to learn

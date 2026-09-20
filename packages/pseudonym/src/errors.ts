@@ -135,6 +135,43 @@ export class VaultDumpError extends PseudonymError {
   }
 }
 
+/**
+ * `assessTier` — running INSIDE `withPseudonymisation`, before anything is
+ * transmitted — put the payload above the ceiling the caller allowed, so
+ * `send` was never called.
+ *
+ * ⭐ THIS IS THE DIFFERENCE BETWEEN A VERDICT AND A CONTROL. `assessTier`
+ * used to be a function a caller was advised to call while holding the
+ * payload, which made it a comment with a return value: skipping it cost
+ * nothing and looked like nothing. It now sits between tokenization and the
+ * network on the only path this package offers, and this error is what that
+ * path does when the answer is no.
+ *
+ * The default ceiling is 3 — pseudonymised personal data may be sent; a
+ * payload that could not be reduced below category 4 may not. The commonest
+ * way to hit it is declaring no `names` over text containing name-shaped
+ * spans: nothing then checked that class, so `tier.ts` refuses the reduction
+ * outright rather than reporting an all-clear it has no grounds for.
+ *
+ * `reasons` are `TierReasonCode`s — a closed vocabulary. The tiers are
+ * numbers. Neither the payload nor a value goes into the message.
+ */
+export class PayloadTierError extends PseudonymError {
+  constructor(
+    readonly payloadTier: number,
+    readonly maxPayloadTier: number,
+    readonly reasons: readonly string[],
+  ) {
+    super(
+      `refused: the payload assesses as tier ${payloadTier}, above the ${maxPayloadTier} this call ` +
+        `allows, so nothing was sent (${reasons.join(", ") || "no reason above the ceiling"}). ` +
+        `Declare the names you know are in the text, or pass maxPayloadTier: ${payloadTier} to ` +
+        `say in code that you mean to transmit it.`,
+    );
+    this.name = "PayloadTierError";
+  }
+}
+
 /** `detokenize({ onRejected: "throw" })` found a tag it will not restore.
  * `reasons` are codes from a closed vocabulary, never model text. */
 export class TagIntegrityError extends PseudonymError {
