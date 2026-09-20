@@ -111,6 +111,129 @@ describe.each(apps)("$name runs standalone", ({ app }) => {
     for (const tone of CHIP_TONES) expect(theme.contents).toContain(`.chip.${tone}`);
   });
 
+  it("⭐ every CSS VARIABLE the page reads is defined by the stylesheet", () => {
+    // THE TEST THAT WAS MISSING, AND THE ONE THAT MATTERED MOST.
+    //
+    // The class-coverage test above passed while five of the page's nine
+    // colour tokens were undefined: `--muted`, `--te`, `--amber`, `--green`
+    // and `--red`. Every one resolved to its INLINE FALLBACK instead — and
+    // those fallbacks are the host's DARK palette, so #8b96a5 labels sat on a
+    // #f7f8fa page at about 2.9:1. The page's form labels and step numbers
+    // were the least legible text on it.
+    //
+    // A stylesheet can satisfy every SELECTOR the page uses and still not give
+    // it one correct colour. Classes and custom properties are two different
+    // contracts, and only one of them was being checked.
+    const page = host.find((f) => f.kind === "web-module");
+    const theme = harness.find((f) => f.path === "standalone/theme.css");
+    expect(page).toBeDefined();
+    expect(theme).toBeDefined();
+    if (page === undefined || theme === undefined) return;
+
+    const read = new Set<string>();
+    for (const match of page.contents.matchAll(/var\(\s*(--[a-z0-9-]+)/gi)) {
+      const name = match[1] as string;
+      // `--token` is the literal placeholder in the emitter's own prose.
+      if (name !== "--token") read.add(name);
+    }
+    expect(read.size).toBeGreaterThan(4); // else the regex stopped matching
+
+    const declared = new Set<string>();
+    for (const match of theme.contents.matchAll(/^\s*(--[a-z0-9-]+)\s*:/gim)) {
+      declared.add(match[1] as string);
+    }
+
+    const undeclared = [...read].filter((name) => !declared.has(name)).sort();
+    expect(undeclared, "the page reads tokens the standalone theme never defines").toEqual([]);
+  });
+
+  it("the tokens are ALIASED to the harness's own, so dark mode follows them", () => {
+    // Copying the literals would have produced a second palette that silently
+    // stops tracking the first the next time somebody edits one of them.
+    // Aliasing means the `prefers-color-scheme: dark` override of
+    // `--muted-ink` reaches `--muted` with no second declaration.
+    const theme = harness.find((f) => f.path === "standalone/theme.css");
+    expect(theme?.contents).toContain("--muted: var(--muted-ink)");
+    expect(theme?.contents).toContain("--te: var(--accent)");
+  });
+
+  it("⭐ the bare ELEMENTS the page renders are styled, not just its classes", () => {
+    // The page's forms are plain <input>, <select> and <button> with no
+    // className between them and the UA default. Same blind spot as the
+    // tokens: "is every className covered?" cannot ask this question.
+    const page = host.find((f) => f.kind === "web-module");
+    const theme = harness.find((f) => f.path === "standalone/theme.css");
+    if (page === undefined || theme === undefined) return;
+
+    // The INTERACTIVE elements only. A <table> inherits its colours and is
+    // fine unpainted — its real defect is overflow, which has its own test
+    // below. These three are the ones that arrive as OS widgets if nothing
+    // claims them, which is the failure visible in the dark-mode screenshots.
+    const needed: string[] = [];
+    if (/<input\b/.test(page.contents)) needed.push("input");
+    if (/<select\b/.test(page.contents)) needed.push("select");
+    if (/<button\b/.test(page.contents)) needed.push("button");
+    expect(needed.length).toBeGreaterThan(0);
+
+    // ⚠ "IS THE ELEMENT MENTIONED" IS NOT THE QUESTION. The first version of
+    // this loop asked exactly that, and passed with every text-input rule
+    // DELETED — because `input[type="checkbox"]` and `input:focus-visible`
+    // still mention `input`. A UA-default text field on a dark card would have
+    // sailed through the check written to catch it.
+    //
+    // What actually goes wrong is a control keeping the BROWSER's colours, so
+    // the check is: some rule matching this element must set both a background
+    // and a colour. That is the difference between styled and merely named.
+    const rules = theme.contents
+      .replace(/\/\*[\s\S]*?\*\//g, "")
+      .split("}")
+      .map((chunk) => {
+        const at = chunk.indexOf("{");
+        return at === -1 ? null : { selector: chunk.slice(0, at), body: chunk.slice(at + 1) };
+      })
+      .filter((r): r is { selector: string; body: string } => r !== null);
+
+    for (const element of needed) {
+      const selects = new RegExp(`(^|[,\\s>])${element}\\b(?![-\\w])`, "m");
+      const painted = rules.filter(
+        (r) => selects.test(r.selector) && /background\s*:/.test(r.body) && /(^|[;\s])color\s*:/.test(r.body),
+      );
+      expect(
+        painted.length,
+        `<${element}> keeps the browser's own colours — no rule matching it sets both background and color`,
+      ).toBeGreaterThan(0);
+    }
+
+    // And a focus style, because nothing in the page defines one.
+    expect(theme.contents).toContain(":focus-visible");
+  });
+
+  it("long unbreakable strings cannot force a table past its card", () => {
+    // Every app renders a table and one of its columns is an absolute
+    // filesystem path. At 390px all three burst their card and scrolled the
+    // page sideways. `anywhere` is load-bearing: `break-word` does NOT reduce
+    // the intrinsic min-content width, so `width: 100%` keeps losing.
+    const theme = harness.find((f) => f.path === "standalone/theme.css");
+    // ⚠ COMMENTS STRIPPED FIRST. This assertion failed on a correct stylesheet
+    // because the RULE's own comment says "AND NOT `table-layout: fixed`" and
+    // the test was reading the prose. That is the third time this session a
+    // check of mine has matched the explanation instead of the code; the shape
+    // is always the same, and so is the fix.
+    const css = (theme?.contents ?? "").replace(/\/\*[\s\S]*?\*\//g, "");
+    expect(css).toMatch(/overflow-wrap:\s*anywhere/);
+    expect(css).not.toMatch(/table-layout:\s*fixed/);
+    expect(css).toMatch(/@media\s*\(max-width/);
+  });
+
+  it("the standalone bar does not reprint the app's own title", () => {
+    const main = harness.find((f) => f.path === "standalone/main.tsx");
+    expect(main).toBeDefined();
+    if (main === undefined) return;
+    // The page renders its icon and title ~70px below this bar.
+    expect(main.contents).not.toContain("standalone-mark\">${plan.manifestData.icon}");
+    expect(main.contents).toContain("no RBAC, no kill switch, no audit chain");
+  });
+
   it("the guard's enablement gate is still in the standalone tree, not stubbed out", () => {
     const installRow = harness.find((f) => f.path.endsWith("server/subapps/installRow.ts"));
     expect(installRow).toBeDefined();

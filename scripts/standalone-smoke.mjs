@@ -111,13 +111,31 @@ try {
   else if (card.radius === "0px") failures.push(`.card has no border-radius — theme.css is not applied (${JSON.stringify(card)})`);
 
   // 4. Nobody should be able to look at this and think the host's gates ran.
-  if (!text.includes("standalone")) failures.push("the standalone banner is not visible on the page");
+  //
+  // ⚠ THIS ASSERTION USED TO READ `text.includes("standalone")` OVER THE WHOLE
+  // BODY, AND IT NEVER ONCE TESTED THE BANNER. It passed on two of the three
+  // apps because this script's own temp directory is named `standalone-tree`,
+  // so the word appeared in the `dir` column of the DATA TABLE. The third app
+  // loads its table on a click, so pre-click it had no path to accidentally
+  // satisfy the check — and that is the only reason the hole ever surfaced.
+  //
+  // A check that a directory name can satisfy is not checking the page. So:
+  // find the banner ELEMENT, and require the disclaimer it exists to carry.
+  const banner = await page.evaluate(() => {
+    const el = document.querySelector(".standalone-bar");
+    return el === null ? null : el.textContent ?? "";
+  });
+  if (banner === null) {
+    failures.push("no .standalone-bar element — nothing tells the viewer this is not the host");
+  } else if (!/no RBAC/i.test(banner) || !/kill switch/i.test(banner)) {
+    failures.push(`the banner does not carry the disclaimer: ${JSON.stringify(banner.slice(0, 120))}`);
+  }
 
   // 5. A console error is a failure, not a warning.
   if (consoleErrors.length > 0) failures.push(`console errors: ${JSON.stringify(consoleErrors.slice(0, 4))}`);
 
   process.stdout.write(
-    JSON.stringify({ title, chars: text.trim().length, routePrefix: prefix, contractsListed: listed, tickets, loadedByPressing: clicked, card, consoleErrors }, null, 2) + "\n",
+    JSON.stringify({ title, banner, chars: text.trim().length, routePrefix: prefix, contractsListed: listed, tickets, loadedByPressing: clicked, card, consoleErrors }, null, 2) + "\n",
   );
 } finally {
   await browser.close();

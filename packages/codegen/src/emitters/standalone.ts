@@ -827,8 +827,12 @@ createRoot(host).render(
   <StrictMode>
     <div className="standalone-shell">
       <header className="standalone-bar">
-        <span className="standalone-mark">${plan.manifestData.icon} ${plan.label}</span>
-        <span className="standalone-note">standalone — no RBAC, no kill switch, no audit chain</span>
+        {/* ⚠ NOT THE APP'S NAME. The page renders its own icon and title ~70px
+            below this bar, so repeating them here printed the same words twice
+            in one eyeful and made the bar look like a broken breadcrumb. This
+            bar exists to say which MODE you are in, so that is all it says. */}
+        <span className="standalone-mark">Standalone</span>
+        <span className="standalone-note">no RBAC, no kill switch, no audit chain</span>
       </header>
       <main>
         <Page />
@@ -863,7 +867,9 @@ function emitIndexHtml(plan: SubAppPlan): string {
 
 function emitTheme(plan: SubAppPlan): string {
   const chipTones = CHIP_TONES.map(
-    (tone) => `.chip.${tone} { border-color: var(--${tone}-line, currentColor); color: var(--${tone}-ink, inherit); }`,
+    (tone) =>
+      `.chip.${tone} { border-color: var(--${tone}-line); color: var(--${tone}-line); ` +
+      `background: color-mix(in srgb, var(--${tone}-line) 10%, transparent); }`,
   ).join("\n");
   return `/* THE HOST'S CLASS NAMES, SUPPLIED LOCALLY.
  *
@@ -897,6 +903,35 @@ function emitTheme(plan: SubAppPlan): string {
   --green-line: #3f9c63;
   --blue-line: #4a7fc1;
   --orange-line: #d97a29;
+
+  /* ⭐ THE NAMES THE PAGE ACTUALLY READS.
+   *
+   * The emitted page inlines \`var(--muted, #8b96a5)\`, \`var(--te, #ff8200)\`,
+   * \`var(--amber, …)\`, \`var(--green, …)\` and \`var(--red, …)\` — the HOST's
+   * token names. This stylesheet defined \`--muted-ink\`, \`--accent\`,
+   * \`--amber-line\` and so on, which are not those names, so all five
+   * resolved to their INLINE FALLBACKS — and those fallbacks are the host's
+   * DARK palette. #8b96a5 on #f7f8fa is roughly 2.9:1: the form labels and
+   * the step numbers, the two things telling a reader what to type and
+   * where they are, were the least legible text on a light page.
+   *
+   * ⚠ ALIASED, NOT COPIED. Custom properties substitute at computed-value
+   * time, so \`--muted: var(--muted-ink)\` follows \`--muted-ink\` into the
+   * dark block automatically. Copying the literal would have produced a
+   * second palette that silently stops tracking the first.
+   *
+   * Nothing in the class-coverage test could see this: it checks that every
+   * className the page renders has a rule, and every one did. A stylesheet
+   * can satisfy every selector the page uses and still not give it a single
+   * correct colour. */
+  --muted: var(--muted-ink);
+  --te: var(--accent);
+  --amber: var(--amber-line);
+  --green: var(--green-line);
+  --red: var(--red-line);
+  --blue: var(--blue-line);
+  --orange: var(--orange-line);
+
   color-scheme: light dark;
 }
 
@@ -956,15 +991,116 @@ ${chipTones}
 .okbox { background: var(--ok-bg); border: 1px solid var(--ok-line); border-radius: 10px; padding: 10px 12px; }
 .errorbox { background: var(--err-bg); border: 1px solid var(--err-line); border-radius: 10px; padding: 10px 12px; }
 
-button { font: inherit; }
-button.small {
-  font-size: 13px; padding: 4px 11px; border-radius: 8px;
-  border: 1px solid var(--line); background: var(--surface); color: var(--ink); cursor: pointer;
+/* ⭐ THE BARE ELEMENTS, WHICH THE PAGE REACHES WITHOUT A CLASS NAME.
+ *
+ * The page's forms are plain \`<input>\`, \`<select>\` and \`<button>\` — no
+ * className between them and the browser default. Styling only \`button.small\`
+ * meant a step card in dark mode held a #6b6b6b UA button and #3b3b3b UA
+ * fields on a #181d23 surface: two different species of control in one card,
+ * and fields that read as disabled.
+ *
+ * This is the same blind spot as the tokens above. A test that asks "is every
+ * className covered?" cannot ask "is every ELEMENT covered?", and the page
+ * renders plenty of elements that carry no class at all. */
+input[type="text"],
+input[type="number"],
+input[type="search"],
+input[type="email"],
+select,
+textarea {
+  font: inherit;
+  padding: 7px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--ink);
+  max-width: 100%;
 }
-button.small[disabled] { opacity: 0.55; cursor: default; }
+input[type="checkbox"] { accent-color: var(--accent); width: 16px; height: 16px; }
+
+button {
+  font: inherit;
+  /* 40px tall at this font size. The 44px guideline is for the whole target;
+   * the surrounding row supplies the rest, and squaring every button to 44
+   * would make a step card look like a toolbar. */
+  padding: 9px 14px;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--ink);
+  cursor: pointer;
+}
+button:hover:not([disabled]) { border-color: var(--accent); }
+button[disabled] { opacity: 0.55; cursor: default; }
+/* kept after the bare rule so the compact variant still wins */
+button.small { font-size: 13px; padding: 5px 11px; }
+
+/* ⭐ ONE OUTLINE, EVERYWHERE. Nothing in the emitted page defines a focus
+ * style, so without this the only indicator is whatever the UA draws — which
+ * on a dark surface is frequently nothing at all. */
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible,
+button:focus-visible,
+a:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* ⭐ HEADINGS. The page emits h2/h3 with no class; unstyled they arrive at the
+ * UA's 1.5em/1.17em bold and a card title ends up competing with the page
+ * title. */
+h2 { font-size: 19px; margin: 0 0 10px; letter-spacing: -0.01em; }
+h3 { font-size: 15px; margin: 0 0 8px; }
 
 table { border-collapse: collapse; width: 100%; }
-th, td { text-align: left; padding: 6px 10px; border-bottom: 1px solid var(--line); }
+th, td {
+  text-align: left;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--line);
+  /* ⭐ \`anywhere\`, NOT \`break-word\`. Only \`anywhere\` reduces the intrinsic
+   * min-content width, which is what actually stops a long unbreakable string
+   * — an absolute filesystem path, in practice — from forcing the table wider
+   * than its card. With \`break-word\` the table still computes a huge minimum
+   * and \`width: 100%\` loses, which is why at 390px every one of these apps
+   * burst its card and scrolled the page sideways.
+   *
+   * ⚠ AND NOT \`table-layout: fixed\`, which would have fixed the same symptom
+   * by flattening every column to equal width — regressing the desktop
+   * layouts that are currently correct. */
+  overflow-wrap: anywhere;
+}
+th {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted-ink);
+  letter-spacing: 0.02em;
+  /* ⚠ THE HEADER DOES NOT BREAK MID-WORD. Inheriting \`anywhere\` from the
+   * rule above let the browser shrink a header column to one character wide,
+   * so at 390px \`ticket\` rendered as "tic / ke / t" and \`folderName\` as
+   * "folde / rNa / me" — the overflow fix trading one unreadable table for
+   * another. Back to \`normal\` here: a header's min-content is its longest
+   * word, which is what a column should be allowed to demand. The DATA cells
+   * keep \`anywhere\`, because the thing that actually bursts the card is a
+   * 90-character filesystem path in a body row. */
+  overflow-wrap: normal;
+}
+
+/* A last resort for a table that still will not fit: scroll the TABLE, not
+ * the page. A card that can be swiped is recoverable; a document that slides
+ * under the thumb is not. */
+.card { overflow-x: auto; }
+
+.chip { max-width: 100%; overflow-wrap: anywhere; white-space: normal; }
+
+@media (max-width: 560px) {
+  .standalone-shell { padding: 0 12px 48px; }
+  .card { padding: 14px; }
+  .pagehead { gap: 4px 10px; }
+  /* Stack label and field instead of letting a ~185px input sit beside a
+   * label on a 390px screen. */
+  label { display: block; }
+}
 
 /* ${plan.label} — generated ${plan.version}. Regenerating overwrites this file. */
 `;
