@@ -80,3 +80,32 @@ describe("pure.ts — what a mounted sub-app may import", () => {
     expect(node).toContain("node:crypto");
   });
 });
+
+describe("⭐ one definition of a named human, across packages", () => {
+  it("the envelope and the guardrails cannot disagree, because there is one rule", async () => {
+    // ⚠ THE PROMISE THAT WAS FALSE. `build.ts` carried a second copy with the
+    // comment "deliberately not imported … if they ever disagree,
+    // first-party.test.ts fails". They disagreed in BOTH directions —
+    // `service` and `automation` — and nothing failed, because nothing
+    // compared them. This is that comparison, made real.
+    const { isNamedHuman } = await import("../approval-pure");
+    const build = await import("../../../envelope/src/build");
+
+    // The envelope must not have re-grown a local rule.
+    const source = (await import("node:fs")).readFileSync(
+      new URL("../../../envelope/src/build.ts", import.meta.url),
+      "utf8",
+    );
+    expect(source).not.toMatch(/function isNamedActor/);
+    expect(source).toContain('isNamedHuman } from "../../guardrails/src/approval-pure"');
+
+    // And the rule itself still refuses the things it must.
+    for (const notAName of ["", " ", "x", "system", "admin", "service", "svc", "bot", "automation", "agent", "unknown", "anonymous", "the approver"]) {
+      expect(isNamedHuman(notAName), notAName).toBe(false);
+    }
+    for (const isAName of ["Anna Sørensen", "Karsten Haldan", "k.haldan"]) {
+      expect(isNamedHuman(isAName), isAName).toBe(true);
+    }
+    expect(typeof build.buildEnvelope).toBe("function");
+  });
+});

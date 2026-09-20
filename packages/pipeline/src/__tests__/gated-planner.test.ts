@@ -46,17 +46,26 @@ describe("the spine: prompt -> pseudonymise -> envelope -> gate -> provider", ()
     expect(decision.envelope?.disposition).toBe("requires-human-approval");
   });
 
-  it("⭐ and the refusal is the DESIGN, quoted here so a change to it is deliberate", async () => {
-    // build.ts: `const disposition = textFacts > 0 ? "requires-human-approval" : "ready"`.
-    // ANY free text needs a human, whatever its tier — so pseudonymising does
-    // not lower it — and gateModelRequest never calls checkApproval, so no
-    // approval opens it either.
+  it("⭐ names WHICH condition forced the human — a tripwire that can actually trip", async () => {
+    // ⚠ THE FIRST VERSION OF THIS TEST DID NOT TRIP. It asserted the message
+    // matched /requires-human-approval/, which stayed true after the
+    // first-party policy landed, because third-party text still ends in a
+    // person. It was written to go red when the policy changed; the policy
+    // changed underneath it and it stayed green. A tripwire wired to the
+    // outcome rather than to the REASON is a tripwire wired to nothing.
     //
-    // This test exists so that if somebody later makes Studio's prompt flow,
-    // they do it by changing the POLICY on purpose and this goes red, rather
-    // than by adding a quiet bypass in the spine.
-    const llm = gatedPlannerLlm(async () => ({ text: "{}" }), CTX, { digest });
-    await expect(llm(REQUEST)).rejects.toThrow(/requires-human-approval/);
+    // So it now asserts the compiled-in reason code. Drop a condition from
+    // build.ts and its code stops being emitted, and this goes red.
+    let reasons: readonly string[] = [];
+    const llm = gatedPlannerLlm(async () => ({ text: "{}" }), CTX, {
+      digest,
+      onDecision: (d) => {
+        reasons = (d as { envelope?: { approvalReasons?: readonly string[] } }).envelope?.approvalReasons ?? [];
+      },
+    });
+
+    await expect(llm(REQUEST)).rejects.toThrow(ModelRequestRefused);
+    expect(reasons).toContain("text-is-third-party-content");
   });
 
   it("⭐ what reaches the gate is TOKENISED — the person's name never gets that far", async () => {

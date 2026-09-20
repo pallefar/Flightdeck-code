@@ -61,6 +61,14 @@ function utf8Bytes(input: string): Uint8Array {
         i += 1;
       }
     }
+    // ⭐ A LONE SURROGATE BECOMES U+FFFD, because that is what Node and the
+    // WHATWG encoder do, and this function's whole justification is matching
+    // them byte for byte. Without it, "\uD800" hashed to something node:crypto
+    // has never produced — and the differential test COULD NOT SEE IT: its
+    // generator drew from `String.fromCharCode(32 + n % 200)`, which cannot
+    // emit a surrogate. A differential test is only as wide as its inputs, and
+    // mine was narrower than the domain it claimed to cover.
+    if (code >= 0xd800 && code <= 0xdfff) code = 0xfffd;
     if (code < 0x80) out.push(code);
     else if (code < 0x800) out.push(0xc0 | (code >> 6), 0x80 | (code & 0x3f));
     else if (code < 0x10000) {

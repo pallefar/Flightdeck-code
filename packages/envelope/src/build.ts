@@ -146,6 +146,7 @@ import {
   type ExpressionFailure,
   type Refusal,
 } from "./types";
+import { isNamedHuman } from "../../guardrails/src/approval-pure";
 
 /** The provider Studio resolves by default. Like the host, provider and model
  * are NOT caller input — "resolved from admin config by the gateway, never
@@ -173,15 +174,18 @@ export interface BuildOptions {
   readonly actor?: string | undefined;
 }
 
-/** Ported from `guardrails/approval-pure.ts`'s `isNamedHuman`, deliberately
- * not imported: this package does not depend on that one, and the rule is
- * three lines. If they ever disagree, `first-party.test.ts` fails. */
-function isNamedActor(actor: string | undefined): boolean {
-  if (typeof actor !== "string") return false;
-  const trimmed = actor.trim();
-  if (trimmed.length < 2) return false;
-  return !["system", "the approver", "unknown", "admin", "service"].includes(trimmed.toLowerCase());
-}
+/** ⭐ THE ONE DEFINITION, IMPORTED. There was a second copy here, "deliberately
+ * not imported", with a comment promising "If they ever disagree,
+ * first-party.test.ts fails."
+ *
+ * They disagreed in BOTH directions — `service` (this said no, guardrails said
+ * yes) and `automation` (this said yes, guardrails said no) — and no test
+ * failed, because no test compared them. The comment described a check that
+ * did not exist, which is the failure mode this repo keeps finding and is no
+ * better for being mine.
+ *
+ * `approval-pure`, not `approval`: the pure half imports only `./hash`, which
+ * imports nothing, so the envelope stays free of node:crypto. */
 
 /** Top-level members an input may have. Anything else is refused: a request
  * with a `notes:` field is a request with a free-text channel in it, which is
@@ -772,7 +776,7 @@ export function buildEnvelope(input: unknown, opts: BuildOptions = {}): BuildRes
     (f) => f.provenance.authorship === "first-party-operator",
   );
   const reducedEnough = textEntries.every((f) => f.provenance.payloadTier <= 2);
-  const namedActor = isNamedActor(opts.actor);
+  const namedActor = isNamedHuman(opts.actor);
 
   if (textFacts > 0) {
     if (!firstPartyOnly) approvalReasons.add(APPROVAL_REASON_CODES.thirdParty);

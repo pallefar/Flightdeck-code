@@ -4,9 +4,14 @@
  * Until this file existed, `packages/spec`, `providers`, `pseudonym`,
  * `envelope` and `guardrails` were reachable from nothing but their own tests —
  * ~812 tests over eight packages with zero production call sites. Each vertebra
- * was adversarially verified; none of them touched another. This is the
- * composition, and writing it is what turns those tests into tests of
- * something that runs.
+ * was adversarially verified; none of them touched another.
+ *
+ * ⚠ THIS IS THE COMPOSITION, AND IT IS NOT YET THE WIRING. No entry point
+ * imports `@pipeline`: there is no composition root, so today this is the
+ * NINTH package reachable only from its own tests. It proves the pieces fit
+ * and it does not prove anything runs in a product. Saying otherwise — as an
+ * earlier draft of this header did — is the same overclaim the audit that
+ * prompted all of this was about.
  *
  * ── THE ORDER, AND WHY IT IS THIS ORDER ─────────────────────────────
  *   1. PSEUDONYMISE FIRST. Personal data is replaced with tags before
@@ -153,11 +158,27 @@ export function gatedPlannerLlm(
       };
 
       const decision = gateModelRequest(modelRequest, { ...ctx, digest: opts.digest });
+      // ⭐ READ THE VERDICT BEFORE PUBLISHING THE OBJECT. `onDecision` is
+      // caller code and `decision` is a live reference: reading
+      // `decision.decision` after the hook meant a hook that set it to "allow"
+      // — by accident or otherwise — reopened the gate. The provider was
+      // reachable on a refusal through a callback documented as an audit hook.
+      const allowed = decision.decision === "allow";
       opts.onDecision?.(decision);
-      if (decision.decision !== "allow") throw new ModelRequestRefused(decision);
+      if (!allowed) throw new ModelRequestRefused(decision);
 
       // Only now, and only with what the envelope admitted.
-      const completion = await inner({ ...request, user: payload.text });
+      // ⭐ CONSTRUCTED, NOT SPREAD. `{ ...request }` forwarded every property
+      // the caller happened to put on the request — `system`, `purpose`,
+      // `attempt` and anything else — straight past the envelope, which had
+      // approved only the text. A gate that inspects one field while the
+      // caller ships the whole object is inspecting a sample.
+      const completion = await inner({
+        system: request.system,
+        user: payload.text,
+        purpose: request.purpose,
+        attempt: request.attempt,
+      });
       return completion.text;
     });
 

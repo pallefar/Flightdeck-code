@@ -40,6 +40,21 @@ export interface ApprovalCheck {
   readonly expectedHash: string;
 }
 
+/**
+ * ⭐ THE UNION OF BOTH LISTS THAT USED TO EXIST.
+ *
+ * `packages/envelope` carried a second copy of this rule with a comment
+ * promising a test would catch any divergence. No test compared them, and they
+ * disagreed in BOTH directions: this list was missing `service`, `bot`,
+ * `robot`, `svc` and `none`; the envelope's was missing `automation`, `agent`,
+ * `studio` and the rest below.
+ *
+ * So the copy is gone and the entries it had that this one lacked are here.
+ * Merging UP rather than picking a side is the only safe direction: a name
+ * either list refused is a name that should not carry an approval, and the
+ * cost of refusing one real person called "Svc" is a clearer error than the
+ * cost of an audit trail that ends at "service".
+ */
 const NON_NAMES = new Set([
   "",
   "system",
@@ -53,6 +68,17 @@ const NON_NAMES = new Set([
   "admin",
   "unknown",
   "n/a",
+  // ── from the envelope's copy, which this list did not have ──
+  "service",
+  "svc",
+  "bot",
+  "robot",
+  "none",
+  "null",
+  "undefined",
+  "anonymous",
+  "someone",
+  "user",
 ]);
 
 export function isNamedHuman(approver: string | undefined): boolean {

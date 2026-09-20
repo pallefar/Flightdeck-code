@@ -46,7 +46,23 @@ describe("sha256Hex is SHA-256", () => {
     }
   });
 
-  it("matches node:crypto on 3000 pseudo-random inputs", () => {
+  it("⭐ matches node:crypto on LONE SURROGATES — the class the first version could not reach", () => {
+    // The original generator drew `String.fromCharCode(32 + n % 200)`, so it
+    // could not emit a surrogate, and the implementation diverged on every one
+    // of them: Node substitutes U+FFFD, the first version encoded raw bytes.
+    // A differential test is only as wide as the inputs it can produce.
+    const lone = ["\uD800", "\uDBFF", "\uDC00", "\uDFFF"];
+    for (const s of lone) {
+      expect(sha256Hex(s), JSON.stringify(s)).toBe(real(s));
+      expect(sha256Hex(`a${s}b`), `a${JSON.stringify(s)}b`).toBe(real(`a${s}b`));
+      // a high surrogate followed by a NON-low one: not a pair, two lone ones
+      expect(sha256Hex(`${s}x`)).toBe(real(`${s}x`));
+    }
+    // And a valid pair must still encode as one 4-byte codepoint, not two FFFD.
+    expect(sha256Hex("\uD834\uDD1E")).toBe(real("\uD834\uDD1E"));
+  });
+
+  it("matches node:crypto on 3000 pseudo-random inputs INCLUDING the surrogate range", () => {
     // Deterministic generator: a failing case is reproducible from the seed.
     let seed = 0x9e3779b9;
     const next = (): number => {
@@ -58,7 +74,12 @@ describe("sha256Hex is SHA-256", () => {
     for (let i = 0; i < 3000; i += 1) {
       const len = next() % 300;
       let s = "";
-      for (let j = 0; j < len; j += 1) s += String.fromCharCode(32 + (next() % 200));
+      for (let j = 0; j < len; j += 1) {
+        // ⭐ THE WHOLE BMP, surrogates included. The first version stopped at
+        // charCode 232 and therefore proved nothing about the range where the
+        // implementation was actually wrong.
+        s += String.fromCharCode(next() % 0x10000);
+      }
       expect(sha256Hex(s), `input #${i} (len ${len})`).toBe(real(s));
     }
   });
