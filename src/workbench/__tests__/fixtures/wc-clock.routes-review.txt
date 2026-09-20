@@ -1,0 +1,110 @@
+/** Works Council Clock — Review routes. GENERATED.
+ *
+ * `requireWcClockEnabled` is the FIRST statement in every handler below, and
+ * its refusal is mapped to a 403 by the shared `mapError`. The shell's
+ * manifest-derived RBAC rule checks ROLES ONLY and never enable-state, so a
+ * handler missing that call would answer with the kill switch off.
+ *
+ * ⛔ This file contains no template literal, by construction. Nothing a request
+ * or a spec carries can be interpolated into a SQL string; every value reaches
+ * the database through a `?` placeholder.
+ * Contracts, proposals and the audit log are reached ONLY through
+ * `ctx.capabilitiesFor(...)` — never a filesystem or reader-module import of
+ * this file's own.
+ */
+import { z } from "zod";
+import type { FastifyInstance, FastifyReply } from "fastify";
+import type { RegisterRoutesCtx } from "../../types.js";
+import type { WorkspaceRuntime } from "../../../workspace/types.js";
+import { CapabilityDeniedError } from "../../capabilities.js";
+import { WcClockDisabledError, requireWcClockEnabled } from "../guard.js";
+
+/** Forced by codegen, never taken from the spec: a ticket becomes part
+ * of a proposal FILENAME, so a slash or a dot-dot must not reach the
+ * adapter's containment check in the first place. */
+const TICKET_RE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
+
+const postFlagBody = z
+  .object({
+    ticket: z.string().regex(TICKET_RE, "must be 1-64 characters of A-Z a-z 0-9 . _ -"),
+    note: z.string().min(1).max(500).optional(),
+  })
+  .strict();
+
+/** One refusal map for the whole file, so no handler invents its own
+ * status for a refusal the rest already answer consistently. An error
+ * this does not recognise is RETHROWN, not swallowed into a 500 body
+ * that hides it from the host's error handler. */
+function mapError(reply: FastifyReply, err: unknown) {
+  if (err instanceof WcClockDisabledError) {
+    return reply.code(403).send({ error: err.message, code: "subapp_disabled" });
+  }
+  if (err instanceof CapabilityDeniedError) {
+    return reply.code(403).send({ error: err.message, code: "capability_denied", scope: err.scope ?? null });
+  }
+  throw err;
+}
+
+export function registerWcClockReviewRoutes(app: FastifyInstance, ctx: RegisterRoutesCtx): void {
+  // Contract folders this app may read
+  app.get("/api/apps/wc-clock/contracts", async (req, reply) => {
+    let rt: WorkspaceRuntime;
+    try {
+      rt = await requireWcClockEnabled(req);
+    } catch (err) {
+      return mapError(reply, err);
+    }
+    const caps = await ctx.capabilitiesFor(rt.id);
+    try {
+      return { rows: caps.readContracts() };
+    } catch (err) {
+      return mapError(reply, err);
+    }
+  });
+
+  // Ask a reviewer to look at a folder
+  app.post("/api/apps/wc-clock/flag", async (req, reply) => {
+    let rt: WorkspaceRuntime;
+    try {
+      rt = await requireWcClockEnabled(req);
+    } catch (err) {
+      return mapError(reply, err);
+    }
+    const parsed = postFlagBody.safeParse(req.body);
+    if (!parsed.success) return reply.code(400).send({ error: "invalid body", issues: parsed.error.issues });
+    const ticket = parsed.data.ticket;
+    const caps = await ctx.capabilitiesFor(rt.id);
+    try {
+      const folder = caps.readContracts().find((row) => row.ticket === ticket);
+      if (!folder) return reply.code(404).send({ error: "no contract folder by that name in this workspace", code: "unknown_ticket" });
+      const prefix = "wc-clock-flag-" + ticket + "-";
+      const already = caps
+        .listOwnInboxProposals()
+        .find((f) => f.startsWith(prefix) && /^[0-9]+\.json$/.test(f.slice(prefix.length)));
+      if (already) {
+        return { proposalPath: "memory/proposals/" + already, alreadyFiled: true, proposedBy: null };
+      }
+      // WHO asked — resolved server-side from the session principal, never
+      // from the body. Null only with auth off; never a literal stand-in.
+      const proposedBy = req.principal
+        ? { username: req.principal.username, displayName: req.principal.displayName }
+        : null;
+      const proposalPath = caps.writeInboxProposal(prefix + Date.now() + ".json", {
+        kind: "wc-clock-flag",
+        ...parsed.data,
+        proposedBy,
+        proposedAt: new Date().toISOString(),
+      });
+      caps.auditAppend({
+        event: "wc-clock.flag-proposed",
+        proposalPath,
+        ticket,
+        proposedBy: proposedBy?.username ?? null,
+        fields: Object.keys(parsed.data).sort(),
+      });
+      return { proposalPath, alreadyFiled: false, proposedBy };
+    } catch (err) {
+      return mapError(reply, err);
+    }
+  });
+}

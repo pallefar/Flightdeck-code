@@ -286,8 +286,23 @@ export class WorkbenchStore {
     });
   }
 
+  /** `#commit` compares by identity, and a spread always allocates — so a
+   * patch that sets a layer to the value it already had would notify every
+   * subscriber and hand `useSyncExternalStore` a new snapshot for nothing.
+   * These are the toggles a person flicks back and forth while reading a
+   * preview, so it is the one place that would happen constantly. Compare
+   * the fields, and only then allocate. */
   setEnable(patch: Partial<EnableLayers>): void {
-    this.#commit({ enable: { ...this.#state.enable, ...patch } });
+    const current = this.#state.enable;
+    const next = { ...current, ...patch };
+    if (
+      next.killSwitch === current.killSwitch &&
+      next.ceiling === current.ceiling &&
+      next.project === current.project
+    ) {
+      return;
+    }
+    this.#commit({ enable: next });
   }
 
   setSeverityFilter(severityFilter: SeverityFilter): void {

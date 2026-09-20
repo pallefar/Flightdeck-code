@@ -70,6 +70,7 @@ const CATALOG = {
   "FD-S001": { severity: "error", title: "DDL stays under the sub-app table prefix", contract: "§3" },
   "FD-S002": { severity: "error", title: "queries stay under the sub-app table prefix", contract: "§3" },
   "FD-S003": { severity: "error", title: "index names stay under the sub-app prefix", contract: "§3" },
+  "FD-S004": { severity: "error", title: "no table name the gate cannot read", contract: "§3" },
 
   // ── Would it actually mount? ────────────────────────────────────────
   "FD-X001": { severity: "warning", title: "the registry edit ships with the app", contract: "§7" },
@@ -77,6 +78,11 @@ const CATALOG = {
   "FD-X003": { severity: "error", title: "the web module default-exports a Page", contract: "§3" },
   "FD-X004": { severity: "error", title: "declared tables are wired into initSchema", contract: "§2" },
   "FD-X005": { severity: "warning", title: "shipped i18n is wired into the host", contract: "§7, §8" },
+
+  // ── The gate's own honesty. ─────────────────────────────────────────
+  // A check that crashes has not passed the app. It fails closed, under
+  // its own rule id, so "the gate said yes" never means "the gate threw".
+  "FD-Z001": { severity: "error", title: "every check completed", contract: "—" },
 } as const satisfies Record<string, RuleSpec>;
 
 export type RuleId = keyof typeof CATALOG;

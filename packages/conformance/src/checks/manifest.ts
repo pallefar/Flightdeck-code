@@ -40,9 +40,12 @@ export const manifestCheck: Check = {
   run({ app, hostVersion }) {
     const out: Finding[] = [];
     const file = app.manifestPath;
-    const scan = app.fileAt(file)?.scan ?? null;
-    const at = (offset: number) => (scan === null ? NO_POSITION : scan.positionAt(offset));
-    const evidence = (offset: number) => scan?.lineTextAt(offset);
+    const scan = app.fileAt(file)?.scan;
+    if (scan === undefined) {
+      return [finding("FD-M001", CANDIDATE_SCOPE, NO_POSITION, `${file} could not be read back out of the candidate`)];
+    }
+    const at = (offset: number) => scan.positionAt(offset);
+    const evidence = (offset: number) => scan.lineTextAt(offset);
 
     if (!app.manifestRead.ok) {
       return [
@@ -157,9 +160,6 @@ export const manifestCheck: Check = {
       );
     }
 
-    if (out.length === 0 && scan === null) {
-      out.push(finding("FD-M001", CANDIDATE_SCOPE, NO_POSITION, "the manifest file could not be read"));
-    }
     return out;
   },
 };

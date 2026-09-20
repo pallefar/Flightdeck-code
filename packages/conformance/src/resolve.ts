@@ -156,6 +156,16 @@ export function classifyImport(fromPath: string, ref: ImportRef, scope: ResolveS
     : joinPath(dirname(normalizePath(fromPath)), specifier);
   if (resolved === null) return { kind: "unresolvable", raw: specifier };
 
+  // The tier line is checked BEFORE ownership, because a server file
+  // reaching this same sub-app's web module is still a server file
+  // importing browser code — the two halves are built separately and meet
+  // only over HTTP at the route prefix.
+  const fromTier = tierOf(normalizePath(fromPath));
+  const toTier = tierOf(resolved);
+  if (fromTier !== "other" && toTier !== "other" && fromTier !== toTier) {
+    return { kind: "cross-tier", path: resolved };
+  }
+
   const ownDirs = [`${SERVER_SUBAPPS_ROOT}/${scope.id}/`, `${WEB_SUBAPPS_ROOT}/${scope.webModuleId}/`];
   if (ownDirs.some((dir) => resolved.startsWith(dir))) {
     const hit = resolveCandidateFile(resolved, scope.files);
@@ -170,12 +180,6 @@ export function classifyImport(fromPath: string, ref: ImportRef, scope: ResolveS
   const sibling = subAppIdOf(resolved);
   if (sibling !== null && sibling !== scope.id && sibling !== scope.webModuleId) {
     return { kind: "sibling", path: resolved, siblingId: sibling };
-  }
-
-  const fromTier = tierOf(normalizePath(fromPath));
-  const toTier = tierOf(resolved);
-  if (fromTier !== "other" && toTier !== "other" && fromTier !== toTier) {
-    return { kind: "cross-tier", path: resolved };
   }
 
   return { kind: "host-other", path: resolved };

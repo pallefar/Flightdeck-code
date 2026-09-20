@@ -103,12 +103,14 @@ export const importClosureCheck: Check = {
 
     for (const file of app.files) {
       if (file.reachable || file.role === "test" || file.role === "patch") continue;
+      const at = file.scan.firstMeaningfulOffset();
       out.push(
         finding(
           "FD-I005",
           file.path,
-          { line: 1, column: 1 },
+          file.scan.positionAt(at),
           `nothing in this sub-app imports ${file.path} — it would be written into the host repo and never loaded, since the host reaches a sub-app only through ${app.roots.join(" and ")}`,
+          file.scan.lineTextAt(at),
         ),
       );
     }

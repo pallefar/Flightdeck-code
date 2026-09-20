@@ -43,6 +43,11 @@ export interface HandlerScan {
 }
 
 const METHOD_CALL = /\b([A-Za-z_$][\w$]*)\s*\.\s*(get|post|put|patch|delete|options|head|all)\s*\(/g;
+
+/** What a Fastify instance is called in a sub-app's route file. Used only
+ * to recognise a registration whose path is not a literal; a registration
+ * WITH a path literal is recognised whatever the receiver is called. */
+const FASTIFY_RECEIVERS = new Set(["app", "fastify", "server", "instance", "router"]);
 const ROUTE_OBJECT_CALL = /\b([A-Za-z_$][\w$]*)\s*\.\s*route\s*\(/g;
 
 export function extractRouteHandlers(scan: ScannedFile): HandlerScan {
@@ -62,24 +67,35 @@ export function extractRouteHandlers(scan: ScannedFile): HandlerScan {
 
   for (const match of skeleton.matchAll(METHOD_CALL)) {
     const start = match.index ?? 0;
+    const method = (match[2] ?? "").toUpperCase();
     const openParen = start + (match[0] ?? "").length - 1;
     const closeParen = matchParen(skeleton, openParen);
     if (closeParen === -1) continue;
 
-    // A route registration's first argument is a path literal. Anything
-    // else with a `.get(` in it — a Map, a headers bag — is not a route.
-    const first = scan.strings.find((s) => s.offset > openParen && s.offset < closeParen);
-    if (first === undefined || !first.value.startsWith("/")) continue;
-
+    const first = scan.strings.find((literal) => literal.offset > openParen && literal.offset < closeParen);
     const bodyStart = findHandlerBody(scan, openParen, closeParen);
+
+    // Is this a route registration at all? Two independent tells, because
+    // relying on either one alone loses handlers. A path literal is the
+    // usual one — but `app.get(PREFIX + "entries", handler)` has no
+    // literal starting with `/`, and skipping it would let a handler
+    // escape the guard-first rule entirely by concatenating its path. So
+    // a Fastify-shaped receiver with an inline handler counts too, and a
+    // `.get(` on a Map (`store.get("k")`) counts as neither.
+    const pathLiteral = first !== undefined && first.value.startsWith("/");
+    const fastifyShaped = FASTIFY_RECEIVERS.has(match[1] ?? "");
+    if (!pathLiteral && !(fastifyShaped && (bodyStart !== null || closeParen > openParen + 1))) continue;
+
+    const label = pathLiteral ? (first?.value ?? "") : "(computed path)";
+
     if (bodyStart === null) {
       unverifiable.push({
         offset: start,
         reason:
           "registers `" +
-          (match[2] ?? "").toUpperCase() +
+          method +
           " " +
-          first.value +
+          label +
           "` with no inline handler function — the gate cannot follow a handler passed by reference, and an unreadable handler is an unproven one",
       });
       continue;
@@ -92,8 +108,8 @@ export function extractRouteHandlers(scan: ScannedFile): HandlerScan {
     }
 
     handlers.push({
-      method: (match[2] ?? "").toUpperCase(),
-      routePath: first.value,
+      method,
+      routePath: label,
       registrationOffset: start,
       bodyStart,
       bodyEnd,
@@ -121,10 +137,7 @@ function findHandlerBody(scan: ScannedFile, openParen: number, closeParen: numbe
   }
   if (candidates.length === 0) return null;
 
-  let best = candidates[0] as number;
-  for (const candidate of candidates) {
-    if (scan.functionDepthAt(candidate) < scan.functionDepthAt(best)) best = candidate;
-    else if (scan.functionDepthAt(candidate) === scan.functionDepthAt(best)) best = candidate;
-  }
-  return best;
+  const shallowest = Math.min(...candidates.map((brace) => scan.functionDepthAt(brace)));
+  const atThatDepth = candidates.filter((brace) => scan.functionDepthAt(brace) === shallowest);
+  return atThatDepth[atThatDepth.length - 1] ?? null;
 }

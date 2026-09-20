@@ -1,0 +1,15 @@
+/** Works Council Clock route aggregator — GENERATED. Calls each per-domain
+ * registrar.
+ *
+ * One import and one call per domain. `manifest.ts` names this file and
+ * nothing else, so a new domain never touches the manifest.
+ */
+import type { FastifyInstance } from "fastify";
+import type { RegisterRoutesCtx } from "../../types.js";
+import { registerWcClockClocksRoutes } from "./clocks.js";
+import { registerWcClockReviewRoutes } from "./review.js";
+
+export function registerWcClockRoutes(app: FastifyInstance, ctx: RegisterRoutesCtx): void {
+  registerWcClockClocksRoutes(app, ctx);
+  registerWcClockReviewRoutes(app, ctx);
+}

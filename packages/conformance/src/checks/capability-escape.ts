@@ -122,7 +122,9 @@ export const capabilityEscapeCheck: Check = {
               "FD-C003",
               file.path,
               at,
-              `imports the host module ${target.path}, which is not one of the leaf modules a sub-app may reach — contracts, proposals and the audit log are reached through ctx.capabilitiesFor(id) and nothing else, because that call is what the declared capabilities gate`,
+              /\.css$/.test(target.path)
+                ? `imports the host stylesheet ${target.path} — sub-apps ship no CSS of their own and add no import to one: every sub-app's styles live in a banner-delimited region of the shared web/src/theme.css, which is a host edit, not a file this app owns`
+                : `imports the host module ${target.path}, which is not one of the leaf modules a sub-app may reach — contracts, proposals and the audit log are reached through ctx.capabilitiesFor(id) and nothing else, because that call is what the declared capabilities gate`,
               evidence,
             ),
           );

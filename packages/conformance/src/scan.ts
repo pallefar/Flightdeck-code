@@ -76,6 +76,10 @@ export interface ScannedFile {
   positionAt(offset: number): Position;
   /** The raw source line containing `offset`, trimmed — finding evidence. */
   lineTextAt(offset: number): string;
+  /** The offset of the first line with something on it. Where a finding
+   * about the FILE — that it exists at all, that it lacks an export —
+   * anchors, so even those quote something a reader can search for. */
+  firstMeaningfulOffset(): number;
   /** How many function bodies enclose this offset. `0` is module scope:
    * code that runs once, at import time, which is what "never cache a
    * boolean" is about. */
@@ -117,6 +121,14 @@ export function scanFile(path: string, text: string): ScannedFile {
     functionDepthAt(offset: number): number {
       const clamped = Math.max(0, Math.min(offset, fnDepths.length - 1));
       return fnDepths[clamped] ?? 0;
+    },
+    firstMeaningfulOffset(): number {
+      for (const start of lineStarts) {
+        const end = text.indexOf("\n", start);
+        const line = text.slice(start, end === -1 ? text.length : end);
+        if (line.trim().length > 0) return start;
+      }
+      return 0;
     },
   };
 }

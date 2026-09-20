@@ -1,0 +1,110 @@
+/** Works Council Clock — Consultation clocks routes. GENERATED.
+ *
+ * `requireWcClockEnabled` is the FIRST statement in every handler below, and
+ * its refusal is mapped to a 403 by the shared `mapError`. The shell's
+ * manifest-derived RBAC rule checks ROLES ONLY and never enable-state, so a
+ * handler missing that call would answer with the kill switch off.
+ *
+ * ⛔ This file contains no template literal, by construction. Nothing a request
+ * or a spec carries can be interpolated into a SQL string; every value reaches
+ * the database through a `?` placeholder.
+ * Nothing here reaches outside this sub-app's own tables; the capability
+ * adapter is used for audit only, which the host leaves ungated.
+ */
+import { z } from "zod";
+import type { FastifyInstance, FastifyReply } from "fastify";
+import type { RegisterRoutesCtx } from "../../types.js";
+import type { WorkspaceRuntime } from "../../../workspace/types.js";
+import { WcClockDisabledError, requireWcClockEnabled } from "../guard.js";
+
+const getClocksByClockIdParams = z
+  .object({
+    clockId: z.string().min(1).max(200),
+  })
+  .strict();
+
+const postClocksBody = z
+  .object({
+    ticket: z.string().min(1).max(64),
+    startedAt: z.string().min(1).max(40),
+    state: z.enum(["running", "paused", "expired"]),
+    days: z.number().int(),
+    statutory: z.boolean(),
+    note: z.string().min(1).max(500).optional(),
+  })
+  .strict();
+
+/** One refusal map for the whole file, so no handler invents its own
+ * status for a refusal the rest already answer consistently. An error
+ * this does not recognise is RETHROWN, not swallowed into a 500 body
+ * that hides it from the host's error handler. */
+function mapError(reply: FastifyReply, err: unknown) {
+  if (err instanceof WcClockDisabledError) {
+    return reply.code(403).send({ error: err.message, code: "subapp_disabled" });
+  }
+  throw err;
+}
+
+export function registerWcClockClocksRoutes(app: FastifyInstance, ctx: RegisterRoutesCtx): void {
+  // Clocks running in this workspace
+  app.get("/api/apps/wc-clock/clocks", async (req, reply) => {
+    let rt: WorkspaceRuntime;
+    try {
+      rt = await requireWcClockEnabled(req);
+    } catch (err) {
+      return mapError(reply, err);
+    }
+    const rows = await rt.db
+      .prepare("SELECT id, created_at, created_by, ticket, started_at, state, days, statutory, note FROM subapp_wc_clock_clocks ORDER BY started_at DESC, id DESC LIMIT 100")
+      .all();
+    return { rows };
+  });
+
+  app.get("/api/apps/wc-clock/clocks/:clockId", async (req, reply) => {
+    let rt: WorkspaceRuntime;
+    try {
+      rt = await requireWcClockEnabled(req);
+    } catch (err) {
+      return mapError(reply, err);
+    }
+    const params = getClocksByClockIdParams.safeParse(req.params);
+    if (!params.success) return reply.code(400).send({ error: "invalid path parameters", issues: params.error.issues });
+    const row = await rt.db
+      .prepare("SELECT id, created_at, created_by, ticket, started_at, state, days, statutory, note FROM subapp_wc_clock_clocks WHERE id = ?")
+      .get(params.data.clockId);
+    if (!row) return reply.code(404).send({ error: "no such row", code: "unknown_row" });
+    return row;
+  });
+
+  // Start a consultation clock
+  app.post("/api/apps/wc-clock/clocks", async (req, reply) => {
+    let rt: WorkspaceRuntime;
+    try {
+      rt = await requireWcClockEnabled(req);
+    } catch (err) {
+      return mapError(reply, err);
+    }
+    const parsed = postClocksBody.safeParse(req.body);
+    if (!parsed.success) return reply.code(400).send({ error: "invalid body", issues: parsed.error.issues });
+    const id = globalThis.crypto.randomUUID();
+    const createdAt = new Date().toISOString();
+    const createdBy = req.principal?.username ?? "anonymous";
+    try {
+      await rt.db
+        .prepare("INSERT INTO subapp_wc_clock_clocks (id, created_at, created_by, ticket, started_at, state, days, statutory, note) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)")
+        .run(id, createdAt, createdBy, parsed.data.ticket, parsed.data.startedAt, parsed.data.state, parsed.data.days, parsed.data.statutory ? 1 : 0, parsed.data.note ?? null);
+      // Audit names FIELDS, never their values (contract rule 8): a body
+      // key can be `salary`, so only the key set is recorded.
+      const caps = await ctx.capabilitiesFor(rt.id);
+      caps.auditAppend({
+        event: "wc-clock.clock-started",
+        id,
+        actor: createdBy,
+        fields: Object.keys(parsed.data).sort(),
+      });
+      return reply.code(201).send({ id, createdAt, createdBy });
+    } catch (err) {
+      return mapError(reply, err);
+    }
+  });
+}
