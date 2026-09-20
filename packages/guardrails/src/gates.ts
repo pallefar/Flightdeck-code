@@ -440,7 +440,16 @@ export function gateModelRequest(
   // every decision and is what correlates a request with its approval.
   const subject = MODEL_REQUEST_SUBJECT;
   const names = ctx.declaredNames ?? [];
-  const built = buildEnvelope(request, names.length > 0 ? { names } : {});
+  // ⭐ THE ACTOR REACHES THE ENVELOPE. It did not, and that made the
+  // first-party path unreachable: `buildEnvelope` requires a NAMED human
+  // before it will call an operator's own instruction `ready`, and it was
+  // being handed no actor at all, so every request failed that condition
+  // silently. Found by the end-to-end test, not by any unit test on either
+  // side — each package was correct about its own half of the seam.
+  const built = buildEnvelope(request, {
+    ...(names.length > 0 ? { names } : {}),
+    ...(ctx.actor === undefined ? {} : { actor: ctx.actor }),
+  });
 
   if (!built.ok) {
     // THE DETECTOR, demoted: it annotates this refusal and cannot lift it.

@@ -22,26 +22,19 @@
  *   5. DETOKENISE THE REPLY inside the pseudonymiser's round trip, so the
  *      vault dies in its `finally` whatever the provider did.
  *
- * ── ⚠ WHAT THIS WILL DO TODAY, STATED PLAINLY ───────────────────────
- * IT WILL REFUSE. `build.ts` computes
+ * ── ⚠ WHEN THIS REFUSES, AND WHY THAT IS STILL MOST OF THE TIME ─────
+ * The envelope ends free text in a person unless ALL FOUR of these hold: the
+ * caller declared `first-party-operator`, a NAMED human is acting, the
+ * pseudonymiser actually got the payload below tier 3, and the host's own
+ * scanner re-proved the text clean. Miss any one — including simply not
+ * passing the flag — and the request comes back `requires-human-approval`
+ * with `approvalReasons` naming which condition failed.
  *
- *     const disposition = textFacts > 0 ? "requires-human-approval" : "ready"
- *
- * — ANY free text needs a human, whatever its tier, so pseudonymising does not
- * lower it. And `gateModelRequest` never calls `checkApproval`, so there is no
- * approval that opens it either; `free-text.test.ts` asserts exactly that.
- *
- * That is the design, not a defect in it: an allowlist can prove things about
- * a vocabulary and can prove nothing about a sentence, so the envelope ends
- * that path in a person rather than in an allow.
- *
- * ⛔ SO THIS FILE DOES NOT ADD A BYPASS. A prompt-to-spec builder needs a
- * policy for first-party instructions — text the operator typed HERE, NOW, as
- * against third-party content being forwarded — and that is a decision for
- * whoever owns the policy, not something to settle by weakening the one gate
- * the guardrails exist to provide. The refusal is returned intact, with the
- * envelope a human would approve, so the product can show it and the question
- * is visible instead of buried.
+ * ⛔ THE SPINE ADDS NO BYPASS OF ITS OWN. It passes the caller's declaration
+ * through and obeys the verdict; every refusal is returned whole, envelope
+ * included, so the product can show the person what they would be approving
+ * instead of a dead end. `gated-planner.test.ts` proves the provider is
+ * unreachable when the gate says no, by mutation.
  */
 import {
   withPseudonymisation,
@@ -94,6 +87,18 @@ export interface GatedPlannerOptions {
   /** Which compiled-in fact key the prompt travels as. `FACT_KEY_POLICY` must
    * declare it `kind: "text"` or the envelope refuses it positionally. */
   readonly textKey?: string;
+  /**
+   * ⭐ WHO TYPED THE PROMPT. Default `third-party-content`, the strict path.
+   *
+   * `first-party-operator` says the acting human wrote this sentence here, in
+   * this session — so they ARE the reviewer and need not stamp their own
+   * words. It is not a bypass: the envelope still requires a NAMED actor, a
+   * payload the pseudonymiser actually reduced below tier 3, and a clean
+   * re-scan by the host's own detector. See `first-party.test.ts`, which
+   * removes each of those in turn and shows every one of them alone puts the
+   * request back in front of a person.
+   */
+  readonly authorship?: "first-party-operator" | "third-party-content";
   /** Names the operator KNOWS are in the text. Declaring them is the caller's
    * one obligation; in exchange they are masked from every reported path. */
   readonly names?: readonly string[];
@@ -137,7 +142,14 @@ export function gatedPlannerLlm(
       // against the host's scanner and refuses if it still matches.
       const modelRequest = {
         task: "studio.spec.draft",
-        text: [{ key: textKey, text: payload.text, assessment: payload.assessment }],
+        text: [
+          {
+            key: textKey,
+            text: payload.text,
+            assessment: payload.assessment,
+            authorship: opts.authorship ?? "third-party-content",
+          },
+        ],
       };
 
       const decision = gateModelRequest(modelRequest, { ...ctx, digest: opts.digest });

@@ -47,6 +47,13 @@ export type {
 } from "./gates";
 
 export { canonicalJson, contentHashWith } from "./hash";
+
+/** ⭐ THE DIGEST A ROUTE CAN ACTUALLY USE. A mounted sub-app may not import
+ * node:crypto (FD-C001), SubAppCapabilities exposes none, and Web Crypto is
+ * async while these gates are sync. `sha256.ts` supplies it, differentially
+ * tested against node:crypto over every length to 200, the UTF-8 boundaries
+ * and 3000 random inputs. Content identity only — never a secret operation. */
+export { pureDigest, sha256Hex } from "./sha256";
 export type { Digest } from "./hash";
 
 export { checkApprovalWith } from "./approval-pure";

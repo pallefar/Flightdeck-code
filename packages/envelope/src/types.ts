@@ -72,8 +72,51 @@ export type EnvelopeFact =
  *                   a PARTIAL set of classes. Bounded, reported, and not
  *                   sendable without a human.
  */
+/**
+ * ⭐ WHO WROTE THE WORDS. The one distinction that lets a prompt-to-spec
+ * builder exist without weakening the gate.
+ *
+ * `disposition` used to be `textFacts > 0 ? "requires-human-approval" :
+ * "ready"` — ANY free text needed a human, whatever its tier — and
+ * `gateModelRequest` never calls `checkApproval`, so nothing could open it.
+ * That is right for CONTENT: a contract, a workflow document, a recording
+ * transcript. Nobody in the room authored it, an allowlist can prove nothing
+ * about it, and a person should look before it goes to a model.
+ *
+ * It is ceremony for an INSTRUCTION the operator typed into this app, in this
+ * session, under their own name. Asking them to approve their own sentence
+ * does not add a reviewer; it adds a click and teaches people to click.
+ *
+ * ⚠ SO THE DISTINCTION IS AUTHORSHIP, NOT CONTENT, AND IT IS NARROW. A
+ * first-party instruction is `ready` ONLY when all four hold — see
+ * `build.ts`'s disposition block, where each is checked and named:
+ *   1. the caller declared it first-party
+ *   2. a NAMED human is the actor (`isNamedHuman`, same rule approvals use)
+ *   3. pseudonymisation actually reduced it: payloadTier <= 2
+ *   4. the host's own scanner re-proved the text and found nothing
+ * Fail any one and it is `requires-human-approval` exactly as before.
+ *
+ * ⛔ A CALLER CANNOT LAUNDER CONTENT THROUGH THIS. Pasting a contract into the
+ * prompt box does not make it first-party — it makes it text the operator is
+ * accountable for having pasted, with their name on the audit event, and it
+ * still has to survive (3) and (4). What the flag buys is the removal of a
+ * rubber stamp, not the removal of a check.
+ */
+/** The closed set, as data — so a test can assert over it and `build.ts` can
+ * validate against it rather than against two string literals in two places. */
+export const TEXT_AUTHORSHIPS = ["first-party-operator", "third-party-content"] as const;
+
+export type TextAuthorship =
+  /** Typed by the acting human, here, now. They are the reviewer. */
+  | "first-party-operator"
+  /** Anything else: a document, a transcript, a record, a paste of one. */
+  | "third-party-content";
+
 export interface TextProvenance {
   readonly basis: "pseudonymised";
+  /** See `TextAuthorship`. Absent is treated as third-party — the safe
+   * default is the one that costs nothing if the caller forgot. */
+  readonly authorship: TextAuthorship;
   /** The package that produced the text and the report. A compiled-in
    * literal: it is what this envelope REQUIRES the caller to have used, not
    * something the caller gets to name. */
@@ -251,6 +294,9 @@ export type RefusalCode =
   | "too-many-enum-facts"
   /** More `fieldName` facts in one request than `MAX_FIELD_NAME_FACTS`. */
   | "too-many-field-name-facts"
+  /** A text entry declared an `authorship` that is not one of the two. The
+   * value is NOT echoed — it is caller data like any other. */
+  | "text-authorship-not-in-vocabulary"
   | "text-must-use-the-pseudonymised-channel"
   | "text-channel-not-an-array"
   | "text-entry-malformed"

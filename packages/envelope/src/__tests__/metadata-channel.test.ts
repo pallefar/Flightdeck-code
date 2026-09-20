@@ -39,6 +39,7 @@
 
 import { describe, expect, it } from "vitest";
 import { buildEnvelope } from "../build";
+import { TEXT_AUTHORSHIPS } from "../types";
 import { COUNT_CHANNEL_BITS, SELECTION_CHANNEL_BITS } from "../build";
 import {
   COUNT_LADDER,
@@ -329,9 +330,13 @@ describe("⭐ THE GENERAL FORM: every string on the wire is a compiled-in consta
     for (const name of p.representations) expect(COVERAGE_REPRESENTATION_VOCABULARY).toContain(name);
 
     // The one string on the wire that is NOT compiled in is the bounded text
-    // fact itself — which is the honest hard part this package has always
-    // named, and it is why this envelope can never be `ready`.
+    // fact itself — the honest hard part this package has always named.
+    //
+    // ⚠ THIS FIXTURE IS THIRD-PARTY CONTENT and so still ends in a human. A
+    // first-party operator instruction can now be `ready`; `first-party.test.ts`
+    // covers that path and the four conditions it has to clear.
     expect(result.disposition).toBe("requires-human-approval");
+    expect(result.approvalReasons).toContain("text-is-third-party-content");
     const strings = [...JSON.stringify(p).matchAll(/"([^"]*)"/g)].map((m) => m[1] ?? "");
     const vocabulary = new Set<string>([
       ...COVERAGE_CLASS_VOCABULARY,
@@ -340,6 +345,12 @@ describe("⭐ THE GENERAL FORM: every string on the wire is a compiled-in consta
       ...PROVENANCE_STATEMENT_CODES,
       "pseudonymised",
       "packages/pseudonym",
+      // ⭐ AUTHORSHIP IS TWO COMPILED-IN VALUES, and belongs in this set for
+      // the same reason everything else here does: it is a string on the wire.
+      // A caller writing anything else is refused with
+      // `text-authorship-not-in-vocabulary` and the value is never echoed.
+      ...TEXT_AUTHORSHIPS,
+      "authorship",
       "basis",
       "by",
       "payloadTier",

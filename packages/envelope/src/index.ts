@@ -161,3 +161,8 @@ export type { RedactOptions } from "./host-scan";
 
 export { balancedObject, readHostFactKeyPolicy, readHostRecordOfStringArrays } from "./host-policy";
 export type { HostKeyPolicy } from "./host-policy";
+
+/** The two authorship values a text entry may declare. See `TextAuthorship`
+ * in types.ts for why the distinction is authorship and not content. */
+export { TEXT_AUTHORSHIPS } from "./types";
+export type { TextAuthorship } from "./types";

@@ -137,6 +137,8 @@ import {
   type Assurance,
   type RefusalCode,
   type TextProvenance,
+  TEXT_AUTHORSHIPS,
+  type TextAuthorship,
   type BuildResult,
   type CoverageReportLike,
   type Envelope,
@@ -160,6 +162,25 @@ export interface BuildOptions {
   readonly names?: readonly string[] | undefined;
   readonly provider?: string | undefined;
   readonly model?: string | undefined;
+  /**
+   * ⭐ THE NAMED HUMAN A FIRST-PARTY INSTRUCTION IS ATTRIBUTED TO.
+   *
+   * Only read when a text fact declares `first-party-operator`, and then it is
+   * REQUIRED: "the operator typed it" is only a reason to skip a rubber stamp
+   * if there is an operator to point at. Same rule approvals use for an
+   * approver — "the approver", "system" and "" are not names.
+   */
+  readonly actor?: string | undefined;
+}
+
+/** Ported from `guardrails/approval-pure.ts`'s `isNamedHuman`, deliberately
+ * not imported: this package does not depend on that one, and the rule is
+ * three lines. If they ever disagree, `first-party.test.ts` fails. */
+function isNamedActor(actor: string | undefined): boolean {
+  if (typeof actor !== "string") return false;
+  const trimmed = actor.trim();
+  if (trimmed.length < 2) return false;
+  return !["system", "the approver", "unknown", "admin", "service"].includes(trimmed.toLowerCase());
 }
 
 /** Top-level members an input may have. Anything else is refused: a request
@@ -174,6 +195,11 @@ export const APPROVAL_REASON_CODES = {
   boundedText: "bounded-text-fact-present",
   partialCoverage: "pseudonymiser-coverage-is-partial",
   notReduced: "pseudonymiser-did-not-reduce-the-payload-tier",
+  /** The three conditions that can force a human on a text fact. Each names
+   * WHICH one failed, so a refusal is explainable without quoting the text. */
+  thirdParty: "text-is-third-party-content",
+  notReducedBelowThree: "text-not-reduced-below-tier-3",
+  unnamedOperator: "no-named-operator-for-a-first-party-instruction",
 } as const;
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -230,7 +256,12 @@ type ReportAdmission =
   | { readonly ok: true; readonly provenance: TextProvenance; readonly reduced: boolean }
   | { readonly ok: false; readonly code: RefusalCode };
 
-function admitCoverageReport(value: unknown): ReportAdmission {
+/** Closed union, checked rather than trusted. */
+function isAuthorship(value: unknown): value is TextAuthorship {
+  return (TEXT_AUTHORSHIPS as readonly string[]).includes(value as string);
+}
+
+function admitCoverageReport(value: unknown, authorship: TextAuthorship): ReportAdmission {
   const malformed = { ok: false, code: "text-coverage-report-malformed" } as const;
   if (!isPlainObject(value)) return malformed;
   const coverage = own(value, "coverage");
@@ -268,6 +299,9 @@ function admitCoverageReport(value: unknown): ReportAdmission {
     provenance: {
       basis: "pseudonymised",
       by: "packages/pseudonym",
+      // ⚠ DEFAULTS TO THIRD-PARTY. A caller that forgot the flag gets the
+      // stricter path, which is the direction a default must fail in.
+      authorship,
       payloadTier: payloadTier as 1 | 2 | 3 | 4,
       vaultTier: 4,
       checked,
@@ -570,7 +604,24 @@ export function buildEnvelope(input: unknown, opts: BuildOptions = {}): BuildRes
           });
           continue;
         }
-        const admitted = admitCoverageReport(rawReport);
+        // ⭐ AUTHORSHIP COMES FROM THE ENTRY, NOT THE REPORT. The
+        // pseudonymiser produced the report and has no idea who typed the
+        // words; only the caller knows that, so only the caller can declare
+        // it — and it is validated against the closed union rather than
+        // trusted, because "first-party-operator" is a string a caller writes.
+        const rawAuthorship = own(entry, "authorship");
+        if (rawAuthorship !== undefined && !isAuthorship(rawAuthorship)) {
+          failures.push({
+            code: "text-authorship-not-in-vocabulary",
+            at: `text.${key}`,
+            expected: "first-party-operator | third-party-content",
+          });
+          continue;
+        }
+        const authorship: TextAuthorship = isAuthorship(rawAuthorship)
+          ? rawAuthorship
+          : "third-party-content";
+        const admitted = admitCoverageReport(rawReport, authorship);
         if (!admitted.ok) {
           failures.push({ code: admitted.code, at: `text.${key}` });
           continue;
@@ -696,7 +747,44 @@ export function buildEnvelope(input: unknown, opts: BuildOptions = {}): BuildRes
   const textFacts = countTextFacts(built);
   const allowlisted = [...built.values()].filter((f) => f.kind === "enum" || f.kind === "fieldName").length;
   const counts = [...built.values()].filter((f) => f.kind === "count").length;
-  const disposition = textFacts > 0 ? "requires-human-approval" : "ready";
+
+  /**
+   * ⭐ THE ONE PLACE FREE TEXT CAN BE `ready`, AND ALL FOUR CONDITIONS MUST
+   * HOLD. Read `TextAuthorship` in types.ts for why authorship and not content.
+   *
+   * This was `textFacts > 0 ? "requires-human-approval" : "ready"`. That is
+   * still exactly what happens to every text fact that is not a first-party
+   * instruction, and to every first-party instruction that fails any check
+   * below. What changed is that an operator's own sentence, under their own
+   * name, reduced below tier 3 and re-proved clean by the host's own scanner,
+   * no longer needs them to approve themselves.
+   *
+   * ⚠ THE FAILURE DIRECTION IS DELIBERATE. Every condition is a reason to
+   * DEMAND the human, never to skip one; a missing flag, an unnamed actor or
+   * an unreduced payload all land on the strict path. And `approvalReasons`
+   * records which condition forced it, so a refusal can be explained without
+   * quoting the text.
+   */
+  const textEntries = [...built.values()].filter(
+    (f): f is Extract<EnvelopeFact, { kind: "text" }> => f.kind === "text",
+  );
+  const firstPartyOnly = textEntries.every(
+    (f) => f.provenance.authorship === "first-party-operator",
+  );
+  const reducedEnough = textEntries.every((f) => f.provenance.payloadTier <= 2);
+  const namedActor = isNamedActor(opts.actor);
+
+  if (textFacts > 0) {
+    if (!firstPartyOnly) approvalReasons.add(APPROVAL_REASON_CODES.thirdParty);
+    if (!reducedEnough) approvalReasons.add(APPROVAL_REASON_CODES.notReducedBelowThree);
+    if (!namedActor) approvalReasons.add(APPROVAL_REASON_CODES.unnamedOperator);
+  }
+
+  // The host's own scanner already ran over every admitted text fact above; a
+  // residual match refuses outright and never reaches here, so reaching this
+  // line IS condition four.
+  const textIsReady = textFacts === 0 || (firstPartyOnly && reducedEnough && namedActor);
+  const disposition = textIsReady ? "ready" : "requires-human-approval";
 
   return {
     ok: true,

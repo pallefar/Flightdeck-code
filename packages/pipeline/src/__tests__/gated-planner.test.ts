@@ -108,3 +108,70 @@ describe("the spine: prompt -> pseudonymise -> envelope -> gate -> provider", ()
     expect(provenance == null || typeof provenance.payloadTier === "number").toBe(true);
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────
+
+describe("⭐ the spine end to end: a first-party prompt REACHES the provider", () => {
+  it("allows, calls the provider, and hands back the model's reply detokenised", async () => {
+    // The thing that could not happen before the authorship policy existed,
+    // and the reason Studio can draft a spec at all.
+    const seen: string[] = [];
+    const llm = gatedPlannerLlm(
+      async (r) => { seen.push(r.user); return { text: '{"understanding":"ok","spec":{}}' }; },
+      { actor: "Karsten Haldan" },
+      { digest, authorship: "first-party-operator" },
+    );
+
+    const completion = await llm(REQUEST);
+    expect(seen).toHaveLength(1);
+    expect(completion.text).toBe('{"understanding":"ok","spec":{}}');
+  });
+
+  it("⭐ and the SAME prompt without the flag still never reaches it", async () => {
+    // The control. If this ever passes, the policy is not a policy.
+    const provider = vi.fn(async () => ({ text: "{}" }));
+    const llm = gatedPlannerLlm(provider, { actor: "Karsten Haldan" }, { digest });
+    await expect(llm(REQUEST)).rejects.toThrow(ModelRequestRefused);
+    expect(provider).not.toHaveBeenCalled();
+  });
+
+  it("⭐ and with the flag but an UNNAMED actor it still never reaches it", async () => {
+    const provider = vi.fn(async () => ({ text: "{}" }));
+    const llm = gatedPlannerLlm(provider, { actor: "system" }, {
+      digest,
+      authorship: "first-party-operator",
+    });
+    await expect(llm(REQUEST)).rejects.toThrow(ModelRequestRefused);
+    expect(provider).not.toHaveBeenCalled();
+  });
+
+  it("⭐ a prompt that NAMES A PERSON still needs a human, even first-party", async () => {
+    // Measured, not assumed: tokenising "Anna Sørensen wants …" yields
+    // payloadTier 3, because the TAG still says a person was there. So it
+    // fails condition 4 and goes to a person — which is the behaviour you
+    // want. Being the author of a sentence about somebody else is not the
+    // same as being the author of a sentence about nobody.
+    const provider = vi.fn(async () => ({ text: "{}" }));
+    const llm = gatedPlannerLlm(provider, { actor: "Karsten Haldan" }, {
+      digest,
+      authorship: "first-party-operator",
+      names: ["Anna Sørensen"],
+    });
+
+    await expect(
+      llm({ ...REQUEST, user: "Anna Sørensen wants a consultation clock for TE-4711." }),
+    ).rejects.toThrow(/text-not-reduced-below-tier-3|requires-human-approval/);
+    expect(provider).not.toHaveBeenCalled();
+  });
+
+  it("and when it IS allowed, the provider still sees tokenised text", async () => {
+    let onWire = "";
+    const llm = gatedPlannerLlm(
+      async (r) => { onWire = r.user; return { text: "{}" }; },
+      { actor: "Karsten Haldan" },
+      { digest, authorship: "first-party-operator" },
+    );
+    await llm(REQUEST);
+    expect(onWire).toBe(REQUEST.user); // nothing to tokenise in a clean prompt
+  });
+});
