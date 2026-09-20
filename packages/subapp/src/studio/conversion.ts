@@ -111,7 +111,7 @@ export interface StudioStepSummary {
 
 /** What the review screen renders. Deliberately not the whole `MiniAppSpec`:
  * the spec carries `sourcePrompt`, which is the entire posted markdown, and
- * echoing it back on every preview is bytes nobody reads. */
+ * echoing it back inside every bundle is bytes nobody reads. */
 export interface StudioSpecSummary {
   readonly id: string;
   readonly label: string;
