@@ -6,7 +6,18 @@
  * and fails on a syntactic diagnostic. It cannot type-check (the host's
  * modules are not here), but "is this valid TypeScript" is exactly the
  * question string assertions cannot answer, and it is the first thing that
- * would break a generated sub-app in somebody else's repository. */
+ * would break a generated sub-app in somebody else's repository.
+ *
+ * ⭐ AND EVERY FILE IS CHECKED BY ITS OWN FORMAT, NOT SKIPPED.
+ * The standalone harness added `.json`, `.css`, `.html` and `.md` to the
+ * emitted set, none of which is TypeScript. Excluding them from "does it
+ * parse?" would have been one line and would have left four file types whose
+ * syntax nothing in this repo ever looks at — the same shape as every check
+ * this session has caught not doing its job. So each type gets the strongest
+ * question its format admits: JSON must parse, CSS must balance, the HTML
+ * must actually point at a file that is in the set, and a Markdown fence must
+ * close. `checkerFor` is exhaustive on purpose: a new extension fails LOUDLY
+ * rather than being waved through. */
 import { describe, expect, it } from "vitest";
 import ts from "typescript";
 import { generateSubApp } from "../generate";
@@ -32,15 +43,80 @@ function syntaxErrors(path: string, source: string): string[] {
   return (result.diagnostics ?? []).map((d) => `${path}: ${ts.flattenDiagnosticMessageText(d.messageText, " ")}`);
 }
 
+/** JSON that does not parse is a package.json nobody can install. */
+function jsonErrors(path: string, source: string): string[] {
+  try {
+    JSON.parse(source);
+    return [];
+  } catch (error) {
+    return [`${path}: ${error instanceof Error ? error.message : String(error)}`];
+  }
+}
+
+/** Not a CSS parser — a brace counter, which is what actually breaks a
+ * generated stylesheet, plus a check that it defines something at all. */
+function cssErrors(path: string, source: string): string[] {
+  const out: string[] = [];
+  let depth = 0;
+  for (const ch of source) {
+    if (ch === "{") depth += 1;
+    else if (ch === "}") depth -= 1;
+    if (depth < 0) break;
+  }
+  if (depth !== 0) out.push(`${path}: unbalanced braces (depth ${depth} at end)`);
+  if (!/\{[^}]*:[^}]*}/.test(source)) out.push(`${path}: declares no rule with a property`);
+  return out;
+}
+
+/** The entry point has to have a mount node and a script, and the script has
+ * to name a file that was actually emitted — a dangling src is a blank page. */
+function htmlErrors(path: string, source: string, emitted: readonly string[]): string[] {
+  const out: string[] = [];
+  if (!source.includes('id="root"')) out.push(`${path}: no #root mount node`);
+  const src = /<script[^>]*src="\.\/([^"]+)"/.exec(source);
+  if (src === null) out.push(`${path}: no module script`);
+  else {
+    const dir = path.slice(0, path.lastIndexOf("/") + 1);
+    const target = dir + src[1];
+    if (!emitted.includes(target)) out.push(`${path}: script src "${src[1]}" is not an emitted file (${target})`);
+  }
+  return out;
+}
+
+/** An unclosed fence swallows the rest of a README, which is how a runbook
+ * silently loses its last half. */
+function markdownErrors(path: string, source: string): string[] {
+  const fences = (source.match(/^```/gm) ?? []).length;
+  return fences % 2 === 0 ? [] : [`${path}: ${fences} code fences — one is unclosed`];
+}
+
+function checkerFor(path: string): (p: string, s: string, emitted: readonly string[]) => string[] {
+  if (path.endsWith(".ts") || path.endsWith(".tsx")) return (p, s) => syntaxErrors(p, s);
+  if (path.endsWith(".json")) return (p, s) => jsonErrors(p, s);
+  if (path.endsWith(".css")) return (p, s) => cssErrors(p, s);
+  if (path.endsWith(".html")) return htmlErrors;
+  if (path.endsWith(".md")) return (p, s) => markdownErrors(p, s);
+  // ⛔ NOT A DEFAULT-PASS. An extension nobody thought about is a file whose
+  // syntax nothing checks, and that is a decision, not an oversight.
+  return (p) => [`${p}: no syntax check exists for this extension — add one to checkerFor`];
+}
+
 describe.each(apps)("$name parses", ({ app }) => {
   const sources = app.files.filter((f) => f.kind !== "patch");
+  const emittedPaths = app.files.map((f) => f.path);
 
   it("emits at least a manifest, a guard, a route aggregator, a domain file and a page", () => {
     expect(sources.length).toBeGreaterThanOrEqual(5);
   });
 
+  it("emits the standalone harness alongside the host tree", () => {
+    // Guards the premise of every case below: if the harness stopped being
+    // emitted, the per-format checks would all pass by having nothing to check.
+    expect(sources.filter((f) => f.kind === "standalone").length).toBeGreaterThanOrEqual(10);
+  });
+
   it.each(sources.map((f) => [f.path, f.contents] as const))("%s is syntactically valid", (path, contents) => {
-    expect(syntaxErrors(path, contents)).toEqual([]);
+    expect(checkerFor(path)(path, contents, emittedPaths)).toEqual([]);
   });
 
   it("exports the symbols the manifest and registry patch name", () => {

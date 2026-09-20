@@ -21,7 +21,10 @@ const fileAt = (app: typeof full, path: string) => {
 
 describe("the emitted file set", () => {
   it("emits the ceiling shape: manifest, guard, routes/ split, schema, web module, host test, patch", () => {
-    expect(full.files.map((f) => f.path)).toEqual([
+    // The HOST half. The standalone harness rides along in `files` and is
+    // pinned by `standalone.test.ts`; this list is what a Flightdeck checkout
+    // receives, and it has not changed.
+    expect(full.files.filter((f) => f.kind !== "standalone").map((f) => f.path)).toEqual([
       "server/subapps/registry.ts.patch",
       "server/subapps/wc-clock/guard.ts",
       "server/subapps/wc-clock/manifest.ts",
@@ -231,8 +234,11 @@ describe("the web module", () => {
   });
 
   it("ships no stylesheet and no i18n key — registry.ts stays the only host edit", () => {
-    expect(full.files.some((f) => f.path.endsWith(".css"))).toBe(false);
-    expect(full.files.some((f) => f.path.includes("i18n"))).toBe(false);
+    // Host half. The whole-set claim — that the ONLY stylesheet anywhere is
+    // the standalone one — is pinned in mini-app.test.ts.
+    const hostFiles = full.files.filter((f) => f.kind !== "standalone");
+    expect(hostFiles.some((f) => f.path.endsWith(".css"))).toBe(false);
+    expect(hostFiles.some((f) => f.path.includes("i18n"))).toBe(false);
     expect(web).not.toMatch(/\bt\(\s*"/);
   });
 

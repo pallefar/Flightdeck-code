@@ -26,7 +26,20 @@ export interface GeneratedFile {
   /** Repo-relative path in the HOST repository. */
   path: string;
   contents: string;
-  kind: "manifest" | "guard" | "routes-index" | "routes-domain" | "schema" | "web-module" | "host-test" | "patch";
+  kind:
+    | "manifest"
+    | "guard"
+    | "routes-index"
+    | "routes-domain"
+    | "schema"
+    | "web-module"
+    | "host-test"
+    | "patch"
+    /** The standalone harness. Emitted for every sub-app, applied to a host
+     * checkout NEVER — two of these sit at host paths and would overwrite the
+     * real registry and the real capability types. See `emitters/standalone.ts`
+     * and `planWrites`'s `target`. */
+    | "standalone";
 }
 
 export interface Violation {
@@ -74,6 +87,22 @@ function allowedImports(plan: SubAppPlan, file: GeneratedFile): readonly string[
       ];
     case "patch":
       return null;
+    case "standalone":
+      // ⭐ A DIFFERENT RULE, AND THE REASON IS THE POINT OF THE HARNESS.
+      //
+      // Every other emitted file is confined because it runs INSIDE the host,
+      // where reaching the filesystem or a sibling sub-app is how a mini-app
+      // stops being a mini-app. The standalone harness is the floor UNDER an
+      // app that is no longer inside anything: it is the code that supplies
+      // `node:fs`, Fastify and a React root, so confining it to the sub-app's
+      // allowlist would be confining the host to the rules it exists to
+      // enforce.
+      //
+      // What keeps this honest is not an import list. It is that the SUB-APP's
+      // own files are unchanged in both modes — `__tests__/standalone.test.ts`
+      // hashes them — so nothing here can loosen what the app may do. The
+      // harness may reach the disk; the app still may not.
+      return null;
   }
 }
 
@@ -93,6 +122,21 @@ export function checkEmittedInvariants(files: readonly GeneratedFile[], plan: Su
     // test is a test: it reads source from disk and quotes the very
     // identifiers the runtime rules forbid, which is its job.
     if (file.kind === "host-test") continue;
+    // ⭐ AND THE STANDALONE HARNESS IS NOT SUB-APP CODE EITHER — it is the
+    // floor under an app that is no longer inside a host. `killSwitch.ts` is
+    // the clearest case: the rule says "the kill switch is read per call via
+    // subAppKillSwitchEnabled", and this file IS `subAppKillSwitchEnabled`,
+    // copied verbatim from the host precisely so layer 1 is not approximated.
+    // Checking the implementation against the rule that points at it would
+    // forbid supplying the thing the rule requires.
+    //
+    // ⚠ SKIPPING A CHECK IS THE FAILURE MODE THIS REPO KEEPS FINDING, so the
+    // thing that makes it safe is stated rather than assumed: the harness
+    // cannot loosen what the APP may do, because the app's own files are
+    // byte-identical in both modes and `standalone.test.ts` hashes them. The
+    // harness may reach the disk; the sub-app still may not, and that is still
+    // checked on every one of its files.
+    if (file.kind === "standalone") continue;
     checkNoCachedBooleans(file, codeOf(file), add);
     checkSql(file, codeOf(file), plan, add);
   }

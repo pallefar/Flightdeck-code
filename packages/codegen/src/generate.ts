@@ -35,6 +35,7 @@ import { emitHostTest } from "./emitters/hostTest";
 import { emitManifest } from "./emitters/manifest";
 import { emitDomainRoutes, emitRoutesIndex } from "./emitters/routes";
 import { emitSchema } from "./emitters/schema";
+import { emitStandalone } from "./emitters/standalone";
 import { emitWebModule } from "./emitters/web";
 import { CodegenInvariantError, checkEmittedInvariants, type GeneratedFile } from "./invariants";
 import { serverDir, webDir } from "./naming";
@@ -103,6 +104,15 @@ export function generateSubApp(input: unknown, options: GenerateOptions = {}): G
       files.push({ path: `${REGISTRY_PATH}.patch`, contents: diff, kind: "patch" });
     }
   }
+
+  // ⭐ EVERY SUB-APP IS ALSO A STANDALONE APP, and that is not an option a
+  // caller passes. A mini-app that only runs inside the host is a mini-app
+  // whose portability nobody checks, and "it would probably work on its own"
+  // is the kind of claim this repo has spent the whole session disproving.
+  // So the harness is emitted always; WHERE it may be written is the choice,
+  // and `planWrites`'s `target` makes it (defaulting to the host, which never
+  // receives these).
+  files.push(...emitStandalone(plan));
 
   files.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
 

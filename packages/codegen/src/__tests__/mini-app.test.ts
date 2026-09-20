@@ -45,7 +45,10 @@ describe("the mini-app is the default", () => {
   });
 
   it("emits exactly the floor: manifest, guard, routes/, the web module and its conformance test", () => {
-    expect(app.files.map((f) => f.path)).toEqual([
+    // ⭐ THE HOST HALF. The standalone harness is emitted too and is asserted
+    // separately in `standalone.test.ts`; what this pins is that mounting a
+    // mini-app in Flightdeck OS still lands these eight files and no others.
+    expect(app.files.filter((f) => f.kind !== "standalone").map((f) => f.path)).toEqual([
       "server/subapps/contract-run/guard.ts",
       "server/subapps/contract-run/manifest.ts",
       "server/subapps/contract-run/routes/folders.ts",
@@ -258,8 +261,17 @@ describe("the page a person actually looks at", () => {
   });
 
   it("ships no stylesheet and no i18n key — registry.ts stays the only host edit", () => {
-    expect(app.files.some((f) => f.path.endsWith(".css"))).toBe(false);
-    expect(app.files.some((f) => f.path.includes("i18n"))).toBe(false);
+    // ⭐ SHARPER THAN IT WAS, NOT LOOSER. The harness has a theme.css, so the
+    // old blanket "no .css anywhere" would have had to be deleted or scoped.
+    // Scoped, and then tightened: the HOST half still ships none, and the ONLY
+    // .css in the whole set is the standalone one. A stylesheet appearing in a
+    // host-bound file still fails this, which is what the rule was for.
+    const hostFiles = app.files.filter((f) => f.kind !== "standalone");
+    expect(hostFiles.some((f) => f.path.endsWith(".css"))).toBe(false);
+    expect(hostFiles.some((f) => f.path.includes("i18n"))).toBe(false);
+    expect(app.files.filter((f) => f.path.endsWith(".css")).map((f) => f.path)).toEqual([
+      "standalone/theme.css",
+    ]);
     expect(web).not.toMatch(/\bt\(\s*"/);
   });
 

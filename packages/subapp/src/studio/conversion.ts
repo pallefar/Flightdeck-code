@@ -497,11 +497,32 @@ export function convertWorkflow(input: StudioConversionInput): StudioConversion 
     };
   }
 
-  const files: StudioGeneratedFile[] = generated.files.map((file) => ({
-    path: file.path,
-    contents: file.contents,
-    kind: file.kind,
-  }));
+  /**
+   * ⭐ THE HOST HALF, AND THE HOST'S OWN RULE IS WHY.
+   *
+   * `generateSubApp` also emits the standalone harness — every sub-app runs
+   * outside Flightdeck OS as well as inside it. That harness must NOT be in
+   * this bundle: `admit.ts`'s ADM-020 refuses "a path outside the sub-app's
+   * own directories", and the harness deliberately contains
+   * `server/subapps/registry.ts` and `server/subapps/types.ts`, which are the
+   * host's own files.
+   *
+   * ⛔ THE WRONG FIX WOULD HAVE BEEN A SECOND FILE LIST ON THE BUNDLE that
+   * admission does not check. That is an unchecked region carried inside a
+   * checked one — the exact shape this repo has spent the session closing.
+   * ADM-020 is right, it is working, and it stays untouched.
+   *
+   * The harness reaches a person through the generator instead:
+   * `codegen --standalone <dir>` writes it to a root of its own, and
+   * `scripts/standalone-smoke.sh` proves the result runs.
+   */
+  const files: StudioGeneratedFile[] = generated.files
+    .filter((file) => file.kind !== "standalone")
+    .map((file) => ({
+      path: file.path,
+      contents: file.contents,
+      kind: file.kind,
+    }));
 
   const report = runConformanceGate({ files: files.map((file) => ({ path: file.path, contents: file.contents })) });
   const gate: StudioGateSummary = {

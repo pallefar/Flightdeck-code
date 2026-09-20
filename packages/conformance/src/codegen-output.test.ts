@@ -32,7 +32,20 @@ describe.each(SPECS)("codegen output: %s", (_name, spec) => {
   it("passes the gate with no findings at all", () => {
     let files;
     try {
-      files = generateSubApp(spec, { registrySource: registryFixture }).files;
+      // ⭐ THE HOST HALF, and the filter is the point rather than a nuisance.
+      // Every rule this gate applies is a rule about the HOST repository —
+      // FD-I005 literally reads "it would be written into the host repo and
+      // never loaded". The standalone harness is never written to a host
+      // checkout (`planWrites` defaults to the host target and drops it), so
+      // gating it with host rules would be asking whether a file that never
+      // arrives is loaded once it arrives. The harness has its own checks:
+      // `codegen/__tests__/standalone.test.ts` for its shape and
+      // `scripts/standalone-smoke.sh` for whether it actually runs.
+      const generated = generateSubApp(spec, { registrySource: registryFixture });
+      files = generated.files.filter((file) => file.kind !== "standalone");
+      // Guard the premise: if the harness stopped being emitted this filter
+      // would be a no-op and nobody would notice.
+      expect(generated.files.length).toBeGreaterThan(files.length);
     } catch (error) {
       throw new Error(
         `@codegen could not generate this spec, so the gate never ran — this is a codegen failure, not a conformance one: ${(error as Error).message}`,
@@ -68,7 +81,9 @@ describe.each(SPECS)("codegen output: %s", (_name, spec) => {
  * package's bug and would fail here. */
 describe.each(SPECS)("verifying codegen output: %s", (_name, spec) => {
   it("compiles the real thing and reports only things a person can act on", async () => {
-    const files = generateSubApp(spec, { registrySource: registryFixture }).files.map((file) => ({
+    const files = generateSubApp(spec, { registrySource: registryFixture })
+      .files.filter((file) => file.kind !== "standalone")
+      .map((file) => ({
       path: file.path,
       contents: file.contents,
     }));

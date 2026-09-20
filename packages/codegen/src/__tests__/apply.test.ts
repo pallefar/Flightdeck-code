@@ -357,13 +357,41 @@ describe("the real generator's output", () => {
   it("applies a generated wc-clock and is then idempotent", () => {
     withTempDir((root) => {
       const generated = generateSubApp(wcClockSpec);
+      const hostFiles = generated.files.filter((f) => f.kind !== "standalone");
       const first = applyGeneratedFiles(generated.files, { ...OPTS, root });
       expect(first.outcome).toBe("applied");
-      expect(first.actions).toHaveLength(generated.files.length);
-      for (const emitted of generated.files) {
+      // ⭐ THE HOST TARGET IS THE DEFAULT AND IT DROPS THE HARNESS. Two of
+      // those files sit at host paths and would overwrite the real registry
+      // and the real capability types, so this length is the point of the
+      // filter rather than an accident of it.
+      expect(first.actions).toHaveLength(hostFiles.length);
+      expect(hostFiles.length).toBeLessThan(generated.files.length);
+      for (const emitted of hostFiles) {
         expect(fs.readFileSync(path.join(root, emitted.path), "utf8")).toBe(emitted.contents);
       }
+      // And not one harness file landed.
+      for (const emitted of generated.files.filter((f) => f.kind === "standalone")) {
+        if (hostFiles.some((h) => h.path === emitted.path)) continue;
+        expect(fs.existsSync(path.join(root, emitted.path))).toBe(false);
+      }
       expect(applyGeneratedFiles(generated.files, { ...OPTS, root }).outcome).toBe("no-op");
+    });
+  });
+
+  it("⛔ writes the harness to a root of its own, and refuses to mix the two", () => {
+    withTempDir((root) => {
+      const generated = generateSubApp(wcClockSpec);
+      // "both" has no correct root: the shims would land on top of the host's
+      // own registry and capability types. It is refused BY NAME rather than
+      // skipped, because a silent skip is how half a harness lands.
+      expect(() => applyGeneratedFiles(generated.files, { ...OPTS, root, target: "both" })).toThrow(
+        /standalone harness into a host checkout/,
+      );
+
+      const alone = applyGeneratedFiles(generated.files, { ...OPTS, root, target: "standalone" });
+      expect(alone.outcome).toBe("applied");
+      expect(fs.existsSync(path.join(root, "standalone/server.ts"))).toBe(true);
+      expect(fs.existsSync(path.join(root, "web/src/subapps/registry.ts"))).toBe(true);
     });
   });
 

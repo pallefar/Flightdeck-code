@@ -16,7 +16,8 @@
     "lint": "eslint .",
     "redteam": "tsx scripts/redteam-gate.ts",
     "mount": "bash scripts/mount-in-host.sh",
-    "promote": "bash scripts/promote.sh"
+    "promote": "bash scripts/promote.sh",
+    "standalone": "bash scripts/standalone-smoke.sh"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.127.0",

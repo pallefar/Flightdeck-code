@@ -168,3 +168,31 @@ The fix was a separate `barBrief` + `barScope` carrying none of our constraints,
 the script throwing rather than falling back to the builder's brief.
 
 Any judging harness built here inherits that rule.
+
+---
+
+## Addendum — the standalone half
+
+Every generated sub-app also runs outside Flightdeck OS. Full detail in
+[`STANDALONE.md`](./STANDALONE.md); what belongs in the *contract* document is
+the part that constrains the host:
+
+- **The harness is never written to a host checkout.** Two of its shims sit at
+  host paths (`server/subapps/registry.ts`, `server/subapps/types.ts`).
+  `planWrites` defaults to the host target and drops them; `target: "both"` is
+  refused by name.
+- **The mount is unchanged.** `registry.ts` is still the only host edit codegen
+  asks for, and a Flightdeck checkout still receives exactly the documented
+  file set — the host-half assertions in `generate.test.ts` and
+  `mini-app.test.ts` pin that, and the mount script measures it.
+- **`ADM-020` stays as it is.** The host's admission rule already refuses a
+  bundle carrying the harness, which is correct; the Studio bundle therefore
+  carries the host half only.
+
+The coupling the harness has to supply is the honest inventory of what an
+emitted sub-app reaches for, and it is longer than reading the code suggests:
+`../registry` (web), `../../types.js`, `../../capabilities.js`,
+`../../lib/flightdeckAudit.js`, `../installRow.js`, `../killSwitch.js`,
+`../../project/types.js`, `../../workspace/types.js`, `./registry.js` (server)
+and `../../db.js`. A test derives that list from the emitted imports rather
+than restating it, so this paragraph cannot go stale without failing.

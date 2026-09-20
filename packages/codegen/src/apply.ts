@@ -102,6 +102,11 @@ const COMMIT_RANK: Record<GeneratedFile["kind"], number> = {
   "host-test": 5,
   manifest: 6,
   patch: 7,
+  /** Last, and after the patch on purpose: the harness is the only thing in
+   * the set that can be written to a DIFFERENT root from everything else, and
+   * ranking it behind the mount artifact keeps the host sequence above exactly
+   * as it was. */
+  standalone: 8,
 };
 
 export function sha256(bytes: Uint8Array): string {
@@ -140,8 +145,45 @@ export function sortForCommit(actions: readonly WriteAction[]): WriteAction[] {
 /** Turns emitted files into ordered write actions. Every emitter produces
  * text today, so this is the text door; `applyWrites` is the one that also
  * takes bytes. */
-export function planWrites(files: readonly GeneratedFile[]): WriteAction[] {
-  return sortForCommit(files.map((file) => writeAction(file.path, { kind: "text", text: file.contents }, file.kind)));
+/**
+ * WHICH TREE THESE WRITES ARE FOR.
+ *
+ * ⛔ `host` IS THE DEFAULT AND IT EXCLUDES THE STANDALONE HARNESS. Two of
+ * those files sit at host paths — `web/src/subapps/registry.ts` and
+ * `server/subapps/types.ts` — and writing them into a Flightdeck checkout
+ * would overwrite the real registry (every other sub-app with it) and the
+ * real capability types. This is a refusal, not a preference:
+ * `applyGeneratedFiles` names the offending path rather than skipping it,
+ * because a silent skip is how you find out later that half a harness landed.
+ */
+export type WriteTarget = "host" | "standalone" | "both";
+
+export interface PlanWritesOptions {
+  /** Default `"host"` — the behaviour before the harness existed. */
+  readonly target?: WriteTarget;
+}
+
+export function planWrites(
+  files: readonly GeneratedFile[],
+  options: PlanWritesOptions = {},
+): WriteAction[] {
+  const target = options.target ?? "host";
+  const wanted = files.filter((file) =>
+    target === "both" ? true : target === "standalone" ? file.kind === "standalone" : file.kind !== "standalone",
+  );
+  return sortForCommit(wanted.map((file) => writeAction(file.path, { kind: "text", text: file.contents }, file.kind)));
+}
+
+export class StandaloneIntoHostError extends Error {
+  constructor(readonly paths: readonly string[]) {
+    super(
+      "refusing to write the standalone harness into a host checkout: " +
+        paths.join(", ") +
+        ". Two of these sit at host paths and would overwrite the real registry and the real " +
+        "capability types. Pass target: \"standalone\" with a root of its own.",
+    );
+    this.name = "StandaloneIntoHostError";
+  }
 }
 
 /* ── path confinement ───────────────────────────────────────────────── */
@@ -509,8 +551,19 @@ interface Slot {
 }
 
 /** The text-only convenience door: emitted files in, report out. */
-export function applyGeneratedFiles(files: readonly GeneratedFile[], options: ApplyOptions): ApplyReport {
-  return applyWrites(planWrites(files), options);
+export function applyGeneratedFiles(
+  files: readonly GeneratedFile[],
+  options: ApplyOptions & PlanWritesOptions,
+): ApplyReport {
+  const target = options.target ?? "host";
+  if (target === "both") {
+    // "both" would put the shims on top of the host's own files. There is no
+    // root for which that is correct, so it is refused here rather than left
+    // to whoever reads the report.
+    const offending = files.filter((f) => f.kind === "standalone").map((f) => f.path);
+    if (offending.length > 0) throw new StandaloneIntoHostError(offending);
+  }
+  return applyWrites(planWrites(files, { target }), options);
 }
 
 export function applyWrites(input: readonly WriteAction[], options: ApplyOptions): ApplyReport {

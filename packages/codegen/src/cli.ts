@@ -7,6 +7,15 @@
  * and never overwrite an existing file without `--force`.
  *
  *   npx tsx packages/codegen/src/cli.ts --spec <spec.json|-> --out <host-repo> [--dry-run] [--force]
+ *                                        [--standalone <dir>]
+ *
+ * `--standalone <dir>` ALSO writes the harness that runs this sub-app outside
+ * Flightdeck OS, into a root of its own. It is a separate root on purpose and
+ * not a flag on `--out`: two of the harness files sit at host paths and would
+ * overwrite the real registry. The sub-app's own files are written to BOTH
+ * roots, byte-identical — that identity is the property the standalone build
+ * exists to demonstrate, and `standalone.test.ts` hashes it rather than
+ * trusting this comment.
  *
  * `--out` is the ROOT of the Flightdeck host repository; every emitted path
  * is already repo-relative. `--dry-run` writes nothing and lists what would
@@ -29,7 +38,7 @@
  *   4  cancelled by the operator; nothing was committed */
 import fs from "node:fs";
 import path from "node:path";
-import { applyGeneratedFiles, fingerprint, type ApplyReport } from "./apply";
+import { applyGeneratedFiles, applyWrites, fingerprint, planWrites, type ApplyReport } from "./apply";
 import { generateSubApp } from "./generate";
 import { MINI_APP_FLOOR } from "./profile";
 import { CodegenInvariantError } from "./invariants";
@@ -125,6 +134,7 @@ export function main(): void {
   const outRoot = opt("--out");
   if (specPath === undefined) fail("--spec <spec.json> is required");
   if (outRoot === undefined) fail("--out <host-repo-root> is required");
+  const standaloneRoot = opt("--standalone");
   const dryRun = has("--dry-run");
   const force = has("--force");
 
@@ -184,10 +194,47 @@ export function main(): void {
     signal: controller.signal,
   });
 
+  // The SAME generated files, a second root, the other half of the set. The
+  // sub-app's own files land in both; only the harness differs, and only the
+  // harness is excluded from the host.
+  const standaloneReport =
+    standaloneRoot === undefined
+      ? undefined
+      : applyWrites(
+          [...planWrites(generated.files, { target: "standalone" }), ...planWrites(generated.files, { target: "host" })],
+          {
+            root: standaloneRoot,
+            planId: `${generated.plan.id}-standalone`,
+            specFingerprint: fingerprint(specText),
+            force,
+            dryRun,
+            ownedDirs: [
+              "standalone",
+              serverDir(generated.plan.id),
+              webDir(generated.plan.webModuleId),
+              `tests/subapps/${generated.plan.id}`,
+            ],
+            signal: controller.signal,
+          },
+        );
+
   process.off("SIGINT", onSignal);
   process.off("SIGTERM", onSignal);
 
   for (const warning of report.warnings) console.warn(`codegen: warning — ${warning}`);
+  if (standaloneReport !== undefined) {
+    for (const warning of standaloneReport.warnings) console.warn(`codegen: standalone warning — ${warning}`);
+    for (const refusal of standaloneReport.refusals) console.error(`codegen: standalone — ${refusal.detail}`);
+    if (standaloneReport.outcome !== "applied" && !dryRun) {
+      console.error(`codegen: the standalone tree was NOT written (${standaloneReport.outcome}); the host tree above is unaffected`);
+      process.exitCode = 1;
+    } else if (!dryRun) {
+      console.log(
+        `codegen: standalone tree written to ${standaloneRoot} — cd there, npm install, npm run dev. ` +
+          `It has no RBAC, no kill switch and no audit chain; standalone/README.md says which column is which.`,
+      );
+    }
+  }
 
   if (dryRun) {
     const lineCounts = new Map(generated.files.map((f) => [f.path, f.contents.split("\n").length]));
