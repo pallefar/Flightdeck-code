@@ -38,7 +38,7 @@ export { FLIGHTDECK_HOST_SURFACE, type HostSurface } from "./verify/host-surface
 export { mountProbe, type MountContext, type MountOptions, type MountResult } from "./verify/mount";
 export { isolationAvailable, redactSecrets } from "./verify/sandbox";
 export type { ProbeResult, ProbeRoute, ProbeInvocation } from "./verify/harness";
-export { formatFinding, formatReport, formatRuleCatalog } from "./report";
+export { formatFinding, formatReport, formatRuleCatalog, formatVerification } from "./report";
 export {
   CANDIDATE_SCOPE,
   RULES,

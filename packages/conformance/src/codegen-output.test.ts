@@ -21,6 +21,7 @@ import { generateSubApp } from "../../codegen/src/generate";
 import { minimalSpec, registryFixture, wcClockSpec } from "../../codegen/src/fixtures/specs";
 import { runConformanceGate } from "./gate";
 import { formatReport } from "./report";
+import { verifySubApp } from "./verify";
 
 const SPECS = [
   ["the documented floor — manifest, guard, routes, web module", minimalSpec],
@@ -42,4 +43,48 @@ describe.each(SPECS)("codegen output: %s", (_name, spec) => {
     expect(report.findings, `the gate refuses real generated output:\n${formatReport(report)}`).toEqual([]);
     expect(report.ok).toBe(true);
   });
+});
+
+/** ⭐ AND THE SAME OUTPUT, COMPILED AND MOUNTED.
+ *
+ * ⚠ THIS TEST DOES NOT ASSERT ZERO FINDINGS, and saying why is the point
+ * of it. At the time it was written the compiler stage refused BOTH specs
+ * above — the ones the static gate passes clean — for defects that are
+ * real and that live in `@codegen`, not here:
+ *
+ *   • `caps.readContracts().find(...)` with no `await`. `.find` on a
+ *     Promise is `undefined`, so the 404 below it fires on every request,
+ *     always, silently.
+ *   • two implicit `any` parameters and one possibly-undefined index,
+ *     which are errors under the strictness this repo already compiles at.
+ *   • `headers: undefined` passed to `fetch`, which `exactOptionalPropertyTypes`
+ *     rejects.
+ *
+ * Pinning that list here would put a red test in somebody else's package
+ * and would go stale the moment they fix one. What IS asserted is that
+ * the new stages RUN on real generated output and that everything they
+ * say is actionable — a finding that named a file the candidate does not
+ * contain, or carried a message nobody could act on, would be this
+ * package's bug and would fail here. */
+describe.each(SPECS)("verifying codegen output: %s", (_name, spec) => {
+  it("compiles the real thing and reports only things a person can act on", async () => {
+    const files = generateSubApp(spec, { registrySource: registryFixture }).files.map((file) => ({
+      path: file.path,
+      contents: file.contents,
+    }));
+    const paths = new Set(files.map((file) => file.path));
+
+    const report = await verifySubApp({ files }, { repoRoot: process.cwd() });
+
+    expect(report.stages.find((stage) => stage.name === "static")?.ok).toBe(true);
+    expect(report.stages.find((stage) => stage.name === "typecheck")?.ran).toBe(true);
+
+    for (const finding of report.findings) {
+      expect(paths.has(finding.file) || finding.file === "(candidate)", `finding names ${finding.file}, which is not in the candidate`).toBe(true);
+      expect(finding.message.length).toBeGreaterThan(40);
+      expect(finding.message).not.toContain("undefined (TS");
+    }
+    // Whatever the verdict, the compiler's own words are kept.
+    expect(report.stages.find((stage) => stage.name === "typecheck")?.output.length).toBeGreaterThan(0);
+  }, 120_000);
 });

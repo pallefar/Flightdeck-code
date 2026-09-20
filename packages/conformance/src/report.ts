@@ -5,6 +5,7 @@
  * pasted into a repair prompt, a test name or an issue. */
 import { RULES, type Finding } from "./finding";
 import type { GateReport } from "./gate";
+import type { VerificationReport } from "./verify";
 
 export function formatFinding(item: Finding): string {
   const where = item.line === 0 ? item.file : `${item.file}:${item.line}:${item.column}`;
@@ -42,4 +43,41 @@ export function formatRuleCatalog(): string {
   return Object.entries(RULES)
     .map(([id, spec]) => `${id}  ${spec.severity === "error" ? "error  " : "warning"}  ${spec.title} (contract ${spec.contract})`)
     .join("\n");
+}
+
+/** The verification, for a person and for the model that has to repair the
+ * app. Prints the stage table first — including the stages that did NOT
+ * run and why, because "we did not check" reads exactly like "it passed"
+ * unless something says otherwise — then the findings, then each stage's
+ * retained output verbatim. The last part is the point: a repair loop
+ * needs tsc's own diagnostics and the probe's own transcript, not this
+ * package's summary of them. */
+export function formatVerification(report: VerificationReport): string {
+  const head = report.verified
+    ? `VERIFIED — ${report.id ?? "sub-app"} conforms, compiles and mounts`
+    : `REFUSED — ${report.id ?? "sub-app"} is not safe to add to the host repo`;
+
+  const lines = [head, ""];
+  for (const stage of report.stages) {
+    const verdict = !stage.ran ? "SKIPPED" : stage.ok ? "pass" : "FAIL";
+    lines.push(`  ${stage.name.padEnd(9)} ${verdict.padEnd(8)} ${stage.ran ? `${stage.durationMs}ms` : (stage.skipped ?? "")}`);
+  }
+
+  if (report.findings.length > 0) {
+    lines.push("");
+    let lastFile = "";
+    for (const item of report.findings) {
+      if (item.file !== lastFile) {
+        lines.push(item.file);
+        lastFile = item.file;
+      }
+      lines.push(formatFinding(item));
+    }
+  }
+
+  for (const stage of report.stages) {
+    if (!stage.ran || stage.output.length === 0) continue;
+    lines.push("", `── ${stage.name} ${"─".repeat(Math.max(0, 60 - stage.name.length))}`, stage.output);
+  }
+  return lines.join("\n");
 }

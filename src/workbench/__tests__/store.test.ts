@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { changeSet, currentCandidate } from "../selectors";
 import { createStore, defaultSelection } from "../store";
 import { ALL_ENABLED, isEnabled, refusingLayer } from "../types";
 import { candidate, candidateOf } from "./fixtures";
@@ -300,5 +301,291 @@ describe("reset", () => {
     expect(s.getState().rounds).toEqual([]);
     expect(s.getState().turns).toEqual([]);
     expect(s.getState().selectedPath).toBeNull();
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────
+// What the builder is doing, and the person's hands on it.
+// ─────────────────────────────────────────────────────────────────────────
+
+describe("run steps", () => {
+  it("declares steps up front, then moves them one at a time", () => {
+    const s = store();
+    const turnId = s.prompt("build it") ?? "";
+    s.plan(turnId, [
+      { id: "plan", label: "plan against the contract" },
+      { id: "emit", label: "emit source", writes: ["server/subapps/wc-clock/manifest.ts"] },
+      { id: "tsc", label: "typecheck against the host surface" },
+    ]);
+
+    // The shape of the work is itself information: a person can see the
+    // typecheck has not run yet, so a green gate means nothing.
+    expect(s.getState().runs[0]?.steps.map((step) => step.status)).toEqual(["queued", "queued", "queued"]);
+    // And the pane it happens on is the one they are looking at.
+    expect(s.getState().view).toBe("run");
+
+    s.startStep("plan");
+    s.endStep("plan", "succeeded");
+    s.startStep("emit");
+    expect(s.getState().runs[0]?.steps.map((step) => step.status)).toEqual(["succeeded", "running", "queued"]);
+  });
+
+  it("keeps a failed step's process output after the step ends", () => {
+    const s = store();
+    const turnId = s.prompt("build it") ?? "";
+    s.plan(turnId, [{ id: "tsc", label: "typecheck" }]);
+    s.startStep("tsc");
+    s.output("tsc", "Checking 6 files… ");
+    s.output("tsc", "done\n");
+    s.output("tsc", "error TS2307: Cannot find module 'zod'\n", "err");
+    s.endStep("tsc", "failed", { error: "tsc exited 2", exitCode: 2 });
+
+    const step = s.getState().runs[0]?.steps[0];
+    expect(step?.status).toBe("failed");
+    expect(step?.error).toBe("tsc exited 2");
+    expect(step?.exitCode).toBe(2);
+    // The output of the step that failed is the reason anyone opens the
+    // pane. It survives the step.
+    expect(step?.log.map((line) => line.text)).toEqual([
+      "Checking 6 files… done",
+      "error TS2307: Cannot find module 'zod'",
+    ]);
+    expect(step?.log[1]?.stream).toBe("err");
+  });
+
+  it("ignores output for an unknown step rather than inventing one", () => {
+    const s = store();
+    s.prompt("build it");
+    const before = s.getState();
+    s.output("nope", "text");
+    s.endStep("nope", "failed", { error: "x" });
+    expect(s.getState()).toBe(before);
+  });
+
+  it("puts the failure on the failing step, not only in the chat", () => {
+    const s = store();
+    const turnId = s.prompt("build it") ?? "";
+    s.plan(turnId, [
+      { id: "gate", label: "conformance gate" },
+      { id: "tsc", label: "typecheck" },
+    ]);
+    s.startStep("gate");
+    s.fail(turnId, "FD-Z001: the gate itself threw");
+
+    const [gate, tsc] = s.getState().runs[0]?.steps ?? [];
+    expect(gate).toMatchObject({ status: "failed", error: "FD-Z001: the gate itself threw" });
+    // And the one that never got its turn says so, rather than sitting
+    // queued forever under a finished run.
+    expect(tsc?.status).toBe("skipped");
+    expect(tsc?.error).toContain("not reached");
+    expect(s.getState().busy).toBe(false);
+    expect(s.getState().view).toBe("run");
+  });
+});
+
+describe("stopping a round", () => {
+  it("marks the intent first, so the button can say so before anything unwinds", () => {
+    const s = store();
+    const turnId = s.prompt("build it") ?? "";
+    expect(s.requestAbort()).toBe(turnId);
+    expect(s.getState().runs[0]?.abortRequested).toBe(true);
+    // Asking twice is not a second round of anything.
+    expect(s.requestAbort()).toBeNull();
+  });
+
+  it("ends the round with no candidate, and files it as stopped rather than failed", () => {
+    const s = store();
+    const turnId = s.prompt("build it") ?? "";
+    s.plan(turnId, [
+      { id: "emit", label: "emit source" },
+      { id: "tsc", label: "typecheck" },
+    ]);
+    s.startStep("emit");
+    s.abort(turnId, "Stopped.");
+
+    const state = s.getState();
+    expect(state.busy).toBe(false);
+    expect(state.rounds).toHaveLength(0);
+    // Not "failed": nothing went wrong and nothing was refused. A UI that
+    // files a cancelled round under failure makes a person doubt their own
+    // hand on the button.
+    expect(state.turns[1]?.status).toBe("aborted");
+    expect(state.runs[0]?.steps[0]?.status).toBe("aborted");
+    expect(state.runs[0]?.steps[1]?.status).toBe("skipped");
+  });
+
+  it("drops output and a candidate that arrive after the stop", () => {
+    // The stop button is only worth believing if a driver that cannot be
+    // cancelled has its work discarded rather than landing in a round the
+    // person already stopped.
+    const s = store();
+    const turnId = s.prompt("build it") ?? "";
+    s.abort(turnId);
+    const stopped = s.getState();
+
+    s.stream(turnId, "…still generating");
+    expect(s.settle(turnId, candidate())).toBeNull();
+    expect(s.getState().turns).toBe(stopped.turns);
+    expect(s.getState().rounds).toHaveLength(0);
+  });
+});
+
+describe("editing", () => {
+  const MANIFEST = "server/subapps/wc-clock/manifest.ts";
+
+  function withRound() {
+    const s = store();
+    s.settle(s.prompt("build it") ?? "", candidate());
+    return s;
+  }
+
+  it("opens a draft on the first keystroke and leaves the round untouched", () => {
+    const s = withRound();
+    expect(s.editFile(MANIFEST, "// mine\n")).toBeNull();
+
+    const state = s.getState();
+    expect(state.drafts.get(MANIFEST)?.buffer).toBe("// mine\n");
+    // Rounds are append-only. The edit is an overlay, not a mutation.
+    expect(state.rounds[0]?.candidate.files.find((f) => f.path === MANIFEST)?.contents).toContain("GENERATED by Flightdeck Studio");
+  });
+
+  it("does not move the overlay until it is saved", () => {
+    const s = withRound();
+    s.editFile(MANIFEST, "// mine\n");
+    // Typing is theirs alone: no pane reads a half-typed buffer, and — the
+    // part that matters for performance — a keystroke does not invalidate
+    // the diff of every file in the round.
+    expect(currentCandidate(s.getState())?.files.find((f) => f.path === MANIFEST)?.contents).not.toBe("// mine\n");
+    expect(s.getState().editEpoch).toBe(0);
+
+    s.saveFile(MANIFEST);
+    expect(s.getState().editEpoch).toBe(1);
+    expect(currentCandidate(s.getState())?.files.find((f) => f.path === MANIFEST)?.contents).toBe("// mine\n");
+  });
+
+  it("shows a saved edit in the diff, not only in the editor", () => {
+    const s = store();
+    s.settle(s.prompt("a") ?? "", candidateOf([{ path: "a.ts", contents: "one\n" }]));
+    s.settle(s.prompt("b") ?? "", candidateOf([{ path: "a.ts", contents: "one\ntwo\n" }]));
+    expect(changeSet(s.getState())?.changes[0]).toMatchObject({ kind: "modified", added: 1 });
+
+    s.editFile("a.ts", "one\ntwo\nthree\n");
+    s.saveFile("a.ts");
+    // One authoritative model: the diff answers "what is different", not
+    // "what did the generator change".
+    expect(changeSet(s.getState())?.changes[0]).toMatchObject({ kind: "modified", added: 2 });
+  });
+
+  it("reverts unsaved typing, and restores the generated text separately", () => {
+    const s = withRound();
+    s.editFile(MANIFEST, "// v1\n");
+    s.saveFile(MANIFEST);
+    s.editFile(MANIFEST, "// v2\n");
+
+    s.revertFile(MANIFEST);
+    expect(s.getState().drafts.get(MANIFEST)?.buffer).toBe("// v1\n");
+
+    s.restoreGenerated(MANIFEST);
+    expect(s.getState().drafts.has(MANIFEST)).toBe(false);
+    expect(currentCandidate(s.getState())?.files.find((f) => f.path === MANIFEST)?.contents).toContain("GENERATED by Flightdeck Studio");
+  });
+
+  it("refuses to edit a file a running step says it is writing", () => {
+    const s = withRound();
+    const turnId = s.prompt("again") ?? "";
+    s.plan(turnId, [{ id: "emit", label: "emit source", writes: [MANIFEST] }]);
+    s.startStep("emit");
+
+    expect(s.editFile(MANIFEST, "// mine\n")).toContain("writing this file right now");
+    // And it unlocks when the step finishes, rather than for the round.
+    s.endStep("emit", "succeeded");
+    expect(s.editFile(MANIFEST, "// mine\n")).toBeNull();
+  });
+
+  it("refuses to edit an earlier round, and says why", () => {
+    const s = store();
+    const first = s.settle(s.prompt("a") ?? "", candidateOf([{ path: "a.ts" }]));
+    s.settle(s.prompt("b") ?? "", candidateOf([{ path: "a.ts", contents: "// two\n" }]));
+    s.selectRound(first?.id ?? "");
+
+    expect(s.editFile("a.ts", "// mine\n")).toContain("record");
+
+    const fresh = store();
+    fresh.settle(fresh.prompt("a") ?? "", candidateOf([{ path: "a.ts" }]));
+    expect(fresh.editFile("nope.ts", "x")).toContain("not in this round");
+  });
+});
+
+describe("a round landing on top of an edit", () => {
+  it("holds both texts and applies neither, in the same commit as the round", () => {
+    const s = store();
+    s.settle(s.prompt("a") ?? "", candidateOf([{ path: "a.ts", contents: "generated v1\n" }]));
+    s.editFile("a.ts", "mine\n");
+    s.saveFile("a.ts");
+
+    const turnId = s.prompt("b") ?? "";
+    const listener = vi.fn();
+    s.subscribe(listener);
+    s.settle(turnId, candidateOf([{ path: "a.ts", contents: "generated v2\n" }]));
+
+    // One commit: a subscriber never sees the new round's files beside
+    // the old round's drafts.
+    expect(listener).toHaveBeenCalledTimes(1);
+
+    const state = s.getState();
+    const draft = state.drafts.get("a.ts");
+    expect(draft?.conflict).toMatchObject({ kind: "regenerated", incoming: "generated v2\n", held: "mine\n" });
+    // What shipping would produce is what the panes show, until somebody
+    // decides otherwise.
+    expect(currentCandidate(state)?.files[0]?.contents).toBe("generated v2\n");
+    // And the file in question is the one that is open.
+    expect(state.selectedPath).toBe("a.ts");
+  });
+
+  it("applies the person's text again once they keep it", () => {
+    const s = store();
+    s.settle(s.prompt("a") ?? "", candidateOf([{ path: "a.ts", contents: "generated v1\n" }]));
+    s.editFile("a.ts", "mine\n");
+    s.saveFile("a.ts");
+    s.settle(s.prompt("b") ?? "", candidateOf([{ path: "a.ts", contents: "generated v2\n" }]));
+
+    s.resolveConflict("a.ts", "mine");
+    expect(currentCandidate(s.getState())?.files[0]?.contents).toBe("mine\n");
+    // Re-based: the baseline is now what Studio last produced.
+    expect(s.getState().drafts.get("a.ts")?.generated).toBe("generated v2\n");
+  });
+
+  it("forgets the edit entirely once they take Studio's", () => {
+    const s = store();
+    s.settle(s.prompt("a") ?? "", candidateOf([{ path: "a.ts", contents: "generated v1\n" }]));
+    s.editFile("a.ts", "mine\n");
+    s.saveFile("a.ts");
+    s.settle(s.prompt("b") ?? "", candidateOf([{ path: "a.ts", contents: "generated v2\n" }]));
+
+    s.resolveConflict("a.ts", "studio");
+    expect(s.getState().drafts.has("a.ts")).toBe(false);
+    expect(currentCandidate(s.getState())?.files[0]?.contents).toBe("generated v2\n");
+  });
+
+  it("takes locks back from a driver that persisted them", () => {
+    // The workbench owns no storage medium — a component that reaches for
+    // `localStorage` cannot be rendered on a server or asserted on in
+    // node — so persistence is the driver's, and this is the way back in.
+    const s = store();
+    s.restoreLocks(["a.ts", "b.ts"]);
+    expect([...s.getState().locks]).toEqual(["a.ts", "b.ts"]);
+    const before = s.getState();
+    s.restoreLocks(["a.ts"]);
+    expect(s.getState()).toBe(before);
+  });
+
+  it("tells a person their LOCKED file changed even though they never typed in it", () => {
+    const s = store();
+    s.settle(s.prompt("a") ?? "", candidateOf([{ path: "a.ts", contents: "generated v1\n" }]));
+    s.toggleLock("a.ts");
+    s.settle(s.prompt("b") ?? "", candidateOf([{ path: "a.ts", contents: "generated v2\n" }]));
+
+    expect(s.getState().drafts.get("a.ts")?.conflict).toMatchObject({ fromLock: true });
+    expect(s.getState().locks.has("a.ts")).toBe(true);
   });
 });

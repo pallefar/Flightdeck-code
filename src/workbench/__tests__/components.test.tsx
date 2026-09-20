@@ -11,10 +11,12 @@
  * untested because the happy path is what you build against.
  *
  * What it cannot check is interaction, and that is stated rather than
- * papered over: clicking a tab, typing a prompt and submitting a form in
- * the preview frame are not covered by any test in this package. The store
- * tests cover the state those interactions produce; nothing covers the
- * wiring in between.
+ * papered over: clicking a tab, typing a prompt, typing into the EDITOR,
+ * pressing stop and submitting a form in the preview frame are not covered
+ * by any test in this package. The store tests cover the state those
+ * interactions produce — including every edit, save, revert, conflict
+ * resolution and abort — and `run.test.ts`/`editing.test.ts` cover the
+ * models underneath; nothing covers the wiring in between.
  *
  * It is also why every pane takes plain props instead of reaching into the
  * store — each one can be rendered on its own, with no provider. */
@@ -22,10 +24,15 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { ChatPane } from "../components/ChatPane";
 import { DiffPane } from "../components/DiffPane";
+import { EditorPane } from "../components/EditorPane";
 import { FileTreePane } from "../components/FileTreePane";
 import { GatePane } from "../components/GatePane";
 import { PreviewPane } from "../components/PreviewPane";
+import { RunPane } from "../components/RunPane";
+import { Workbench } from "../Workbench";
 import { diffFileSets } from "../diff";
+import { editDraft, openDraft, saveDraft, type Draft } from "../editing";
+import { MAX_LOG_LINES, createStep, endStep, pushOutput, startStep, type Run, type Step } from "../run";
 import { buildPreview } from "../preview/state";
 import { changeByPath, findingsByPath, gateSummary } from "../selectors";
 import { createStore } from "../store";
@@ -284,5 +291,188 @@ describe("PreviewPane", () => {
     );
     expect(out).toContain("<iframe");
     expect(out).not.toContain("gate refused");
+  });
+});
+
+describe("RunPane", () => {
+  function run(steps: Step[], endedAt: number | null = null): Run {
+    return { turnId: "t1", steps, startedAt: 0, endedAt, abortRequested: false };
+  }
+
+  it("renders queued steps rather than hiding the work that has not happened", () => {
+    // The shape of the remaining work is information: a person who can see
+    // the typecheck has not run yet knows not to trust a green gate.
+    const out = html(
+      <RunPane
+        busy
+        run={run([
+          endStep(startStep(createStep({ id: "a", label: "plan against the contract" }), 1), "succeeded", 2),
+          startStep(createStep({ id: "b", label: "emit source" }), 3),
+          createStep({ id: "c", label: "typecheck against the host surface" }),
+        ])}
+      />,
+    );
+    expect(out).toContain("plan against the contract");
+    expect(out).toContain("typecheck against the host surface");
+    expect(out).toContain("fd-step--queued");
+    expect(out).toContain("1 / 3 steps");
+  });
+
+  it("puts a failing step's reason and its raw output on the step", () => {
+    let step = startStep(createStep({ id: "tsc", label: "typecheck" }), 1);
+    step = pushOutput(step, "error TS2307: Cannot find module 'zod'\n", "err");
+    step = endStep(step, "failed", 2, { error: "tsc exited 2", exitCode: 2 });
+
+    const out = html(<RunPane busy={false} run={run([step], 3)} />);
+    expect(out).toContain("tsc exited 2");
+    // A failed step opens its own log: the output is the whole reason
+    // anybody clicked into this pane.
+    expect(out).toContain("TS2307");
+    expect(out).toContain("exit 2");
+    expect(out).toContain("fd-out--err");
+  });
+
+  it("says how many lines it dropped instead of starting mid-sentence", () => {
+    let step = startStep(createStep({ id: "noisy", label: "mount probe" }), 1);
+    for (let i = 0; i < MAX_LOG_LINES + 7; i += 1) step = pushOutput(step, `line ${i}\n`);
+    step = endStep(step, "failed", 2, { error: "probe crashed" });
+    expect(html(<RunPane busy={false} run={run([step], 3)} />)).toContain("7 earlier lines dropped");
+  });
+
+  it("offers a stop button only while the round is in flight", () => {
+    const steps = [startStep(createStep({ id: "a", label: "emit" }), 1)];
+    expect(html(<RunPane busy run={run(steps)} onStop={noop} />)).toContain("Stop");
+    expect(html(<RunPane busy={false} run={run(steps, 2)} onStop={noop} />)).not.toContain(">Stop<");
+    // No handler, no button — a dead stop is worse than none, because the
+    // whole value of the control is that a person believes it.
+    expect(html(<RunPane busy run={run(steps)} />)).not.toContain(">Stop<");
+  });
+
+  it("renders before anything has run", () => {
+    expect(html(<RunPane busy={false} run={null} />)).toContain("Nothing has run yet");
+  });
+});
+
+describe("EditorPane", () => {
+  const FILE = { path: "server/subapps/wc-clock/manifest.ts", contents: "one\ntwo\n", kind: "manifest" as const };
+
+  it("renders read-only with no callbacks — no dead buttons", () => {
+    const out = html(<EditorPane file={FILE} findings={[]} />);
+    expect(out).toContain("manifest.ts");
+    expect(out).not.toContain("Save");
+    expect(out).not.toContain("<textarea");
+  });
+
+  it("shows the unsaved marker and the two separate undos", () => {
+    const draft = saveDraft(editDraft(openDraft(FILE, "r1"), "one\nedited\n"));
+    const dirty = editDraft(draft, "one\nedited again\n");
+    const out = html(
+      <EditorPane file={FILE} generated={FILE} draft={dirty} findings={[]} onEdit={noop} onSave={noop} onRevert={noop} onRestore={noop} />,
+    );
+    expect(out).toContain("unsaved");
+    expect(out).toContain(">Save<");
+    // Revert drops typing; restore drops the edit. Two buttons because
+    // they destroy different things.
+    expect(out).toContain(">Revert<");
+    expect(out).toContain("Restore generated");
+    expect(out).toContain("<textarea");
+  });
+
+  it("names the conflict and labels both answers with what they destroy", () => {
+    const draft: Draft = {
+      ...saveDraft(editDraft(openDraft(FILE, "r1"), "mine\n")),
+      conflict: { kind: "regenerated", incoming: "one\ntwo\n", held: "mine\n", fromLock: false, at: 1 },
+    };
+    const out = html(<EditorPane file={FILE} draft={draft} findings={[]} onEdit={noop} onResolve={noop} />);
+    expect(out).toContain("Studio rewrote this file while you had your own version");
+    expect(out).toContain("Keep mine");
+    expect(out).toContain("Take Studio&#x27;s — discard my version");
+    // No typing until it is answered: a third version helps nobody.
+    expect(out).not.toContain("<textarea");
+  });
+
+  it("says a file is read-only while a step is writing it", () => {
+    const out = html(
+      <EditorPane file={FILE} findings={[]} onEdit={noop} beingWritten={new Set([FILE.path])} />,
+    );
+    expect(out).toContain("writing this file right now");
+    expect(out).not.toContain("<textarea");
+  });
+
+  it("refuses to edit an earlier round and says it is a record", () => {
+    const out = html(<EditorPane file={FILE} findings={[]} onEdit={noop} historical />);
+    expect(out).toContain("record");
+  });
+
+  it("still annotates findings on the lines they fired on", () => {
+    const out = html(
+      <EditorPane
+        file={FILE}
+        findings={[finding("FD-M003", FILE.path, 2, "label is an i18n key")]}
+        onEdit={noop}
+      />,
+    );
+    expect(out).toContain("FD-M003");
+    expect(out).toContain('data-finding="error"');
+  });
+});
+
+describe("the shell, wired to a store", () => {
+  /** The one test that renders the WORKBENCH rather than a pane. Every
+   * other test here hands a component its props directly, which is what
+   * makes them readable and is also what makes them blind to the wiring:
+   * a pane can be perfect and still never be reached. */
+  function running() {
+    const store = createStore();
+    const turnId = store.prompt("a works-council clock") ?? "";
+    store.plan(turnId, [
+      { id: "plan", label: "plan against the contract" },
+      { id: "tsc", label: "typecheck against the host surface" },
+    ]);
+    store.startStep("plan");
+    store.output("plan", "resolved 2 domains\n");
+    return { store, turnId };
+  }
+
+  it("lands on the run pane while a round is in flight, with a way out of it", () => {
+    const { store } = running();
+    const out = html(<Workbench store={store} onPrompt={noop} />);
+
+    expect(out).toContain("plan against the contract");
+    expect(out).toContain("resolved 2 domains");
+    // Queued work is visible, so a person knows what has NOT been checked.
+    expect(out).toContain("typecheck against the host surface");
+    expect(out).toContain("fd-step--queued");
+    // And the round can be stopped from both places a person is looking.
+    expect(out.match(/Stop/g)?.length).toBeGreaterThanOrEqual(2);
+  });
+
+  it("aborts the round itself when the driver supplies no way to cancel", () => {
+    // A stop button that leaves the round running is the one lie this
+    // pane cannot afford, so the fallback is real: the turn ends, and
+    // `settle` then refuses the candidate that arrives too late.
+    const { store, turnId } = running();
+    html(<Workbench store={store} onPrompt={noop} />);
+
+    const stopped = store.requestAbort();
+    expect(stopped).toBe(turnId);
+    store.abort(turnId);
+
+    expect(store.getState().busy).toBe(false);
+    expect(store.settle(turnId, candidate())).toBeNull();
+  });
+
+  it("shows an edit's aggregate in the tab strip once it is saved", () => {
+    const store = createStore();
+    store.settle(store.prompt("build it") ?? "", candidate());
+    const manifest = "server/subapps/wc-clock/manifest.ts";
+    store.editFile(manifest, "// mine\n");
+
+    expect(html(<Workbench store={store} onPrompt={noop} />)).toContain("1 unsaved");
+    store.saveFile(manifest);
+    const saved = html(<Workbench store={store} onPrompt={noop} />);
+    expect(saved).toContain("1 edited");
+    // One authoritative model: the saved text is what the file pane shows.
+    expect(saved).toContain("// mine");
   });
 });

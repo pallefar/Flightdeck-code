@@ -61,24 +61,20 @@ export function previousRound(state: WorkbenchState): Round | null {
  * allocates and `useSyncExternalStore` compares by identity — see the
  * note at the top of this file. The epoch moves on save, resolve and
  * reconcile, and deliberately NOT on a keystroke. */
-const candidateCache = new Map<string, Candidate>();
+const candidateCache = new WeakMap<Round, Map<number, Candidate>>();
 
 export function currentCandidate(state: WorkbenchState): Candidate | null {
   const round = currentRound(state);
   if (round === null) return null;
   if (state.drafts.size === 0) return round.candidate;
 
-  const key = `${round.id}@${state.editEpoch}`;
-  const hit = candidateCache.get(key);
+  const cached = cacheFor(candidateCache, round);
+  const hit = cached.get(state.editEpoch);
   if (hit !== undefined) return hit;
 
   const files = applyDrafts(round.candidate.files, state.drafts, round.id);
   const value = files === round.candidate.files ? round.candidate : { ...round.candidate, files };
-  candidateCache.set(key, value);
-  if (candidateCache.size > MAX_CACHE) {
-    const oldest = candidateCache.keys().next();
-    if (!oldest.done) candidateCache.delete(oldest.value);
-  }
+  remember(cached, state.editEpoch, value);
   return value;
 }
 
@@ -108,7 +104,31 @@ function memo1<K, V>(compute: (key: K) => V): (key: K) => V {
   };
 }
 
-const changeSetCache = new Map<string, ChangeSet>();
+/** ⭐ KEYED ON THE ROUND OBJECT, NOT ON ITS ID.
+ *
+ * Round ids come from the store's injected id source, which in a test is a
+ * counter — so two stores both produce a round called `w3`. A cache keyed
+ * on the id string would serve one store's diff to the other, and the
+ * symptom is a test that passes alone and fails in a suite. A `WeakMap` on
+ * the round itself cannot collide, and it evicts when the round does. */
+const changeSetCache = new WeakMap<Round, Map<string, ChangeSet>>();
+
+function cacheFor<K extends object, IK, V>(cache: WeakMap<K, Map<IK, V>>, key: K): Map<IK, V> {
+  const existing = cache.get(key);
+  if (existing !== undefined) return existing;
+  const fresh = new Map<IK, V>();
+  cache.set(key, fresh);
+  return fresh;
+}
+
+function remember<IK, V>(cache: Map<IK, V>, key: IK, value: V): V {
+  cache.set(key, value);
+  if (cache.size > MAX_CACHE) {
+    const oldest = cache.keys().next();
+    if (!oldest.done) cache.delete(oldest.value);
+  }
+  return value;
+}
 
 /** What this round changed, relative to the one before it. */
 export function changeSet(state: WorkbenchState): ChangeSet | null {
@@ -118,19 +138,15 @@ export function changeSet(state: WorkbenchState): ChangeSet | null {
   // The epoch is in the key because a saved edit is a change this round
   // made, and a diff that omits it is answering "what did the generator
   // change" to a person asking "what is different".
-  const key = `${previous?.id ?? "-"}>${current.id}@${state.editEpoch}`;
-  const hit = changeSetCache.get(key);
+  const cached = cacheFor(changeSetCache, current);
+  const key = `${previous?.id ?? "-"}@${state.editEpoch}`;
+  const hit = cached.get(key);
   if (hit !== undefined) return hit;
-  const computed = diffFileSets(
-    previous?.candidate.files ?? null,
-    currentCandidate(state)?.files ?? current.candidate.files,
+  return remember(
+    cached,
+    key,
+    diffFileSets(previous?.candidate.files ?? null, currentCandidate(state)?.files ?? current.candidate.files),
   );
-  changeSetCache.set(key, computed);
-  if (changeSetCache.size > MAX_CACHE) {
-    const oldest = changeSetCache.keys().next();
-    if (!oldest.done) changeSetCache.delete(oldest.value);
-  }
-  return computed;
 }
 
 /** Only the files this round actually touched, in the order the diff pane

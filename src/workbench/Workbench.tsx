@@ -117,8 +117,10 @@ export function Workbench({ store, onPrompt, onStop }: WorkbenchProps) {
   }> = [
     {
       id: "run",
+      // The badge is the number a person needs first: how many steps
+      // broke, or — when none did — how many there are.
       label: "Run",
-      count: steps.total === 0 ? undefined : steps.total,
+      count: steps.failed > 0 ? steps.failed : steps.total || undefined,
       ...(steps.failed > 0 ? { tone: "error" as const } : {}),
     },
     { id: "files", label: "Files", count: candidate?.files.length },

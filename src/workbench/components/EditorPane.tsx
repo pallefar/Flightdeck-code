@@ -47,8 +47,13 @@ export interface EditorPaneProps {
    * are a record of what Studio produced, not a working copy. */
   readonly historical?: boolean;
   /** Absent callbacks mean a read-only embedding: no buttons are drawn,
-   * rather than dead ones. */
-  readonly onEdit?: (path: string, text: string) => void;
+   * rather than dead ones.
+   *
+   * `onEdit` may return the reason a keystroke was refused — the store
+   * knows why and this pane does not, and "Studio started writing this
+   * file while you were typing" is not something a component should be
+   * left to guess at. Returning nothing means it went through. */
+  readonly onEdit?: (path: string, text: string) => string | null | void;
   readonly onSave?: (path: string) => void;
   readonly onRevert?: (path: string) => void;
   readonly onRestore?: (path: string) => void;
@@ -72,6 +77,10 @@ export function EditorPane({
   onToggleLock,
 }: EditorPaneProps) {
   const [mode, setMode] = useState<"read" | "edit" | null>(null);
+  // Why the last keystroke did not take. Only reachable in a race — the
+  // pane pre-empts every refusal it can see coming — which is exactly why
+  // it must not be silent when it happens.
+  const [refused, setRefused] = useState<string | null>(null);
 
   if (file === null) {
     return (
@@ -176,6 +185,7 @@ export function EditorPane({
       {conflict === null && reason !== null && !editable && onEdit !== undefined && (
         <p className="fd-note fd-note--warn">{reason}</p>
       )}
+      {refused !== null && editable && <p className="fd-note fd-note--warn">{refused}</p>}
 
       {dirty && findings.length > 0 && (
         <p className="fd-note">
@@ -190,7 +200,7 @@ export function EditorPane({
           value={text}
           spellCheck={false}
           aria-label={`Edit ${file.path}`}
-          onChange={(event) => onEdit(file.path, event.target.value)}
+          onChange={(event) => setRefused(onEdit(file.path, event.target.value) ?? null)}
           onKeyDown={(event) => {
             // Ctrl/Cmd+S saves. The browser's own "save page" dialog on a
             // workbench is never what anybody meant.

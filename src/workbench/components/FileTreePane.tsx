@@ -136,7 +136,15 @@ export function FileTreePane({
           );
         })}
       </nav>
-      <EditorPane {...(editor ?? {})} file={file} findings={file === null ? [] : findings.get(file.path) ?? []} />
+      {/* Keyed by path so the editor's own view state — read/edit mode,
+          the reason a keystroke was refused — belongs to the file it was
+          about, rather than following a person to the next one. */}
+      <EditorPane
+        key={file?.path ?? "(none)"}
+        {...(editor ?? {})}
+        file={file}
+        findings={file === null ? [] : findings.get(file.path) ?? []}
+      />
     </div>
   );
 }
