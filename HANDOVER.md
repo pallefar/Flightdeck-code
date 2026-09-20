@@ -67,9 +67,21 @@ Three separate things, and they are not the same kind of problem:
    cd /Users/you/project-contract && bash scripts/gate.sh
    ```
 
-   That is the number to compare against. What *is* established is narrower and
-   still useful: in the run with the candidate mounted, not one failure named
-   the candidate (`grep -c wc-clock` over the gate log returned 0).
+   That is the number to compare against.
+
+**The one properly-controlled experiment, and it is the good news.**
+`npm run mount` copies the host, runs its suite, mounts a generated sub-app,
+and runs the same suite again — same sandbox, one variable:
+
+```
+before: Tests  1 failed | 2719 passed | 21 skipped (2741)
+after:  Tests  1 failed | 2729 passed | 21 skipped (2751)
+```
+
+**Mounting added 10 passing tests and no failures.** The single failure is
+present in BOTH runs — a real docx→PDF conversion that does not succeed in this
+container — so it is not ours. This is the evidence I should have led with:
+unlike the gate comparison above, it holds everything else fixed.
 
 ---
 
@@ -238,7 +250,7 @@ curl -s localhost:8787/api/studio/build \
 | `npm run dev:server` | the composition root | ✅ |
 | `npm run redteam` | plants violations, all must block | ✅ `7/7` |
 | `npm run standalone` | builds and smoke-tests each standalone fixture | ✅ |
-| `npm run mount` | mounts a candidate into a host sandbox | needs the host repo |
+| `npm run mount` | mounts a candidate into a host sandbox and diffs the suite before/after | ✅ +10 passing, +0 failing |
 | `npm run promote` | **the production gate** | ❌ blocked — §1 |
 
 ---
