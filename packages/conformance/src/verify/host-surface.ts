@@ -51,25 +51,42 @@ import type { Db } from "../db.js";
 export type NavSection = "Overview" | "Contract pipeline" | "Ops & insight" | "Admin" | "System apps";
 export type Capability = "read:contracts" | "write:inbox-proposal";
 export type Role = "hr_preparer" | "hr_reviewer" | "wc_liaison" | "legal" | "admin";
-export type SettingsTier = "workspace" | "project" | "user";
 
-/** Contract §8: an audit event names FIELDS, never PII values. \`fields\`
- * is a list of names for that reason. */
+/** Exactly the shape \`manifest-schema.ts\` in this package validates —
+ * two independent derivations of the same contract clause, which is the
+ * house rule. */
+export interface SettingsPanel {
+  readonly tier: "workspace-admin" | "super-admin";
+  readonly webComponentId: string;
+  readonly label: string;
+}
+
+/** Contract §8: an audit event names FIELDS, never PII values — a rule
+ * about what goes in the strings, which a type cannot express. The key
+ * set is open because the contract does not close it, and inventing a
+ * closed one would reject correct code. */
 export interface AuditEvent {
   readonly event: string;
   readonly actor?: string;
   readonly fields?: readonly string[];
   readonly reason?: string;
+  readonly [key: string]: unknown;
 }
 
+/** ⚠ OPEN ON PURPOSE. The contract names \`ctx.capabilitiesFor(id)\` as the
+ * only door and \`auditAppend\` as the only way to write an audit event
+ * (§5.3, §5.5); it does not enumerate the rest of the adapter. So those
+ * two are pinned and everything else is \`any\` — the gate does not invent
+ * a member list for a host it cannot see, and FD-C004 still enforces the
+ * audit rule on the source. The methods are NOT optional: consent is
+ * all-or-nothing and scopes come from the ceiling row at call time
+ * (§4), so an ungranted capability refuses at runtime rather than being
+ * absent at compile time. */
 export interface SubAppCapabilities {
-  /** Contract §5.5: the only way to append an audit event. Never
-   * construct the hash. */
   auditAppend(event: AuditEvent): void;
-  /** Present only when "read:contracts" was declared AND granted. */
-  readContracts?(): Promise<readonly unknown[]>;
-  /** Present only when "write:inbox-proposal" was declared AND granted. */
-  proposeInboxItem?(proposal: unknown): Promise<{ readonly path: string }>;
+  readContracts(...args: readonly any[]): Promise<readonly any[]>;
+  proposeInboxItem(proposal: any): Promise<{ readonly path: string }>;
+  [member: string]: any;
 }
 
 export interface RegisterRoutesCtx {
@@ -87,28 +104,61 @@ export interface SubAppManifest {
   readonly webModuleId: string;
   readonly capabilities: readonly Capability[];
   readonly visibleToRoles: readonly Role[];
-  readonly settingsPanel?: SettingsTier;
+  readonly settingsPanel?: SettingsPanel;
   readonly widgets?: readonly unknown[];
   initSchema(db: Db): void | Promise<void>;
   registerRoutes(app: FastifyInstance, ctx: RegisterRoutesCtx): void | Promise<void>;
 }
 
-export type SubAppRequest = FastifyRequest;
-`;
+/** The host's Zod schema, which \`loadValidatedManifests\` applies
+ * fail-loud at boot. A generated sub-app's own host test imports it to
+ * re-assert the same thing from inside the host repo. */
+export const subAppManifestSchema: {
+  parse(value: unknown): SubAppManifest;
+  safeParse(value: unknown): { readonly success: boolean; readonly data?: SubAppManifest; readonly error?: unknown };
+};
 
-const DB_DTS = `/** Whatever the host hands \`initSchema\`. Rows are \`unknown\` on
- * purpose — see the header of host-surface.ts. */
+export type SubAppRequest = FastifyRequest;
+\`;
+
+/** ⚠ DECLARED FOR COMPILATION ONLY. A sub-app's MOUNTED code may not
+ * import this — FD-I002 and FD-C003 refuse it, and those run before the
+ * compiler does. A sub-app's own host test in \`tests/subapps/<id>/\` is
+ * not mounted and legitimately reads the registry, the same way every
+ * hand-written host test does. There is deliberately no RUNTIME stub for
+ * it: if mounted code ever reached this module the probe would fail to
+ * resolve it, which is the answer it deserves. */
+const REGISTRY_DTS = `import type { SubAppManifest } from "./types.js";
+
+export const SUBAPP_MANIFESTS: SubAppManifest[];
+export const HOST_VERSION: string;
+export function isVersionNewer(version: string, baseline: string): boolean;
+\`;
+
+const DB_DTS = `/** Whatever the host hands \`initSchema\`. Rows are \`any\` on purpose —
+ * see the header of host-surface.ts — but the METHOD list is closed,
+ * because \`initSchema(db)\` is a seam the contract does pin and a typo
+ * there is worth catching. */
+export interface PreparedStatement {
+  run(...params: readonly any[]): any;
+  all(...params: readonly any[]): readonly any[];
+  get(...params: readonly any[]): any;
+  finalize(): void;
+}
+
 export interface Db {
   exec(sql: string): Promise<void> | void;
-  run(sql: string, params?: readonly unknown[]): Promise<unknown> | unknown;
-  all(sql: string, params?: readonly unknown[]): Promise<readonly any[]>;
-  get(sql: string, params?: readonly unknown[]): Promise<any>;
+  run(sql: string, params?: readonly any[]): Promise<any> | any;
+  all(sql: string, params?: readonly any[]): Promise<readonly any[]>;
+  get(sql: string, params?: readonly any[]): Promise<any>;
+  prepare(sql: string): PreparedStatement;
 }
 `;
 
 const WORKSPACE_DTS = `import type { Db } from "../db.js";
 
 export interface WorkspaceRuntime {
+  readonly id: string;
   readonly root: string;
   readonly db: Db;
 }
@@ -143,6 +193,14 @@ export function effectiveSubAppEnabled(
 
 const CAPABILITIES_DTS = `import type { SubAppCapabilities } from "./types.js";
 
+/** Contract §4: granted scopes come from the ceiling row and are re-read
+ * per call, so a capability the workspace did not grant has to refuse at
+ * CALL time. That refusal needs a type. */
+export class CapabilityDeniedError extends Error {
+  constructor(message?: string);
+  readonly capability?: string;
+}
+
 export function capabilitiesFor(subAppId: string, grantedScopes: readonly string[]): SubAppCapabilities;
 `;
 
@@ -168,7 +226,7 @@ declare module "fastify" {
   interface FastifyRequest {
     workspace?: WorkspaceRuntime;
     project?: { readonly id: string };
-    principal?: { readonly username: string; readonly roles: readonly string[] };
+    principal?: { readonly username: string; readonly roles: readonly string[]; readonly [key: string]: unknown };
   }
 }
 export {};
@@ -196,7 +254,11 @@ const RT_AUDIT = `export function appendFlightdeckAudit(workspaceRoot, event) {
 const RT_PROJECT = `export const DEFAULT_PROJECT_ID = "default";
 `;
 
-const RT_CAPABILITIES = `export function capabilitiesFor(subAppId, grantedScopes) {
+const RT_CAPABILITIES = `export class CapabilityDeniedError extends Error {
+  constructor(message) { super(message); this.name = "CapabilityDeniedError"; }
+}
+
+export function capabilitiesFor(subAppId, grantedScopes) {
   return globalThis.__fdProbe.capabilities(subAppId, grantedScopes ?? []);
 }
 `;
@@ -218,6 +280,7 @@ export const FLIGHTDECK_HOST_SURFACE: HostSurface = {
     "server/project/types": PROJECT_DTS,
     "server/workspace/types": WORKSPACE_DTS,
     "web/src/subapps/registry": WEB_REGISTRY_DTS,
+    "server/subapps/registry": REGISTRY_DTS,
   },
   runtime: {
     "server/subapps/types": RT_EMPTY,

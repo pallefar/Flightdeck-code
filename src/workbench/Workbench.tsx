@@ -22,16 +22,25 @@ import { DiffPane } from "./components/DiffPane";
 import { FileTreePane } from "./components/FileTreePane";
 import { GatePane } from "./components/GatePane";
 import { PreviewPane } from "./components/PreviewPane";
+import { RunPane } from "./components/RunPane";
 import { buildPreview } from "./preview/state";
 import {
+  activeRun,
+  beingWritten,
   changeByPath,
   changeSet,
   currentCandidate,
   currentRound,
+  draftFor,
+  draftStates,
+  edits,
   fileAt,
   findingsByPath,
   gateSummary,
+  generatedFileAt,
+  progress,
   treeNodes,
+  visibleRun,
 } from "./selectors";
 import type { WorkbenchStore } from "./store";
 import { WORKBENCH_CSS } from "./theme";
@@ -44,9 +53,20 @@ export interface WorkbenchProps {
    * caller stream into it and settle it. That keeps every transport
    * decision — fetch, SSE, a test double — outside the UI. */
   readonly onPrompt: (text: string, turnId: string) => void;
+  /** Called when a person presses stop, with the turn to cancel. The
+   * driver owns the transport, so it owns the cancel: abort the fetch,
+   * kill the child process, then call `store.abort(turnId)`.
+   *
+   * ⭐ When it is NOT supplied the workbench aborts the round itself. That
+   * is not a no-op — `stream` and `settle` refuse a turn that is no longer
+   * streaming, so a driver that cannot be cancelled finds its output
+   * dropped rather than landing in a round the person already stopped. A
+   * stop button that leaves the round running would be the one lie this
+   * pane cannot afford. */
+  readonly onStop?: (turnId: string) => void;
 }
 
-export function Workbench({ store, onPrompt }: WorkbenchProps) {
+export function Workbench({ store, onPrompt, onStop }: WorkbenchProps) {
   const state = useSyncExternalStore(store.subscribe, store.getState, store.getState);
 
   const round = currentRound(state);
@@ -71,6 +91,20 @@ export function Workbench({ store, onPrompt }: WorkbenchProps) {
     },
     [store, onPrompt],
   );
+
+  const handleStop = useCallback(() => {
+    const turnId = store.requestAbort();
+    if (turnId === null) return;
+    if (onStop === undefined) store.abort(turnId);
+    else onStop(turnId);
+  }, [store, onStop]);
+
+  const run = visibleRun(state);
+  const running = activeRun(state);
+  const steps = progress(state);
+  const edited = edits(state);
+  const latest = state.rounds[state.rounds.length - 1] ?? null;
+  const historical = latest !== null && latest.id !== state.selectedRoundId;
 
   // `count` and `tone` are explicitly `| undefined` rather than optional:
   // under `exactOptionalPropertyTypes` an absent property and a present

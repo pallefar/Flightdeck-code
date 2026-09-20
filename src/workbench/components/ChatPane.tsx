@@ -5,6 +5,7 @@
  * session — which is what makes "show me what round 2 looked like" a click
  * rather than a regeneration. */
 import { useEffect, useRef, useState } from "react";
+import { runProgress, type Run } from "../run";
 import type { Round, Turn } from "../types";
 
 interface Props {
@@ -14,9 +15,25 @@ interface Props {
   readonly busy: boolean;
   readonly onSubmit: (text: string) => void;
   readonly onSelectRound: (roundId: string) => void;
+  /** The run in flight, for the ticker under the composer. Optional: the
+   * pane renders without one, it just says less. */
+  readonly run?: Run | null;
+  /** Stop the round. When absent no stop button is drawn — a dead one
+   * would be worse than none, because the whole value of this control is
+   * that a person believes it. */
+  readonly onStop?: (() => void) | undefined;
 }
 
-export function ChatPane({ turns, rounds, selectedRoundId, busy, onSubmit, onSelectRound }: Props) {
+export function ChatPane({
+  turns,
+  rounds,
+  selectedRoundId,
+  busy,
+  onSubmit,
+  onSelectRound,
+  run = null,
+  onStop,
+}: Props) {
   const [draft, setDraft] = useState("");
   const logRef = useRef<HTMLDivElement>(null);
 
@@ -77,6 +94,8 @@ export function ChatPane({ turns, rounds, selectedRoundId, busy, onSubmit, onSel
         })}
       </div>
 
+      {busy && <Ticker run={run} />}
+
       <div className="fd-composer">
         <textarea
           value={draft}
@@ -94,11 +113,47 @@ export function ChatPane({ turns, rounds, selectedRoundId, busy, onSubmit, onSel
           }}
           aria-label="Describe the mini-app"
         />
-        <button type="button" className="fd-composer__send" disabled={busy || draft.trim().length === 0} onClick={send}>
-          Build
-        </button>
+        {busy && onStop !== undefined ? (
+          // While a round is in flight the primary button IS stop. Leaving
+          // a disabled "Build" as the only thing under a person's cursor,
+          // with the cancel hidden on another pane, is how a workbench
+          // makes somebody watch a bad round finish.
+          <button
+            type="button"
+            className="fd-stop"
+            disabled={run?.abortRequested ?? false}
+            onClick={onStop}
+          >
+            {run?.abortRequested === true ? "Stopping…" : "Stop"}
+          </button>
+        ) : (
+          <button type="button" className="fd-composer__send" disabled={busy || draft.trim().length === 0} onClick={send}>
+            Build
+          </button>
+        )}
       </div>
     </section>
+  );
+}
+
+/** What it is doing, right now, where the person is already looking. The
+ * run pane has the detail; this is the one line that says whether the
+ * silence is a typecheck or a hang. */
+function Ticker({ run }: { readonly run: Run | null }) {
+  const progress = runProgress(run);
+  if (progress.current === null) {
+    return <p className="fd-ticker">Working…</p>;
+  }
+  return (
+    <p className="fd-ticker">
+      <span className="fd-ticker__n mono">
+        {Math.min(progress.done + 1, progress.total)}/{progress.total}
+      </span>
+      {progress.current.label}
+      {progress.current.detail !== null && (
+        <span className="fd-ticker__detail mono">{progress.current.detail}</span>
+      )}
+    </p>
   );
 }
 

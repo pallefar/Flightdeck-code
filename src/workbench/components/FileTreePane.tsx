@@ -5,10 +5,11 @@
  * changed, and a dot for each finding the gate raised in that file. A tree
  * that shows only names makes a person open twelve files to find the two
  * that matter. */
-import { useMemo } from "react";
 import type { FileChange } from "../diff";
+import type { DraftState } from "../editing";
 import { TIERS, type TreeNode } from "../tree";
 import type { Finding, GeneratedFile } from "../types";
+import { EditorPane, type EditorPaneProps } from "./EditorPane";
 
 interface Props {
   readonly nodes: readonly TreeNode[];
@@ -21,7 +22,22 @@ interface Props {
   readonly file: GeneratedFile | null;
   readonly onSelect: (path: string) => void;
   readonly onToggle: (path: string) => void;
+  /** Which files carry something of the person's. A dot in the tree is
+   * the only way to see, without opening twelve files, that two of them
+   * are yours and one of those is in conflict. */
+  readonly draftStates?: ReadonlyMap<string, DraftState>;
+  readonly locks?: ReadonlySet<string>;
+  /** Everything the editor half needs. Omitted entirely in a read-only
+   * embedding, which is how the pane renders with no store at all. */
+  readonly editor?: Omit<EditorPaneProps, "file" | "findings">;
 }
+
+const MARK: Readonly<Record<DraftState, string>> = {
+  clean: "",
+  dirty: "●",
+  saved: "◆",
+  conflicted: "▲",
+};
 
 export function FileTreePane({
   nodes,
@@ -33,6 +49,9 @@ export function FileTreePane({
   file,
   onSelect,
   onToggle,
+  draftStates,
+  locks,
+  editor,
 }: Props) {
   return (
     <div className="fd-files">
@@ -81,6 +100,8 @@ export function FileTreePane({
           const change = changes.get(node.path);
           const fileFindings = findings.get(node.path) ?? [];
           const dim = focusedRule !== null && !fileFindings.some((f) => f.rule === focusedRule);
+          const draft = draftStates?.get(node.path);
+          const locked = locks?.has(node.path) ?? false;
           return (
             <button
               type="button"
@@ -91,7 +112,17 @@ export function FileTreePane({
               onClick={() => onSelect(node.path)}
               title={node.path}
             >
+              {locked && (
+                <span className="fd-tree__lock" aria-label="locked">
+                  ⌷
+                </span>
+              )}
               <span className="fd-tree__name">{node.name}</span>
+              {draft !== undefined && draft !== "clean" && (
+                <span className={`fd-tree__draft fd-tree__draft--${draft}`} aria-label={draft}>
+                  {MARK[draft]}
+                </span>
+              )}
               {fileFindings.slice(0, 3).map((finding, i) => (
                 <span key={i} className={`fd-dot fd-dot--${finding.severity}`} aria-label={finding.severity} />
               ))}
@@ -105,73 +136,7 @@ export function FileTreePane({
           );
         })}
       </nav>
-      <SourceView file={file} findings={file === null ? [] : findings.get(file.path) ?? []} />
-    </div>
-  );
-}
-
-function SourceView({
-  file,
-  findings,
-}: {
-  readonly file: GeneratedFile | null;
-  readonly findings: readonly Finding[];
-}) {
-  const lines = useMemo(() => (file === null ? [] : file.contents.replace(/\n$/, "").split("\n")), [file]);
-  const bySeverity = useMemo(() => {
-    const map = new Map<number, Finding>();
-    for (const finding of findings) {
-      // The worse of two findings on a line wins the row's colour;
-      // otherwise a warning drawn second hides an error drawn first.
-      const existing = map.get(finding.line);
-      if (existing === undefined || (existing.severity === "warning" && finding.severity === "error")) {
-        map.set(finding.line, finding);
-      }
-    }
-    return map;
-  }, [findings]);
-
-  if (file === null) {
-    return (
-      <div className="fd-source">
-        <div className="fd-empty">Select a file.</div>
-      </div>
-    );
-  }
-
-  const name = file.path.split("/").pop() ?? file.path;
-  return (
-    <div className="fd-source">
-      <header className="fd-source__head">
-        <span className="fd-source__path">
-          {file.path.slice(0, file.path.length - name.length)}
-          <b>{name}</b>
-        </span>
-        <span className="fd-tabs__spacer" />
-        <span className="fd-tabs__id">
-          {lines.length} line{lines.length === 1 ? "" : "s"}
-        </span>
-      </header>
-      <div className="fd-code">
-        <table>
-          <tbody>
-            {lines.map((line, i) => {
-              const finding = bySeverity.get(i + 1);
-              return (
-                <tr key={i} data-finding={finding?.severity}>
-                  <td className="fd-ln">{i + 1}</td>
-                  <td>
-                    {line}
-                    {finding !== undefined && (
-                      <span className="fd-finding__where">  ← {finding.rule} {finding.message}</span>
-                    )}
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
+      <EditorPane {...(editor ?? {})} file={file} findings={file === null ? [] : findings.get(file.path) ?? []} />
     </div>
   );
 }
