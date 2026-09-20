@@ -14,9 +14,9 @@ and says why.
 ## 1. Why you are moving this to the Mac
 
 One reason only: **the host's compliance gate cannot pass in this container.**
-Studio itself does not need a database —
-the only mention of Postgres in this repo is a *denylist* of imports a generated
-mini-app may not use (`packages/conformance/src/checks/capability-escape.ts:40`).
+Studio itself does not need a database — the only mention of Postgres in this
+repo is a *denylist* of imports a generated mini-app may not use
+(`packages/conformance/src/checks/capability-escape.ts:40`).
 
 What that blocks, precisely: `scripts/promote.sh` runs Flightdeck's own
 `scripts/gate.sh` with a generated candidate mounted, and writes a
