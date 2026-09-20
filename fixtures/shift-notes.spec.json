@@ -1,0 +1,29 @@
+{
+  "id": "shift-notes",
+  "label": "Shift Notes",
+  "icon": "📝",
+  "navSection": "Ops & insight",
+  "summary": "The contract folders this app may read. Nothing is stored.",
+  "capabilities": [
+    "read:contracts"
+  ],
+  "visibleToRoles": [
+    "admin"
+  ],
+  "domains": [
+    {
+      "name": "contracts",
+      "title": "Contract folders",
+      "routes": [
+        {
+          "method": "GET",
+          "path": "/contracts",
+          "summary": "Contract folders visible to this workspace",
+          "operation": {
+            "kind": "list-contracts"
+          }
+        }
+      ]
+    }
+  ]
+}

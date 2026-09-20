@@ -8,13 +8,42 @@
 # errors were found this way and by no other means, including one the tests
 # could not have found because the app RAN while it did not COMPILE.
 #
+# Run it with no arguments and it covers every fixture — see SPECS below.
+#
 # `set -uo pipefail` and never `-e`: this script's whole job is to run things
 # that may fail and then report. An `-e` here would exit before the summary,
 # which is the failure mode scripts/promote.sh was written to avoid.
 set -uo pipefail
 
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-SPEC="${1:-$REPO/fixtures/wc-clock.spec.json}"
+
+# ⭐ ALL THE FIXTURES BY DEFAULT, NOT ONE.
+#
+# This ran against wc-clock alone for its whole first life, and wc-clock alone
+# is what made it look finished. The second spec found a type error (a shim
+# narrower than the host's own `principal`), and the third found that the check
+# itself encoded one fixture's shape — it required a contracts table on a page
+# that renders a step rail. One fixture proves one fixture.
+#
+# `npm run standalone` therefore covers every profile: the DB-free mini-app,
+# the table path, and a converted Cowork workflow. Pass a path to run just one.
+if [[ $# -gt 0 ]]; then
+  SPECS=("$@")
+else
+  SPECS=()
+  while IFS= read -r f; do SPECS+=("$f"); done < <(find "$REPO/fixtures" -name '*.spec.json' | sort)
+fi
+
+if [[ ${#SPECS[@]} -gt 1 ]]; then
+  RC=0
+  for spec in "${SPECS[@]}"; do
+    printf '\n════════ %s ════════\n' "$(basename "$spec" .spec.json)"
+    PORT=$(( ${PORT:-5199} + RANDOM % 200 )) bash "${BASH_SOURCE[0]}" "$spec" || RC=1
+  done
+  exit $RC
+fi
+
+SPEC="${SPECS[0]}"
 WORK="$(mktemp -d)"
 PORT="${PORT:-5199}"
 HOST_TREE="$WORK/host"

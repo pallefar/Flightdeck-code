@@ -201,7 +201,17 @@ declare module "fastify" {
   interface FastifyRequest {
     workspace?: WorkspaceRuntime;
     project?: { readonly id: string };
-    principal?: { readonly username: string; readonly roles: readonly string[] };
+    /** ⚠ THE INDEX SIGNATURE IS THE HOST'S AND IT IS LOAD-BEARING. A first
+     * version of this shim declared \`{ username, roles }\` and left it off,
+     * as tidier. A generated route that reads \`req.principal.displayName\`
+     * then compiles against the host and FAILS here — a shim narrower than
+     * the thing it stands in for is a shim that rejects correct code. Found
+     * by typechecking a second spec, having only ever tried one. */
+    principal?: {
+      readonly username: string;
+      readonly roles: readonly string[];
+      readonly [key: string]: unknown;
+    };
   }
 }
 
@@ -716,7 +726,11 @@ export function buildStandaloneServer(options: StandaloneServerOptions) {
     const r = req as unknown as Record<string, unknown>;
     r["workspace"] = { id: "standalone", root: dataRoot, db: null };
     r["project"] = { id: "general" };
-    r["principal"] = { username: "standalone", roles: ${JSON.stringify(plan.manifestData.visibleToRoles)} };
+    r["principal"] = {
+      username: "standalone",
+      displayName: "Standalone operator",
+      roles: ${JSON.stringify(plan.manifestData.visibleToRoles)},
+    };
   });
 
   ${registerFn}(app, { capabilitiesFor: async () => caps });

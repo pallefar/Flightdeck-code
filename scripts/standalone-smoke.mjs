@@ -43,8 +43,61 @@ try {
   // 2. The sub-app's OWN route supplied data that reached the DOM. This is
   //    the whole claim: the page fetched through ROUTE_PREFIX, unchanged,
   //    and a standalone adapter answered it.
-  const tickets = ["TE-4711", "TE-4712"].filter((t) => text.includes(t));
-  if (tickets.length !== 2) failures.push(`expected both seeded tickets in the DOM, found ${JSON.stringify(tickets)}`);
+  //
+  //    ⚠ ONLY WHERE THE APP ACTUALLY LISTS CONTRACTS. The first version of
+  //    this check required both seeded tickets from every app, which was true
+  //    of the one spec it had been run against and false of a converted
+  //    workflow whose rail files proposals and lists none. A check that
+  //    encodes one fixture's shape fails correct apps — so ask the SERVER
+  //    whether this app exposes the route, and require the DOM to agree only
+  //    when it does.
+  const health = await page.evaluate(async () => {
+    const r = await fetch("/healthz");
+    return r.ok ? await r.json() : null;
+  });
+  const prefix = health?.routePrefix ?? null;
+  let tickets = [];
+  let listed = null;
+  if (prefix !== null) {
+    listed = await page.evaluate(async (p) => {
+      const r = await fetch(`${p}/contracts`);
+      if (!r.ok) return null;
+      const body = await r.json();
+      return Array.isArray(body?.rows) ? body.rows.length : null;
+    }, prefix);
+  }
+  let clicked = null;
+  if (listed !== null && listed > 0) {
+    tickets = ["TE-4711", "TE-4712"].filter((t) => text.includes(t));
+    if (tickets.length !== 2) {
+      // ⚠ NOT EVERY PAGE LOADS EAGERLY, and the second one tried does not.
+      // A converted workflow renders a STEP RAIL whose steps are controls —
+      // deliberately, because the emitted page "reports the order; it does
+      // not enforce it" and never runs a step on your behalf. So the honest
+      // end-to-end is to DO what a person would do: press the control and
+      // check the data arrives. That exercises more of the path than an
+      // eager fetch would, not less.
+      const control = page
+        .getByRole("button")
+        .filter({ hasText: /load|contract folder/i })
+        .first();
+      if ((await control.count()) > 0) {
+        clicked = (await control.textContent())?.trim() ?? "(unnamed control)";
+        await control.click();
+        await page.waitForTimeout(1500);
+      }
+      const after = await page.locator("body").innerText();
+      tickets = ["TE-4711", "TE-4712"].filter((t) => after.includes(t));
+      if (tickets.length !== 2) {
+        failures.push(
+          `the server lists ${listed} contract(s) but the DOM shows ${JSON.stringify(tickets)}` +
+            (clicked === null
+              ? " and no control offered to load them" 
+              : ` even after pressing ${JSON.stringify(clicked)}`),
+        );
+      }
+    }
+  }
 
   // 3. The harness's stylesheet is applied — the page ships none of its own,
   //    so an unstyled render means theme.css did not load or does not match.
@@ -64,7 +117,7 @@ try {
   if (consoleErrors.length > 0) failures.push(`console errors: ${JSON.stringify(consoleErrors.slice(0, 4))}`);
 
   process.stdout.write(
-    JSON.stringify({ title, chars: text.trim().length, tickets, card, consoleErrors }, null, 2) + "\n",
+    JSON.stringify({ title, chars: text.trim().length, routePrefix: prefix, contractsListed: listed, tickets, loadedByPressing: clicked, card, consoleErrors }, null, 2) + "\n",
   );
 } finally {
   await browser.close();

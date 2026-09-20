@@ -15,8 +15,16 @@ npx tsx packages/codegen/src/cli.ts \
 cd wc-clock-alone && npm install && npm run dev
 ```
 
-`npm run standalone` from this repo does the whole thing end to end and says
-whether it worked.
+`npm run standalone` from this repo runs the whole thing end to end against
+**every fixture** — the DB-free mini-app, the table path, and a converted
+Cowork workflow — and says whether it worked.
+
+That it covers all three is not decoration. It ran against `wc-clock` alone
+for its whole first life, and `wc-clock` alone is what made it look finished:
+the second spec found a type error (a shim narrower than the host's own
+`principal` declaration, which rejects correct code), and the third found that
+the check itself had encoded one fixture's shape — it demanded a contracts
+table from a page that renders a step rail. One fixture proves one fixture.
 
 ## What "the same files" means, exactly
 
@@ -110,7 +118,12 @@ sub-app with it. So:
 | `codegen/__tests__/standalone.test.ts` | shape, import coverage, byte-identity, class coverage | whether any of it runs |
 | `tsc -p standalone/tsconfig.json` | type errors in the tree that ships | whether it starts |
 | `standalone-smoke.sh` | boot, the gate refusing, HTTP, the bundle building | whether the page renders |
-| `standalone-smoke.mjs` (Chromium) | the DOM, applied CSS, console errors | — |
+| `standalone-smoke.mjs` (Chromium) | the DOM, applied CSS, console errors, and what happens when you PRESS the control | — |
+
+Each one has caught something the one above it could not — and the browser
+layer drives the page the way a person does, because the emitted step rail
+never runs a step on your behalf. On a converted workflow it presses
+"Load the contract folders this app may read" and then checks the rows arrive.
 
 Each one has caught something the one above it could not. The browser layer
 earns its place: with `.card` still *defined* in `theme.css` but made inert,
