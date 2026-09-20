@@ -108,8 +108,13 @@ export type TurnRole = "you" | "studio";
 /** A turn's lifecycle. `refused` is distinct from `failed`: a refusal is
  * Studio declining to generate something the contract forbids — a correct
  * outcome with a reason — while a failure is Studio breaking. Collapsing
- * them into one red state teaches people to ignore both. */
-export type TurnStatus = "streaming" | "settled" | "refused" | "failed";
+ * them into one red state teaches people to ignore both.
+ *
+ * `aborted` is distinct from both, and it is the person's: they pressed
+ * stop. Nothing went wrong and nothing was refused — the round simply
+ * does not exist. A UI that files a cancelled round under "failed" makes
+ * a person doubt their own hand on the button. */
+export type TurnStatus = "streaming" | "settled" | "refused" | "failed" | "aborted";
 
 export interface Turn {
   readonly id: string;
@@ -134,7 +139,7 @@ export interface Round {
 
 // ───────────────────────────── the panes ─────────────────────────────────
 
-export type WorkbenchView = "files" | "diff" | "preview" | "gate";
+export type WorkbenchView = "run" | "files" | "diff" | "preview" | "gate";
 
 /** Which layer of contract §4's three-layer AND is currently off. The
  * preview lets a person flip each one, because "what does a person see

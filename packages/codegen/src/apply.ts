@@ -117,22 +117,31 @@ function payloadBytes(payload: WritePayload): Buffer {
   return payload.kind === "text" ? Buffer.from(payload.text, "utf8") : Buffer.from(payload.bytes);
 }
 
-/** Turns emitted files into ordered, content-addressed write actions. */
+/** One write action, content-addressed. The id is a function of the
+ * destination and the bytes and of nothing else — not of when this ran or
+ * of where in the list it sat. */
+export function writeAction(relPath: string, payload: WritePayload, kind: GeneratedFile["kind"]): WriteAction {
+  const bytes = payloadBytes(payload);
+  return {
+    id: crypto.createHash("sha256").update(relPath).update("\0").update(bytes).digest("hex").slice(0, 32),
+    path: relPath,
+    payload,
+    sha256: sha256(bytes),
+    kind,
+  };
+}
+
+export function sortForCommit(actions: readonly WriteAction[]): WriteAction[] {
+  return [...actions].sort(
+    (a, b) => COMMIT_RANK[a.kind] - COMMIT_RANK[b.kind] || (a.path < b.path ? -1 : a.path > b.path ? 1 : 0),
+  );
+}
+
+/** Turns emitted files into ordered write actions. Every emitter produces
+ * text today, so this is the text door; `applyWrites` is the one that also
+ * takes bytes. */
 export function planWrites(files: readonly GeneratedFile[]): WriteAction[] {
-  const actions = files.map((file): WriteAction => {
-    const payload: WritePayload = { kind: "text", text: file.contents };
-    const bytes = payloadBytes(payload);
-    const hash = sha256(bytes);
-    return {
-      id: crypto.createHash("sha256").update(file.path).update("\0").update(bytes).digest("hex").slice(0, 32),
-      path: file.path,
-      payload,
-      sha256: hash,
-      kind: file.kind,
-    };
-  });
-  actions.sort((a, b) => COMMIT_RANK[a.kind] - COMMIT_RANK[b.kind] || (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
-  return actions;
+  return sortForCommit(files.map((file) => writeAction(file.path, { kind: "text", text: file.contents }, file.kind)));
 }
 
 /* ── path confinement ───────────────────────────────────────────────── */
@@ -321,6 +330,13 @@ interface JournalEntry {
   path: string;
   actionId: string;
   sha256: string;
+  /** The sha this path held before this apply, when THAT content was also
+   * ours. It closes the last re-run trap: if the process is killed between
+   * two renames, or a rollback puts the old bytes back, the next run finds
+   * content that matches neither "nothing there" nor the new target — and
+   * without this field it would call that drift and demand `--force`, which
+   * is the exact flag-reaching the journal exists to avoid. */
+  supersedes: string | null;
   committedAt: string | null;
 }
 
@@ -364,6 +380,7 @@ function readJournal(at: string, warnings: string[]): Journal | undefined {
         path: e.path,
         actionId: e.actionId,
         sha256: e.sha256,
+        supersedes: typeof e.supersedes === "string" ? e.supersedes : null,
         committedAt: typeof e.committedAt === "string" ? e.committedAt : null,
       });
     }
@@ -441,6 +458,24 @@ function writeFileAtomic(absPath: string, bytes: Buffer): void {
   fsyncDir(dir);
 }
 
+/** Names the first ancestor that exists but is not a directory, if any. */
+function blockingParent(rootAbs: string, absFile: string): string {
+  const rel = path.relative(rootAbs, path.dirname(absFile));
+  if (rel.length === 0) return "";
+  let cursor = rootAbs;
+  for (const segment of rel.split(path.sep)) {
+    cursor = path.join(cursor, segment);
+    try {
+      if (!fs.lstatSync(cursor).isDirectory()) {
+        return ` — ${path.relative(rootAbs, cursor).split(path.sep).join("/")} exists and is not a directory`;
+      }
+    } catch {
+      return "";
+    }
+  }
+  return "";
+}
+
 function unlinkQuietly(at: string): void {
   try {
     fs.unlinkSync(at);
@@ -467,9 +502,18 @@ interface Slot {
   backedUp: boolean;
   committed: boolean;
   existedBefore: boolean;
+  /** sha of the bytes the destination held at preflight, if any. */
+  previousSha: string | null;
+  /** Were those bytes ours? Decides what goes in the journal's `supersedes`. */
+  previousWasOurs: boolean;
 }
 
+/** The text-only convenience door: emitted files in, report out. */
 export function applyGeneratedFiles(files: readonly GeneratedFile[], options: ApplyOptions): ApplyReport {
+  return applyWrites(planWrites(files), options);
+}
+
+export function applyWrites(input: readonly WriteAction[], options: ApplyOptions): ApplyReport {
   const rootAbs = path.resolve(options.root);
   const now = options.now ?? (() => new Date().toISOString());
   const force = options.force === true;
@@ -480,7 +524,7 @@ export function applyGeneratedFiles(files: readonly GeneratedFile[], options: Ap
   const journal = readJournal(journalAt, warnings);
   const journalByPath = new Map<string, JournalEntry>(journal?.entries.map((e) => [e.path, e]) ?? []);
 
-  const actions = planWrites(files);
+  const actions = sortForCommit(input);
   const slots: Slot[] = [];
 
   const report = (outcome: ApplyOutcome): ApplyReport => ({
@@ -516,7 +560,7 @@ export function applyGeneratedFiles(files: readonly GeneratedFile[], options: Ap
       if (!(err instanceof PathEscapeError)) throw err;
       const refusal: Refusal = { path: action.path, reason: err.reason, detail: err.message, forceable: false };
       refusals.push(refusal);
-      slots.push(blankSlot(action, path.join(rootAbs, "\u0000unresolved"), "clash", "refused", { refusal }));
+      slots.push(blankSlot(action, "", "clash", "refused", { refusal }));
       continue;
     }
 
@@ -536,10 +580,13 @@ export function applyGeneratedFiles(files: readonly GeneratedFile[], options: Ap
 
     let disposition: Disposition;
     let refusal: Refusal | undefined;
+    let previousSha: string | null = null;
+    let previousWasOurs = false;
     if (st === undefined) {
       // Missing. If the journal says we committed it, this is the
       // interrupted-apply case the old clash check could not express.
       disposition = entry !== undefined ? "resume" : "create";
+      previousWasOurs = entry !== undefined;
     } else if (st.isSymbolicLink()) {
       disposition = "clash";
       refusal = {
@@ -567,9 +614,13 @@ export function applyGeneratedFiles(files: readonly GeneratedFile[], options: Ap
         slots.push(blankSlot(action, abs, "clash", "failed", { error: failure }));
         continue;
       }
+      previousSha = onDisk;
+      // Ours if it is the content the journal last committed, OR the content
+      // that commit replaced — an interrupted apply leaves one or the other.
+      previousWasOurs = entry !== undefined && (entry.sha256 === onDisk || entry.supersedes === onDisk);
       if (onDisk === action.sha256) {
         disposition = "identical";
-      } else if (entry !== undefined && entry.sha256 === onDisk) {
+      } else if (previousWasOurs) {
         disposition = "refresh";
       } else if (entry !== undefined) {
         disposition = "drift";
@@ -608,6 +659,8 @@ export function applyGeneratedFiles(files: readonly GeneratedFile[], options: Ap
       backedUp: false,
       committed: false,
       existedBefore: st !== undefined,
+      previousSha,
+      previousWasOurs,
     });
   }
 
@@ -638,8 +691,7 @@ export function applyGeneratedFiles(files: readonly GeneratedFile[], options: Ap
   for (const slot of todo) {
     if (options.signal?.aborted === true) {
       cleanupStaged(slots);
-      for (const s of todo) if (!s.staged) s.status = "aborted";
-      for (const s of todo) if (s.staged) s.status = "aborted";
+      for (const s of todo) s.status = "aborted";
       return report("aborted");
     }
     try {
@@ -650,7 +702,15 @@ export function applyGeneratedFiles(files: readonly GeneratedFile[], options: Ap
       slot.status = "staged";
     } catch (err) {
       const d = describe(err);
-      const failure: ApplyFailure = { phase: "stage", path: slot.action.path, code: d.code, message: d.message };
+      const failure: ApplyFailure = {
+        phase: "stage",
+        path: slot.action.path,
+        code: d.code,
+        // The raw errno for "a parent is a regular file" is `EEXIST … mkdir`,
+        // which reads as the opposite of the problem. Say what is actually in
+        // the way, so the operator's next move is obvious.
+        message: `${d.message}${blockingParent(rootAbs, slot.abs)}`,
+      };
       slot.error = failure;
       slot.status = "failed";
       failures.push(failure);
@@ -757,6 +817,8 @@ function blankSlot(
     backedUp: false,
     committed: false,
     existedBefore: false,
+    previousSha: null,
+    previousWasOurs: false,
     ...(extra.error === undefined ? {} : { error: extra.error }),
     ...(extra.refusal === undefined ? {} : { refusal: extra.refusal }),
   };
@@ -811,6 +873,11 @@ function touchJournal(
       path: s.action.path,
       actionId: s.action.id,
       sha256: s.action.sha256,
+      // Only the INTENT record needs the old sha. Once the commit phase has
+      // finished there is nothing left to be ambiguous about, and a rollback
+      // leaves the intent record in place — which is why rolling back needs
+      // no journal write of its own.
+      supersedes: mode.completed || !s.previousWasOurs ? null : s.previousSha,
       committedAt: mode.completed ? stamp : s.status === "committed" ? stamp : null,
     }));
   const journal: Journal = {
@@ -879,12 +946,12 @@ function reconcile(
   for (const dir of ownedDirs) {
     let abs: string;
     try {
-      abs = resolveWithinRoot(rootAbs, `${dir.replace(/\/+$/, "")}/.keep`);
+      abs = resolveWithinRoot(rootAbs, dir);
     } catch {
       continue;
     }
     const found: string[] = [];
-    walk(path.dirname(abs), rootAbs, found);
+    walk(abs, rootAbs, found);
     for (const rel of found) {
       if (seen.has(rel)) continue;
       seen.add(rel);
@@ -910,11 +977,9 @@ function reconcile(
     } catch {
       continue;
     }
-    if (onDisk !== entry.sha256 && !planned.has(rel)) drifted.push(rel);
-    else if (onDisk !== entry.sha256) {
-      const action = actions.find((a) => a.path === rel);
-      if (action !== undefined && action.sha256 !== onDisk) drifted.push(rel);
-    }
+    if (onDisk === entry.sha256 || onDisk === entry.supersedes) continue;
+    const action = actions.find((a) => a.path === rel);
+    if (action === undefined || action.sha256 !== onDisk) drifted.push(rel);
   }
 
   drifted.sort();

@@ -210,9 +210,16 @@ import type { SubAppModule } from "../registry";
 const ROUTE_PREFIX = "/api/apps/wc-clock";
 const APP_TITLE = "Works council clock";
 
+interface Entry {
+  id: string;
+  ticket: string;
+  minutes: number;
+  created_at: string;
+}
+
 export function Page() {
-  const [entries, setEntries] = useState([]);
-  const [error, setError] = useState(null);
+  const [entries, setEntries] = useState<Entry[]>([]);
+  const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     const res = await fetch(ROUTE_PREFIX + "/entries");

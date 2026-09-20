@@ -79,6 +79,31 @@ const CATALOG = {
   "FD-X004": { severity: "error", title: "declared tables are wired into initSchema", contract: "§2" },
   "FD-X005": { severity: "warning", title: "shipped i18n is wired into the host", contract: "§7, §8" },
 
+  // ── Does it compile, against the host it is compiled into? ─────────
+  // Not a contract clause: a clause-perfect sub-app that does not compile
+  // turns the host build red, which is a worse outcome than any rule
+  // above. The compiler is the authority; these three ids only sort its
+  // diagnostics into "would not parse", "imports nothing real" and
+  // "does not typecheck".
+  "FD-T001": { severity: "error", title: "the candidate parses", contract: "§1" },
+  "FD-T002": { severity: "error", title: "every import resolves in the host", contract: "§5.3" },
+  "FD-T003": { severity: "error", title: "the candidate typechecks against the host", contract: "§1" },
+
+  // ── Does it do what it says, when it is actually mounted? ───────────
+  // Raised from a recorded run of the generated code inside a sandbox:
+  // the SQL that RAN, the routes that were REGISTERED, and the order a
+  // handler did things in. Every one of these is a defect the static
+  // rules above are structurally unable to see.
+  "FD-R001": { severity: "error", title: "the manifest module loads", contract: "§1" },
+  "FD-R002": { severity: "error", title: "the manifest exports what the host calls", contract: "§2" },
+  "FD-R003": { severity: "error", title: "initSchema runs without throwing", contract: "§2" },
+  "FD-R004": { severity: "error", title: "the DDL that runs stays under the table prefix", contract: "§3" },
+  "FD-R005": { severity: "error", title: "registerRoutes runs and registers routes", contract: "§2" },
+  "FD-R006": { severity: "error", title: "the routes it registers sit under routePrefix", contract: "§2, §3" },
+  "FD-R007": { severity: "error", title: "a disabled handler refuses before any work", contract: "§5.1" },
+  "FD-R008": { severity: "error", title: "no handler crashes on a well-formed request", contract: "§1" },
+  "FD-R009": { severity: "error", title: "the mount probe completed", contract: "—" },
+
   // ── The gate's own honesty. ─────────────────────────────────────────
   // A check that crashes has not passed the app. It fails closed, under
   // its own rule id, so "the gate said yes" never means "the gate threw".

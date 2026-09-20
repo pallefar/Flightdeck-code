@@ -2,9 +2,20 @@
  * add to the Flightdeck host, statically, before a byte of it is written.
  *
  * ```ts
+ * // Statically, in milliseconds — "does this obey the contract?"
  * const report = runConformanceGate({ files });
  * if (!report.ok) return refuse(formatReport(report));
+ *
+ * // Contract + compiler + a sandboxed mount — "does this work?"
+ * const verdict = await verifySubApp({ files }, { repoRoot });
+ *
+ * // The same three answers, and the write, behind one call.
+ * await shipSubApp({ files }, { root: hostRepo });
  * ```
+ *
+ * The first is a fast opinion for an editor. The last two are the gate:
+ * `shipSubApp` is the only exported way to put a generated sub-app on a
+ * disk, and it does not exist as a path that skips the verification.
  *
  * `docs/FLIGHTDECK-SUBAPP-CONTRACT.md` is the law this package enforces.
  * Deliberately self-contained: it imports neither the host nor Studio's
@@ -13,6 +24,20 @@
  * month's generator. A gate that shared a derivation with the thing it
  * judges would agree with it about the wrong answer. */
 export { runConformanceGate, assertShippable, ConformanceError, CHECKS, type GateOptions, type GateReport } from "./gate";
+export {
+  verifySubApp,
+  assertVerified,
+  type StageName,
+  type VerificationReport,
+  type VerificationStage,
+  type VerifyOptions,
+} from "./verify";
+export { shipSubApp, ShipRefused, type ShipOptions, type ShipReport, type WriteOutcome, type WriteStatus } from "./ship";
+export { typecheckCandidate, type TypecheckOptions, type TypecheckResult } from "./verify/typecheck";
+export { FLIGHTDECK_HOST_SURFACE, type HostSurface } from "./verify/host-surface";
+export { mountProbe, type MountContext, type MountOptions, type MountResult } from "./verify/mount";
+export { isolationAvailable, redactSecrets } from "./verify/sandbox";
+export type { ProbeResult, ProbeRoute, ProbeInvocation } from "./verify/harness";
 export { formatFinding, formatReport, formatRuleCatalog } from "./report";
 export {
   CANDIDATE_SCOPE,

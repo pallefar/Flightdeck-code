@@ -425,10 +425,42 @@ describe.each(VIOLATIONS)("$rule: $what", ({ rule, file, build, options, anchore
   });
 });
 
+/** ⛔ THE ONLY RULES THIS FILE DOES NOT COVER, and the reason. FD-T* comes
+ * from the TypeScript compiler and FD-R* from a sub-process that mounts
+ * the emitted app; neither can be raised by the synchronous gate this file
+ * drives. Their violating fixtures live in `verify.test.ts`, which asserts
+ * each of them the same way. The list is written out rather than derived
+ * from a prefix so that a new rule cannot join it by being named well. */
+const PROVEN_IN_VERIFY_TEST: readonly RuleId[] = [
+  "FD-T001",
+  "FD-T002",
+  "FD-T003",
+  "FD-R001",
+  "FD-R002",
+  "FD-R003",
+  "FD-R004",
+  "FD-R005",
+  "FD-R006",
+  "FD-R007",
+  "FD-R008",
+  "FD-R009",
+];
+
 describe("the catalog", () => {
   it("has a deliberately violating fixture for every rule", () => {
-    const covered = new Set(VIOLATIONS.map((violation) => violation.rule));
+    const covered = new Set([...VIOLATIONS.map((violation) => violation.rule), ...PROVEN_IN_VERIFY_TEST]);
     expect(RULE_IDS.filter((id) => !covered.has(id))).toEqual([]);
+  });
+
+  it("proves every rule it defers HERE, in the synchronous gate, is genuinely out of its reach", () => {
+    // A rule on that list that the static gate CAN raise belongs in
+    // VIOLATIONS, not in an exemption. The check is one-directional on
+    // purpose: it catches the exemption that stopped being true.
+    const raisable = new Set<string>();
+    for (const violation of VIOLATIONS) {
+      for (const item of runConformanceGate(violation.build(), violation.options ?? {}).findings) raisable.add(item.rule);
+    }
+    expect(PROVEN_IN_VERIFY_TEST.filter((id) => raisable.has(id))).toEqual([]);
   });
 
   it("raises no rule that is not in the catalog", () => {

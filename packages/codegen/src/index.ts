@@ -12,6 +12,31 @@
  * `subapp_<id>_` table prefix, `minHostVersion: "5.0.0"` — are checked on
  * the emitted TEXT by `invariants.ts` before `generateSubApp` returns. */
 export { generateSubApp, type GenerateOptions, type GeneratedSubApp } from "./generate";
+export {
+  JOURNAL_DIR,
+  PathEscapeError,
+  applyGeneratedFiles,
+  applyWrites,
+  fingerprint,
+  journalPathFor,
+  planWrites,
+  resolveWithinRoot,
+  sha256,
+  sortForCommit,
+  writeAction,
+  type ActionReport,
+  type ActionStatus,
+  type ApplyFailure,
+  type ApplyOptions,
+  type ApplyOutcome,
+  type ApplyReport,
+  type Disposition,
+  type Reconciliation,
+  type Refusal,
+  type RefusalReason,
+  type WriteAction,
+  type WritePayload,
+} from "./apply";
 export { planSubApp, SpecRejectedError, type SubAppPlan, type PlannedDomain, type PlannedRoute, type PlannedTable } from "./plan";
 export {
   CodegenInvariantError,

@@ -6,15 +6,33 @@
  * named reason rather than a stack trace, print the plan under `--dry-run`,
  * and never overwrite an existing file without `--force`.
  *
- *   npx tsx packages/codegen/src/cli.ts --spec <spec.json> --out <host-repo> [--dry-run] [--force]
+ *   npx tsx packages/codegen/src/cli.ts --spec <spec.json|-> --out <host-repo> [--dry-run] [--force]
  *
  * `--out` is the ROOT of the Flightdeck host repository; every emitted path
  * is already repo-relative. `--dry-run` writes nothing and lists what would
- * land, including the registry patch. */
+ * land, including the registry patch. `--spec -` reads the spec from stdin,
+ * for piping a model's output straight in.
+ *
+ * ── THE DOCTRINE, ENFORCED RATHER THAN STATED ────────────────────────
+ * "A named reason rather than a stack trace" used to be true of every path
+ * except the one that mattered — the write loop. Disk work now goes through
+ * `apply.ts`, which stages the whole set before committing any of it and
+ * returns failures as data; this file's only job is to turn that report
+ * into human sentences and an exit code. Nothing here throws to the top.
+ *
+ * ── EXIT CODES ARE PART OF THE CONTRACT ──────────────────────────────
+ *   0  applied, or already applied (re-running a spec is a no-op)
+ *   1  refused, fixable with --force (a clash, or a file edited by hand)
+ *   2  bad usage, an unreadable/truncated spec, a rejected spec, or a
+ *      refusal --force must never unlock (a path leaving the repo root)
+ *   3  the filesystem said no — nothing was committed, named errno
+ *   4  cancelled by the operator; nothing was committed */
 import fs from "node:fs";
 import path from "node:path";
+import { applyGeneratedFiles, fingerprint, type ApplyReport } from "./apply";
 import { generateSubApp } from "./generate";
 import { CodegenInvariantError } from "./invariants";
+import { serverDir, webDir } from "./naming";
 import { SpecRejectedError } from "./plan";
 import { REGISTRY_PATH } from "./registry-patch";
 
@@ -30,6 +48,77 @@ function fail(message: string, code = 2): never {
   process.exit(code);
 }
 
+/** Reads the spec, from a file or from stdin.
+ *
+ * A spec is model-authored, and a model-authored document can arrive cut in
+ * half — the pipe closed, the generation hit its token ceiling. That is a
+ * DIFFERENT failure from "this is not valid JSON", and it gets its own
+ * named reason, because the operator's next move differs: re-run the
+ * generation, versus fix the file. Either way a partial document is refused
+ * whole; there is no path by which half a spec becomes half a sub-app. */
+function readSpecText(specPath: string): string {
+  if (specPath === "-") {
+    let text: string;
+    try {
+      text = fs.readFileSync(0, "utf8");
+    } catch (err) {
+      fail(`could not read the spec from stdin — ${(err as Error).message}`);
+    }
+    if (text.trim().length === 0) fail("the spec on stdin was empty");
+    return text;
+  }
+  if (!fs.existsSync(specPath)) fail(`no spec at ${specPath}`);
+  try {
+    return fs.readFileSync(specPath, "utf8");
+  } catch (err) {
+    fail(`could not read ${specPath} — ${(err as Error).message}`);
+  }
+}
+
+function parseSpec(specPath: string, text: string): unknown {
+  try {
+    return JSON.parse(text);
+  } catch (err) {
+    const message = (err as Error).message;
+    const where = specPath === "-" ? "the spec on stdin" : specPath;
+    const truncated = /Unexpected end of JSON input|Unterminated string/i.test(message) || !/[}\]]\s*$/.test(text);
+    if (truncated) {
+      fail(`${where} ended mid-document (${text.length} bytes) — it is truncated, not malformed; re-run the generation that produced it`);
+    }
+    fail(`${where} is not valid JSON — ${message}`);
+  }
+}
+
+function describeDisposition(d: string): string {
+  switch (d) {
+    case "create":
+      return "create   ";
+    case "refresh":
+      return "refresh  ";
+    case "resume":
+      return "resume   ";
+    case "identical":
+      return "identical";
+    case "drift":
+      return "DRIFT    ";
+    default:
+      return "CLASH    ";
+  }
+}
+
+function printReconciliation(report: ApplyReport): void {
+  const { untracked, drifted, staleTempFiles } = report.reconciliation;
+  for (const file of untracked) {
+    console.warn(`codegen: note — ${file} is under this sub-app's directories but is not part of the plan`);
+  }
+  for (const file of drifted) {
+    console.warn(`codegen: note — ${file} differs from what codegen last wrote`);
+  }
+  for (const file of staleTempFiles) {
+    console.warn(`codegen: note — ${file} is a leftover staging file from an interrupted run; safe to delete`);
+  }
+}
+
 export function main(): void {
   const specPath = opt("--spec");
   const outRoot = opt("--out");
@@ -38,13 +127,8 @@ export function main(): void {
   const dryRun = has("--dry-run");
   const force = has("--force");
 
-  if (!fs.existsSync(specPath)) fail(`no spec at ${specPath}`);
-  let spec: unknown;
-  try {
-    spec = JSON.parse(fs.readFileSync(specPath, "utf8"));
-  } catch (err) {
-    fail(`${specPath} is not valid JSON — ${(err as Error).message}`);
-  }
+  const specText = readSpecText(specPath);
+  const spec = parseSpec(specPath, specText);
 
   // The registry is read, never written: the output is a patch a human
   // applies, because "adding a sub-app is exactly as heavy as adding a
@@ -62,11 +146,48 @@ export function main(): void {
 
   for (const warning of generated.warnings) console.warn(`codegen: warning — ${warning}`);
 
+  // Ctrl-C between the first and last file is exactly the hazard this
+  // command is built around, so it is wired to the applier's cancellation
+  // rather than to a default SIGINT that would kill the process mid-rename.
+  //
+  // Being precise about what this buys, because it is not "the loop stops
+  // instantly": the apply is synchronous, so a handler cannot preempt it.
+  // What installing one DOES do is stop Node terminating the process where
+  // it stands — the apply runs to its next checkpoint, the abort is
+  // observed, and the commit is rolled back, so the operator's cancel means
+  // "none of it" rather than "however much of it had landed". The one thing
+  // no handler can catch — SIGKILL, power loss — is covered by the other
+  // end: the intent journal written before the first rename.
+  const controller = new AbortController();
+  const onSignal = (): void => controller.abort();
+  process.on("SIGINT", onSignal);
+  process.on("SIGTERM", onSignal);
+
+  const report = applyGeneratedFiles(generated.files, {
+    root: outRoot,
+    planId: generated.plan.id,
+    specFingerprint: fingerprint(specText),
+    force,
+    dryRun,
+    ownedDirs: [serverDir(generated.plan.id), webDir(generated.plan.webModuleId), `tests/subapps/${generated.plan.id}`],
+    signal: controller.signal,
+  });
+
+  process.off("SIGINT", onSignal);
+  process.off("SIGTERM", onSignal);
+
+  for (const warning of report.warnings) console.warn(`codegen: warning — ${warning}`);
+
   if (dryRun) {
-    console.log(`codegen (dry-run) — ${generated.plan.id}: ${generated.files.length} files`);
-    for (const file of generated.files) {
-      const exists = fs.existsSync(path.join(outRoot, file.path));
-      console.log(`  ${exists ? "overwrite" : "create   "} ${file.path} (${file.contents.split("\n").length} lines)`);
+    const lineCounts = new Map(generated.files.map((f) => [f.path, f.contents.split("\n").length]));
+    console.log(`codegen (dry-run) — ${generated.plan.id}: ${report.actions.length} files`);
+    for (const action of report.actions) {
+      console.log(`  ${describeDisposition(action.disposition)} ${action.path} (${lineCounts.get(action.path) ?? 0} lines)`);
+    }
+    printReconciliation(report);
+    if (report.refusals.length > 0) {
+      for (const refusal of report.refusals) console.error(`codegen: ${refusal.detail}`);
+      process.exit(report.refusals.every((r) => r.forceable) ? 1 : 2);
     }
     if (registrySource === undefined) {
       console.log(`  no ${REGISTRY_PATH} under --out, so no patch was generated; apply the edit by hand:`);
@@ -76,22 +197,67 @@ export function main(): void {
     return;
   }
 
-  const clashes = generated.files.filter((f) => fs.existsSync(path.join(outRoot, f.path)));
-  if (clashes.length > 0 && !force) {
-    fail(`${clashes.length} file(s) already exist — pass --force to overwrite:\n  ${clashes.map((f) => f.path).join("\n  ")}`, 1);
+  switch (report.outcome) {
+    case "refused": {
+      // Nothing was written. Every refusal names its file and its reason.
+      for (const refusal of report.refusals) console.error(`codegen: ${refusal.detail}`);
+      console.error(`codegen: refused — ${report.refusals.length} file(s); nothing was written`);
+      process.exit(report.refusals.every((r) => r.forceable) ? 1 : 2);
+      break;
+    }
+    case "failed": {
+      // Staged-then-committed means the tree is either fully updated or
+      // exactly as it was. Say which, and name the errno.
+      for (const failure of report.failures) {
+        console.error(`codegen: ${failure.phase} of ${failure.path} failed with ${failure.code} — ${failure.message}`);
+      }
+      const committed = report.actions.filter((a) => a.status === "committed").length;
+      console.error(
+        committed === 0
+          ? "codegen: nothing was written; the host repository is untouched. Fix the cause and re-run — the rerun resumes, it does not need --force."
+          : `codegen: ${committed} file(s) were committed before the failure and could not be rolled back; re-run to finish, or inspect the files named above.`,
+      );
+      process.exit(3);
+      break;
+    }
+    case "aborted": {
+      console.error("codegen: cancelled — nothing was committed; the host repository is untouched.");
+      process.exit(4);
+      break;
+    }
+    case "no-op": {
+      console.log(`codegen: ${generated.plan.label} is already on disk, byte for byte. Nothing to do.`);
+      printReconciliation(report);
+      return;
+    }
+    case "applied": {
+      for (const action of report.actions) {
+        if (action.status === "committed") console.log(`codegen: wrote ${action.path}`);
+        else if (action.status === "already-applied") console.log(`codegen: unchanged ${action.path}`);
+      }
+      printReconciliation(report);
+      console.log(
+        `codegen: ${generated.plan.label} emitted. Apply ${REGISTRY_PATH}.patch to mount it — nothing runs until it is in SUBAPP_MANIFESTS.`,
+      );
+      console.log(`codegen: recorded in ${report.journalPath} — re-running this spec is a no-op, and an interrupted run resumes.`);
+      return;
+    }
   }
-
-  for (const file of generated.files) {
-    const abs = path.join(outRoot, file.path);
-    fs.mkdirSync(path.dirname(abs), { recursive: true });
-    fs.writeFileSync(abs, file.contents, "utf8");
-    console.log(`codegen: wrote ${file.path}`);
-  }
-  console.log(`codegen: ${generated.plan.label} emitted. Apply ${REGISTRY_PATH}.patch to mount it — nothing runs until it is in SUBAPP_MANIFESTS.`);
 }
 
 // Run only when invoked directly, so importing this module in a test does
-// not parse argv and exit the runner.
+// not parse argv and exit the runner. A throw from anywhere inside `main`
+// becomes a named reason and exit code 3 — this command's contract says it
+// does not hand operators a stack trace, and that has to hold for the
+// unforeseen error too, not only the ones with a branch.
 if (process.argv[1] !== undefined && import.meta.url === new URL(`file://${process.argv[1]}`).href) {
-  main();
+  try {
+    main();
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.error(`codegen: unexpected failure — ${message}`);
+    if (process.env["CODEGEN_DEBUG"] === "1" && err instanceof Error) console.error(err.stack);
+    console.error("codegen: re-run with CODEGEN_DEBUG=1 for the stack trace.");
+    process.exit(3);
+  }
 }

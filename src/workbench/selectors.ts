@@ -19,9 +19,18 @@
  * The cache is bounded and keyed by identity of the inputs, so a store
  * reset or a new round evicts naturally. Pure and DOM-free. */
 import { diffFileSets, type ChangeSet, type FileChange } from "./diff";
+import {
+  applyDrafts,
+  draftState,
+  editSummary,
+  type Draft,
+  type DraftState,
+  type EditSummary,
+} from "./editing";
+import { pathsBeingWritten, runProgress, type Run, type RunProgress } from "./run";
 import type { WorkbenchState } from "./store";
 import { buildTree, type TreeNode } from "./tree";
-import type { Candidate, Finding, Round, Severity } from "./types";
+import type { Candidate, Finding, GeneratedFile, Round, Severity } from "./types";
 
 export function currentRound(state: WorkbenchState): Round | null {
   if (state.selectedRoundId === null) return null;
@@ -38,7 +47,45 @@ export function previousRound(state: WorkbenchState): Round | null {
   return state.rounds[index - 1] ?? null;
 }
 
+/** ⭐ THE AUTHORITATIVE PROJECT STATE, AND THE ONLY ONE ANY PANE READS.
+ *
+ * The round's candidate with the person's saved edits applied. The tree,
+ * the source view, the diff, the preview and the gate's line numbers all
+ * come through here, so there is exactly one answer to "what is in this
+ * file right now" and a saved edit either moves all five or none of them.
+ * A pane that read `round.candidate.files` directly would be showing the
+ * generator's text next to another pane showing the person's, and the
+ * first symptom would be a diff nobody can reproduce.
+ *
+ * Cached on the pair (round identity, overlay epoch) because `applyDrafts`
+ * allocates and `useSyncExternalStore` compares by identity — see the
+ * note at the top of this file. The epoch moves on save, resolve and
+ * reconcile, and deliberately NOT on a keystroke. */
+const candidateCache = new Map<string, Candidate>();
+
 export function currentCandidate(state: WorkbenchState): Candidate | null {
+  const round = currentRound(state);
+  if (round === null) return null;
+  if (state.drafts.size === 0) return round.candidate;
+
+  const key = `${round.id}@${state.editEpoch}`;
+  const hit = candidateCache.get(key);
+  if (hit !== undefined) return hit;
+
+  const files = applyDrafts(round.candidate.files, state.drafts, round.id);
+  const value = files === round.candidate.files ? round.candidate : { ...round.candidate, files };
+  candidateCache.set(key, value);
+  if (candidateCache.size > MAX_CACHE) {
+    const oldest = candidateCache.keys().next();
+    if (!oldest.done) candidateCache.delete(oldest.value);
+  }
+  return value;
+}
+
+/** The round's own output, edits and all edits ignored. Two panes want
+ * this and no more: the editor, which diffs the buffer against what
+ * Studio actually wrote, and the conflict banner. */
+export function generatedCandidate(state: WorkbenchState): Candidate | null {
   return currentRound(state)?.candidate ?? null;
 }
 
@@ -68,10 +115,16 @@ export function changeSet(state: WorkbenchState): ChangeSet | null {
   const current = currentRound(state);
   if (current === null) return null;
   const previous = previousRound(state);
-  const key = `${previous?.id ?? "-"}>${current.id}`;
+  // The epoch is in the key because a saved edit is a change this round
+  // made, and a diff that omits it is answering "what did the generator
+  // change" to a person asking "what is different".
+  const key = `${previous?.id ?? "-"}>${current.id}@${state.editEpoch}`;
   const hit = changeSetCache.get(key);
   if (hit !== undefined) return hit;
-  const computed = diffFileSets(previous?.candidate.files ?? null, current.candidate.files);
+  const computed = diffFileSets(
+    previous?.candidate.files ?? null,
+    currentCandidate(state)?.files ?? current.candidate.files,
+  );
   changeSetCache.set(key, computed);
   if (changeSetCache.size > MAX_CACHE) {
     const oldest = changeSetCache.keys().next();
@@ -170,4 +223,77 @@ export function roundOfTurn(state: WorkbenchState, turnId: string): Round | null
   const turn = state.turns.find((t) => t.id === turnId);
   if (turn?.roundId == null) return null;
   return state.rounds.find((round) => round.id === turn.roundId) ?? null;
+}
+
+// ───────────────────────────── the run ───────────────────────────────────
+
+/** The run still going, if one is. At most one: the store refuses a second
+ * prompt while a round is in flight. */
+export function activeRun(state: WorkbenchState): Run | null {
+  return state.runs.find((run) => run.endedAt === null) ?? null;
+}
+
+/** The run behind the SELECTED round, so looking at round 2 shows round
+ * 2's steps and its output rather than the most recent round's. Rounds do
+ * not know their run — turns bridge them, which is the same link the chat
+ * already uses to put a round chip on the turn that produced it. */
+export function runOfRound(state: WorkbenchState, roundId: string | null): Run | null {
+  if (roundId === null) return null;
+  const turn = state.turns.find((t) => t.roundId === roundId);
+  if (turn === undefined) return null;
+  return state.runs.find((run) => run.turnId === turn.id) ?? null;
+}
+
+/** What the run pane shows: whatever is happening now, else the work
+ * behind whatever the other panes are showing. */
+export function visibleRun(state: WorkbenchState): Run | null {
+  return activeRun(state) ?? runOfRound(state, state.selectedRoundId) ?? state.runs[state.runs.length - 1] ?? null;
+}
+
+export function progress(state: WorkbenchState): RunProgress {
+  return runProgress(visibleRun(state));
+}
+
+/** Paths a running step says it is writing right now — the read-only set. */
+export function beingWritten(state: WorkbenchState): ReadonlySet<string> {
+  return pathsBeingWritten(activeRun(state));
+}
+
+// ───────────────────────────── the person's edits ────────────────────────
+
+export function draftFor(state: WorkbenchState, path: string | null): Draft | null {
+  if (path === null) return null;
+  return state.drafts.get(path) ?? null;
+}
+
+/** Per-path marker for the tree: which files carry something of the
+ * person's, and what kind of something. Built once here rather than in the
+ * tree component, for the same reason every other cross-pane derivation
+ * is here — the editor's dirty dot and the tree's dirty dot have to mean
+ * the same thing. */
+export function draftStates(state: WorkbenchState): ReadonlyMap<string, DraftState> {
+  if (state.drafts.size === 0) return EMPTY_DRAFT_STATES;
+  const out = new Map<string, DraftState>();
+  for (const [path, draft] of state.drafts) out.set(path, draftState(draft));
+  return out;
+}
+
+const EMPTY_DRAFT_STATES: ReadonlyMap<string, DraftState> = new Map();
+
+export function edits(state: WorkbenchState): EditSummary {
+  return editSummary(state.drafts, state.locks);
+}
+
+/** Every file the person is holding against the current round. The shell
+ * refuses nothing on their behalf, but an unresolved conflict is the one
+ * thing that must not be possible to lose track of. */
+export function conflicts(state: WorkbenchState): readonly Draft[] {
+  return [...state.drafts.values()].filter((draft) => draft.conflict !== null);
+}
+
+/** What Studio generated for a path this round, ignoring any overlay —
+ * the editor's baseline. */
+export function generatedFileAt(state: WorkbenchState, path: string | null): GeneratedFile | null {
+  if (path === null) return null;
+  return currentRound(state)?.candidate.files.find((file) => file.path === path) ?? null;
 }
