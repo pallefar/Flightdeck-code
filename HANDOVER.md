@@ -228,14 +228,14 @@ curl -s localhost:8787/api/studio/build \
 
 | Variable | Required | Default | What it does |
 |---|---|---|---|
-| `STUDIO_OPERATOR` | **yes** | — | The named human who operates this Studio. Boot refuses a role, a service or an unset value. |
+| `STUDIO_OPERATOR` | **yes** | — | The named human who operates this Studio. Boot refuses anything in `NON_NAMES` (`guardrails/src/approval-pure.ts:58`) — system, automation, agent, studio, flightdeck, approver, admin, unknown, n/a, service, svc, bot, robot, none, null, undefined, anonymous, someone, user — and anything under 2 characters. |
 | `STUDIO_OPERATOR_TOKEN` | **yes** | — | Bearer secret, ≥24 chars. The only thing separating an anonymous request from the first-party path. |
 | `ANTHROPIC_API_KEY` | for real calls | — | Read lazily; the server boots without it. |
-| `PORT` | no | `8787` | |
+| `PORT` | no | `8787` | `vite.config.ts` derives its `/api` proxy target from this, so `npm run dev` and `npm run dev:server` stay in step. |
 | `STUDIO_HOST` | no | `127.0.0.1` | Loopback by default: this process holds a key and a secret. |
-| `STUDIO_GRANTS_FILE` | no | `.studio/grants.json` | Durable approvals. Written `0600`. |
+| `STUDIO_GRANTS_FILE` | no | `.studio/grants.json` | Durable approvals, written `0600`. ⚠ The default is RELATIVE, so starting the server from a different directory silently opens a different, empty grant store. Use an absolute path if that matters. |
 | `FLIGHTDECK_MODEL` | no | `claude-opus-5` | |
-| `FLIGHTDECK_EFFORT` | no | `high` | |
+| `FLIGHTDECK_EFFORT` | no | `high` | `low\|medium\|high\|xhigh\|max`. ⚠ An unrecognised value is silently ignored and the default stands — a typo here is invisible. |
 | `FLIGHTDECK_HOST_ROOT` | no | `/home/user/project-contract` | **Set this on the Mac.** |
 | `FLIGHTDECK_HOST_ABSENT_ACKNOWLEDGED` | no | — | Exact string `unverified-lists-accepted`. Only while the host repo is absent. |
 | `FLIGHTDECK_HARNESS_MODE` | no | — | `live` records fixtures, `playback` replays and fails on a miss. |
