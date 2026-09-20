@@ -11,6 +11,8 @@
 import { describe, expect, it } from "vitest";
 
 import { EXAMPLE_DRAFT_JSON } from "../../packages/spec/src/prompt";
+import { createMemoryGrantStore } from "../../packages/approvals/src/store";
+import type { DatasourceRef, GrantRow } from "../../packages/approvals/src/index";
 import { createServer, operatorFromEnv, presentsOperatorToken } from "../index";
 
 const TOKEN = "a-sufficiently-long-operator-token";
@@ -177,5 +179,111 @@ describe("the whole path, over HTTP", () => {
   it("health needs no token — an unauthenticated probe is how a deploy checks liveness", async () => {
     const res = await serve(async () => ({ text: DRAFT })).inject({ method: "GET", url: "/api/studio/health" });
     expect(res.statusCode).toBe(200);
+  });
+});
+
+
+/**
+ * ⭐ THE CALL SITE `effectiveGrant` DID NOT HAVE.
+ *
+ * `redteam-attacks.test.ts` carried a case called "STILL OPEN: no consumer
+ * wires effectiveGrant() into a route yet", whose body was
+ * `expect(true).toBe(true)` and whose only output was a console line. The
+ * whole approval system — 176 tests, a ceiling/project intersection, a
+ * directory, revocation, sealed decisions — decided nothing, because nothing
+ * asked it.
+ */
+const CONTRACTS: DatasourceRef = { kind: "repo-path", id: "contracts", scope: "input" };
+const TOOL_ID = "studio-prompt";
+const PROJECT = "rhineland";
+
+const grantRow = (projectId: string, maxTier: 1 | 2 | 3 | 4): GrantRow => ({
+  projectId,
+  toolId: TOOL_ID,
+  datasources: [{ datasource: CONTRACTS, maxTier }],
+  revokedAt: null,
+});
+
+const withGrants = (rows: readonly GrantRow[], llm: () => Promise<{ text: string }>) =>
+  createServer({ operator: OPERATOR, llm, store: createMemoryGrantStore({ rows }) });
+
+const ask = (payload: Record<string, unknown>) => ({
+  method: "POST" as const,
+  url: "/api/studio/build",
+  headers: { authorization: `Bearer ${TOKEN}` },
+  payload,
+});
+
+describe("a prompt that came from a datasource needs a grant", () => {
+  it("⭐ no grant at all — refused, and the model is never called", async () => {
+    let called = 0;
+    const app = withGrants([], async () => {
+      called += 1;
+      return { text: DRAFT };
+    });
+    const res = await app.inject(ask({ prompt: PROMPT, projectId: PROJECT, datasource: CONTRACTS }));
+    expect(res.statusCode).toBe(200);
+    const body = res.json() as { status: string; decision?: { allowed: boolean; reason: string } };
+    expect(body.status).toBe("grant-refused");
+    expect(body.decision?.allowed).toBe(false);
+    // ⭐ AT INTAKE. Not after planning — once a prompt has been planned from,
+    // its content is in the understanding, the spec and the fixtures.
+    expect(called).toBe(0);
+  });
+
+  it("⭐ ceiling and project row present — the build proceeds", async () => {
+    const app = withGrants([grantRow("*", 2), grantRow(PROJECT, 2)], async () => ({ text: DRAFT }));
+    const res = await app.inject(ask({ prompt: PROMPT, projectId: PROJECT, datasource: CONTRACTS }));
+    expect((res.json() as { status: string }).status).toBe("proposed");
+  });
+
+  it("⭐ a project row under a SHUT ceiling is masked — consent on record, still refused", async () => {
+    // The third state `GrantDecision` documents: `projectGranted &&
+    // !ceilingGranted`. A project cannot grant itself past the Function.
+    const app = withGrants([grantRow(PROJECT, 4)], async () => ({ text: DRAFT }));
+    const res = await app.inject(ask({ prompt: PROMPT, projectId: PROJECT, datasource: CONTRACTS }));
+    const body = res.json() as { status: string; decision?: { ceilingGranted: boolean; projectGranted: boolean } };
+    expect(body.status).toBe("grant-refused");
+    expect(body.decision?.ceilingGranted).toBe(false);
+    expect(body.decision?.projectGranted).toBe(true);
+  });
+
+  it("⭐ tier 3/4 data needs a named human even WITH the grant", async () => {
+    // The user requirement in one case: category 3 and 4 data must be
+    // approved. The tier is derived from the payload, not declared.
+    const app = withGrants([grantRow("*", 4), grantRow(PROJECT, 4)], async () => ({ text: DRAFT }));
+    const res = await app.inject(
+      ask({
+        prompt: "Track sick leave and union membership for Anna Sørensen.",
+        projectId: PROJECT,
+        datasource: CONTRACTS,
+      }),
+    );
+    const body = res.json() as { status: string; decision?: { tier: number; requiresNamedApproval: boolean } };
+    expect(body.status).toBe("grant-refused");
+    expect(body.decision?.requiresNamedApproval).toBe(true);
+    expect(body.decision?.tier).toBeGreaterThanOrEqual(3);
+  });
+
+  it("the refusal carries the contentHash a person approves, and an audit body", async () => {
+    const app = withGrants([], async () => ({ text: DRAFT }));
+    const res = await app.inject(ask({ prompt: PROMPT, projectId: PROJECT, datasource: CONTRACTS }));
+    const body = res.json() as { decision?: { contentHash?: string; audit?: unknown } };
+    expect(body.decision?.contentHash).toMatch(/^[0-9a-f]{16,}$/);
+    expect(body.decision?.audit).toBeDefined();
+  });
+
+  it("a datasource without a projectId is a 400 — there is no row to check", async () => {
+    const app = withGrants([], async () => ({ text: DRAFT }));
+    const res = await app.inject(ask({ prompt: PROMPT, datasource: CONTRACTS }));
+    expect(res.statusCode).toBe(400);
+  });
+
+  it("⛔ and a typed prompt with NO datasource is not gated by a grant", async () => {
+    // Nothing was read, so there is nothing to have been granted. The
+    // guardrails still gate the text — that is a different question.
+    const app = withGrants([], async () => ({ text: DRAFT }));
+    const res = await app.inject(ask({ prompt: PROMPT }));
+    expect((res.json() as { status: string }).status).toBe("proposed");
   });
 });

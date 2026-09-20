@@ -28,3 +28,4 @@ coverage/
 .fd-probe/
 .fd-virtual/
 **/__tests__/tmp/
+.studio/

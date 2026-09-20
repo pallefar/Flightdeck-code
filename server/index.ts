@@ -41,6 +41,15 @@ import { createHash, timingSafeEqual } from "node:crypto";
 import Fastify from "fastify";
 import { z } from "zod";
 
+import {
+  DATASOURCE_KINDS,
+  createFileGrantStore,
+  createMemoryDirectory,
+  effectiveGrant,
+  type DatasourceRef,
+  type GrantStore,
+  type IdentityDirectory,
+} from "../packages/approvals/src/index";
 import { isNamedHuman } from "../packages/guardrails/src/approval-pure";
 import { buildSubAppFromPrompt } from "../packages/pipeline/src/build-subapp";
 import { AnthropicProvider } from "../packages/providers/src/anthropic";
@@ -104,6 +113,35 @@ const buildBody = z
     prompt: z.string().min(1).max(8_000),
     answers: z.record(z.string().max(2_000)).optional(),
     registrySource: z.string().max(200_000).optional(),
+    /**
+     * ⭐ WHERE THE PROMPT CAME FROM, when it came from anywhere.
+     *
+     * Absent means the operator typed it, and there is no datasource to
+     * check a grant against. Present means this request is USING DATA, and
+     * `effectiveGrant` decides whether this project may — which is the
+     * "approved per project and per datasource" requirement, and the reason
+     * the tier is derived from the payload rather than declared here.
+     */
+    projectId: z
+      .string()
+      .min(1)
+      .max(64)
+      .regex(/^[a-z0-9][a-z0-9-]*$/)
+      .optional(),
+    datasource: z
+      .object({
+        kind: z.enum(DATASOURCE_KINDS),
+        id: z.string().min(1).max(120),
+        scope: z.string().min(1).max(120).optional(),
+      })
+      .strict()
+      .optional(),
+    toolId: z
+      .string()
+      .min(1)
+      .max(64)
+      .regex(/^[a-z0-9][a-z0-9-]*$/)
+      .optional(),
   })
   .strict();
 
@@ -111,6 +149,10 @@ export interface ServerOptions {
   readonly operator: OperatorIdentity;
   /** Injected so the tests drive the whole route without a key or a socket. */
   readonly llm?: Parameters<typeof buildSubAppFromPrompt>[1]["llm"];
+  /** Where grants live. Defaults to the file named by `STUDIO_GRANTS_FILE`. */
+  readonly store?: GrantStore;
+  /** Who the subject ids resolve to. Defaults to the operator, alone. */
+  readonly directory?: IdentityDirectory;
 }
 
 export function createServer(options: ServerOptions): ReturnType<typeof Fastify> {
@@ -134,6 +176,20 @@ export function createServer(options: ServerOptions): ReturnType<typeof Fastify>
     // raw bridge is correct here, and double-gating would break the path.
     plannerLlm(new AnthropicProvider(anthropicConfigFromEnv().config));
 
+  // ⭐ ONE OPERATOR, AND THE DIRECTORY SAYS SO.
+  //
+  // `effectiveGrant` resolves every actor through an `IdentityDirectory`
+  // rather than trusting the `kind` written on a row — that is how a
+  // non-human is stopped from APPROVING. For a single-operator Studio the
+  // directory is that one person; a deployment with more people replaces
+  // this, which is why it is an option rather than a constant.
+  const directory =
+    options.directory ??
+    createMemoryDirectory([
+      { id: options.operator.actor, kind: "human", displayName: options.operator.actor, active: true },
+    ]);
+  const store = options.store ?? createFileGrantStore(process.env["STUDIO_GRANTS_FILE"] ?? ".studio/grants.json");
+
   app.get("/api/studio/health", async () => ({
     ok: true,
     // Whether a key EXISTS, never anything about it.
@@ -152,6 +208,52 @@ export function createServer(options: ServerOptions): ReturnType<typeof Fastify>
       // Issue PATHS only. `zod`'s messages can quote the offending value,
       // and the offending value here is a prompt.
       return reply.code(400).send({ error: "malformed request", at: parsed.error.issues.map((i) => i.path.join(".")) });
+    }
+
+    // ⭐ THE GRANT, AT INTAKE — BEFORE A MODEL CALL IS SPENT ON THE DATA.
+    //
+    // `gateWorkflowIntake` states the principle this follows: "Refusing at
+    // intake is the only place one decision closes all of them." Once a
+    // prompt has been planned from, its content is in the understanding, the
+    // spec, the generated fixtures and the audit — several paths to the same
+    // person data, and no single later refusal closes them.
+    //
+    // `toolContent` is the request as specified, because at intake the tool
+    // IS its specification — there is no generated code yet. So an approval
+    // binds to this prompt, and editing the prompt requires a new one, which
+    // is what a content hash is for.
+    //
+    // No `datasource` means the operator typed it and nothing was read, so
+    // there is no grant to check — the guardrails still gate the text.
+    if (parsed.data.datasource !== undefined) {
+      if (parsed.data.projectId === undefined) {
+        return reply.code(400).send({ error: "a datasource needs the projectId whose grant governs it", at: ["projectId"] });
+      }
+      const datasource: DatasourceRef = {
+        kind: parsed.data.datasource.kind,
+        id: parsed.data.datasource.id,
+        scope: parsed.data.datasource.scope,
+      };
+      const toolId = parsed.data.toolId ?? "studio-prompt";
+      const decision = await effectiveGrant({
+        store,
+        directory,
+        toolId,
+        toolContent: { toolId, prompt: parsed.data.prompt },
+        projectId: parsed.data.projectId,
+        datasource,
+        // ⭐ THE TIER IS DERIVED FROM THIS, by guardrails, over every
+        // representation it can be read as. There is no tier field on the
+        // request and there must never be one.
+        payload: parsed.data.prompt,
+        requestedBy: { kind: "human", id: options.operator.actor, displayName: options.operator.actor },
+      });
+      if (!decision.allowed) {
+        // 200 with an outcome, not an error: a refusal is an ANSWER, and it
+        // carries the contentHash a person approves and the audit body that
+        // records the asking.
+        return reply.send({ status: "grant-refused", decision });
+      }
     }
 
     const outcome = await buildSubAppFromPrompt(

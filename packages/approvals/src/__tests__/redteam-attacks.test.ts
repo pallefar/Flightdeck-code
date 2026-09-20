@@ -693,8 +693,24 @@ describe("A12 there is now ONE 'named human' rule, and ONE hasher", () => {
     expect(toolContentHash(proposal)).not.toBe(toolContentHash(edited));
   });
 
-  it("STILL OPEN: no consumer wires effectiveGrant() into a route yet", () => {
-    console.log("[A12.wiring] effectiveGrant() still has zero call sites outside its own tests");
-    expect(true).toBe(true);
+  it("⭐ CLOSED: effectiveGrant() is wired into a route", async () => {
+    // This case used to be `expect(true).toBe(true)` under a console line
+    // reading "effectiveGrant() still has zero call sites outside its own
+    // tests". It was accurate: 176 tests, a ceiling/project intersection, a
+    // directory, revocation and sealed decisions all decided NOTHING,
+    // because nothing asked them.
+    //
+    // The call site is `server/index.ts`, at INTAKE — before a model call is
+    // spent on data the project may not use. Asserted from the file on disk
+    // so that deleting the wiring fails HERE, where the claim is made,
+    // rather than silently returning this package to decoration.
+    const fs = await import("node:fs");
+    const source = fs.readFileSync(new URL("../../../../server/index.ts", import.meta.url), "utf8");
+    expect(source).toContain("effectiveGrant");
+    // And it is reached from the request path, not merely imported.
+    expect(source).toMatch(/await effectiveGrant\(\{/);
+    // The tier must not be declarable by the caller — it is derived from the
+    // payload, which is the property the whole package rests on.
+    expect(source).not.toMatch(/tier:\s*(?:parsed|request|body)\./);
   });
 });
