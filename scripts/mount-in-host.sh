@@ -38,12 +38,20 @@ rm -rf "$ROOT"; mkdir -p "$ROOT"
 tar -C "$REPO" --exclude=.git --exclude=node_modules -cf - . | tar -C "$ROOT" -xf -
 ln -s "$REPO/$HOST_REL/node_modules" "$SANDBOX/node_modules"
 
+# vitest exits non-zero when ANY test fails, and this script's whole job is to
+# compare counts across a run that may legitimately contain pre-existing
+# failures. Under `set -e` a bare pipeline here kills the script before the
+# comparison it exists to print — which is exactly what happened the first time.
+# So: capture to a log, never let the exit status propagate, and report from the
+# log. `|| true` is load-bearing, not sloppiness.
 fences() {
-  ( cd "$SANDBOX" && npx vitest run tests/subapps/ 2>&1 | tail -3 )
+  local log="$1"
+  ( cd "$SANDBOX" && npx vitest run tests/subapps/ >"$log" 2>&1 ) || true
+  grep -E "Test Files|Tests " "$log" | tail -2
 }
 
 echo "==> baseline: the host's sub-app suite, before we touch anything"
-BEFORE="$(fences)"; echo "$BEFORE"
+BEFORE="$(fences "$ROOT/before.log")"; echo "$BEFORE"
 
 echo "==> generating from $SPEC"
 ( cd "$STUDIO" && npx tsx packages/codegen/src/cli.ts --spec "$SPEC" --out "$SANDBOX" )
@@ -52,9 +60,11 @@ echo "==> applying the emitted registry patch"
 ( cd "$SANDBOX" && patch -p1 < server/subapps/registry.ts.patch && rm server/subapps/registry.ts.patch )
 
 echo "==> the same suite, with a generated sub-app mounted"
-AFTER="$(fences)"; echo "$AFTER"
+AFTER="$(fences "$ROOT/after.log")"; echo "$AFTER"
 
 echo
 echo "==> compare. Mounting must ADD passing tests and add no failures."
-echo "    before: $(echo "$BEFORE" | grep -oE 'Tests.*' || true)"
-echo "    after:  $(echo "$AFTER"  | grep -oE 'Tests.*' || true)"
+echo "    before: $(echo "$BEFORE" | grep -oE 'Tests .*' || true)"
+echo "    after:  $(echo "$AFTER"  | grep -oE 'Tests .*' || true)"
+echo
+echo "    full logs: $ROOT/before.log  $ROOT/after.log"
