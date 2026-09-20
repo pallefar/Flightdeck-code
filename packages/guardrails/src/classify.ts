@@ -111,6 +111,7 @@ import {
 import {
   SCHEMA_METAKEYS,
   classifyText,
+  compositeFindings,
   decodedVariants,
   isPersonReferent,
   looksLikeFieldPointer,
@@ -135,6 +136,7 @@ import {
 export {
   SCHEMA_METAKEYS,
   classifyText,
+  compositeFindings,
   decodedVariants,
   deniedPiiField,
   isPersonReferent,
@@ -269,28 +271,6 @@ function fragmentFindings(entries: readonly [string, unknown][], where: string):
     out.push({ class: f.class, tier: 3, via: "value-shape", where });
   }
   return out;
-}
-
-/**
- * COMPOSITES — two findings that are a third thing together.
- *
- * `{ ageAtSigning: 34, referenceDate: "2026-09-01" }` is a date of birth. It
- * scored tier 3 as a generic `date`, which at `gateWorkflowIntake` is
- * APPROVABLE — so a category-4 date of birth was rubber-stampable because it
- * was only ever named as a date. An age plus a reference date is recoverable
- * to the day; naming it `dateofbirth` is not a guess, it is arithmetic.
- *
- * Kept to the one composite that is arithmetic rather than suspicion. A list
- * of clever combinations would be a list of false positives.
- */
-const AGE_TOKENS = new Set(["age", "ages", "birthday"]);
-
-function compositeFindings(findings: readonly Finding[]): Finding[] {
-  const hasAge = findings.some((f) => AGE_TOKENS.has(f.class) && f.via === "field-name");
-  if (!hasAge) return [];
-  const date = findings.find((f) => f.class === "date" && f.via === "value-pattern");
-  if (!date) return [];
-  return [{ class: "dateofbirth", tier: 4, via: "value-shape", where: date.where }];
 }
 
 /**

@@ -245,6 +245,18 @@ describe("⭐ the vocabulary is not anchored on one spelling either", () => {
     expect(classify({ ageAtSigning: 34, referenceDate: "1 September 2026" }).tier).toBe(4);
   });
 
+  it("⭐ and the composite reads the same in a DOCUMENT as it does in a record", () => {
+    // The composite rule lives below both scanners for the same reason the
+    // vocabulary does. Living in the record walker alone would have left the
+    // pasted version at tier 3 — approvable — while the structured version
+    // was tier 4 and refused: the same two facts, two verdicts.
+    const pasted = ["# Offer", "", "**Age at signing:** 34", "**Reference date:** 2026-09-01"].join("\n");
+    expect(tierOf(classifyMarkdown(pasted))).toBe(4);
+    const d = gateWorkflowIntake(pasted, ACTOR);
+    expect(d.decision, "a category-4 date of birth was approvable at intake").toBe("refuse");
+    expect(classesOf(d.findings)).toContain("dateofbirth");
+  });
+
   it("⭐ an IBAN split across fields is an IBAN, in two pieces or in six", () => {
     expect(classesOf(classify({ accountPartA: "DE8937040044", accountPartB: "X05320130" }).findings)).toContain(
       "iban",

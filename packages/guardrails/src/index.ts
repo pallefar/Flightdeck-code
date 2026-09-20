@@ -45,6 +45,7 @@ export {
   SCHEMA_METAKEYS,
   classify,
   classifyText,
+  compositeFindings,
   decodedVariants,
   deniedPiiField,
   isPersonReferent,

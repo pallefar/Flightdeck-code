@@ -53,6 +53,7 @@ import { type Finding, dedupe } from "./findings";
 import {
   SCHEMA_METAKEYS,
   classifyText,
+  compositeFindings,
   decodedVariants,
   looksLikeFieldPointer,
   looksLikeLabelPhrase,
@@ -242,6 +243,11 @@ function scanText(
       findings.push(...scanText(decoded, where, styles, decodeDepth - 1));
     }
   }
+
+  // 5. Composites — the same rule `classify()` applies, applied here too, so
+  //    an age and a reference date are a date of birth in a pasted document
+  //    exactly as they are in a record. See `compositeFindings`.
+  findings.push(...compositeFindings(findings));
 
   return dedupe(findings);
 }

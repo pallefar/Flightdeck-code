@@ -276,6 +276,37 @@ export function classifyText(text: string, where: string): Finding[] {
   return out;
 }
 
+/**
+ * COMPOSITES — two findings that are a third thing together.
+ *
+ * `{ ageAtSigning: 34, referenceDate: "2026-09-01" }` is a date of birth. It
+ * scored tier 3 as a generic `date`, and tier 3 at `gateWorkflowIntake` is
+ * APPROVABLE — so a category-4 date of birth was rubber-stampable because
+ * nothing ever called it a date of birth. An age plus a reference date is
+ * recoverable to the day; naming it `dateofbirth` is arithmetic, not
+ * suspicion.
+ *
+ * ⚠ It lives HERE, below both scanners, and is applied by `classify()` and by
+ * the text scanner alike. A composite rule that existed in the record walker
+ * only would be the same defect this round is about: the same two facts, one
+ * representation scoring 4 and the other scoring 3, and the lower one sitting
+ * behind the gate with an approval path.
+ *
+ * Kept to the ONE composite that is arithmetic. A list of clever combinations
+ * would be a list of false positives.
+ */
+const AGE_CLASSES = new Set(["age", "ages", "birthday"]);
+
+export function compositeFindings(findings: readonly Finding[]): Finding[] {
+  const hasAge = findings.some(
+    (f) => AGE_CLASSES.has(f.class) && (f.via === "field-name" || f.via === "label"),
+  );
+  if (!hasAge) return [];
+  const date = findings.find((f) => f.class === "date" && f.via === "value-pattern");
+  if (!date) return [];
+  return [{ class: "dateofbirth", tier: 4, via: "value-shape", where: date.where }];
+}
+
 // ─────────────────────────────────────────────────────────────────────────
 // Decoding — the second representation that is not a second location
 // ─────────────────────────────────────────────────────────────────────────
