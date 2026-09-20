@@ -81,3 +81,72 @@ The round-1 critics independently found a real defect worth reporting upstream: 
 catches a failed `webcontainer.fs.writeFile`, logs it, returns normally, and lets `#executeAction`
 mark the action **complete** — a green check in the UI for a file that was never written, with a
 subsequent build running against a tree missing that file.
+
+---
+
+## Round 3 — the defects fixed, judged on the same criteria
+
+Each builder was handed its critic's finding as a bug report, fixed it, and faced the same
+neutral criteria again. **1 of 3 now picks ours.**
+
+| Piece | R1 | Neutral re-judge | After the fix | Scope fair? |
+|---|---|---|---|---|
+| `codegen` | ours | bar | bar (medium) | **no** |
+| `conformance` | ours | bar | **ours (high)** | yes |
+| `workbench` | ours | bar | bar (medium) | **no** |
+
+### Every named defect was verified closed — in code, not comments
+
+The question put to each critic was deliberately hostile: *closed, partially closed, or papered
+over with comments rather than code?* All three answered closed, and none took our word for it.
+
+- **codegen** — *"Closed, and closed properly… I checked for the failure mode where closing a
+  defect introduces a worse one, since 990 lines and 38KB of file arrived to fix a 5-line loop.
+  I did not find it."* The named disaster now has a test using a real temp dir and a real
+  `ENOTDIR`, not a mock.
+- **conformance** — *"I verified it by execution, not by reading. I ran it:
+  `vitest run packages/conformance/src/verify.test.ts` → 25 passed, 13.7s of real wall clock."*
+- **workbench** — *"The round-1 grep no longer reproduces: `editFile` 19 hits, `saveFile` 12,
+  `revertFile` 4, `requestAbort` 7, `conflict` 112 … and they are not veneer."*
+
+### The one that won, won properly
+
+`conformance` is the only result in this run worth standing behind: neutral criteria, full bar
+scope (`scopeFair: true`), sides swapped, maturity prior explicitly applied — *"I applied the
+maturity prior and A still wins"* — at high confidence, verified by execution.
+
+The best detail is a refusal: if process isolation is unavailable, the sandbox reports
+"could not run" and **refuses**, rather than downgrading to unsandboxed execution. A check that
+quietly becomes a no-op is the failure this whole project kept catching.
+
+### Why the other two still lose, and what that actually means
+
+Both losses carry `scopeFair: false` — **the critics themselves flagged the comparison as uneven.**
+
+The pattern is the same in each. We now win the axis the two codebases genuinely share, and lose
+on axes that require executing arbitrary code in a live runtime:
+
+- **codegen** — *"on the one axis both codebases actually share — putting bytes on disk — B is now
+  decisively better and A is the weakest code in either tree."* And: *"If the question were
+  narrowed to 'which write path would you put a user's git repo behind,' the answer is B."*
+  It lost on streaming, command execution and live project state — none of which a batch generator
+  targeting a compiled host has.
+- **workbench** — the critic scores ours ahead on **4 of 7** criteria and calls criterion 6
+  (intervention and conflict handling) *"the best work in either codebase"*. It loses 5 and 7,
+  both of which need a WebContainer-class runtime.
+
+So the honest conclusion is not "we win" or "we lose". It is that criteria derived from bolt.diy
+reward a capability class — running arbitrary web apps live in a browser — that Flightdeck Studio's
+target deliberately excludes. A Flightdeck sub-app is Fastify routes compiled into a host; there is
+nothing to stream into a WebContainer.
+
+The one piece where the two problems genuinely coincide — *stop a person shipping broken code* —
+is the one we won, at high confidence, on a fair comparison.
+
+### On stopping here
+
+The prompt said loop until the critic picks ours, with no round count. Two of three pieces are
+still short of that. They are not stopping because a cap was hit; they are stopping because the
+remaining gap is a deliberate architectural difference, and closing it would mean building a
+WebContainer-equivalent for a target that compiles into a Fastify host. That is a product decision,
+not a build task, and it belongs to whoever owns the roadmap.
