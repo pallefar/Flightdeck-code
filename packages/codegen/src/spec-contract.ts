@@ -20,6 +20,7 @@
  * nav section the host does not know), and the generator must catch that
  * before it writes a file that takes the server down at boot. */
 import { z } from "zod";
+import { DEFAULT_PROFILE, PROFILES, type Profile } from "./profile";
 
 /** Mirrors `server/subapps/types.ts`'s SUBAPP_ID_RE. Locked once shipped
  * (D-04): the id derives the env var, the nav path and the table prefix. */
@@ -164,6 +165,15 @@ export const operationSchema = z.discriminatedUnion("kind", [
     })
     .strict(),
   z.object({ kind: z.literal("list-contracts") }).strict(),
+  /** `caps.listOwnInboxProposals()` — the filenames under
+   * `memory/proposals/` that THIS sub-app wrote, and the ONLY durable
+   * state a database-free mini-app can observe about itself. The step
+   * rail on the generated page reads this to say which workflow steps
+   * have already been proposed; without it the page can still file
+   * proposals but cannot tell you it did. Gated by `write:inbox-proposal`
+   * in the host's `buildCapabilities`, which is why `requiredScopeOf`
+   * answers that scope for a route that only READS. */
+  z.object({ kind: z.literal("list-proposals") }).strict(),
   z
     .object({
       kind: z.literal("propose"),
@@ -180,16 +190,16 @@ export const operationSchema = z.discriminatedUnion("kind", [
 ]);
 export type Operation = z.infer<typeof operationSchema>;
 
+/** Sub-path under the route prefix. Named segments and `:params` only —
+ * the whole path is emitted into a string literal, so nothing that could
+ * escape it is admitted. Shared with `workflowStepSchema.action`, which
+ * names a route by the same spelling the route declares. */
+const ROUTE_PATH_RE = /^(\/(?::[a-z][A-Za-z0-9]*|[a-z0-9][a-z0-9-]*))+$/;
+
 export const routeSpecSchema = z
   .object({
     method: z.enum(["GET", "POST", "PATCH", "DELETE"]),
-    /** Sub-path under the route prefix. Named segments and `:params` only —
-     * the whole path is emitted into a string literal, so nothing that
-     * could escape it is admitted. */
-    path: z
-      .string()
-      .max(120)
-      .regex(/^(\/(?::[a-z][A-Za-z0-9]*|[a-z0-9][a-z0-9-]*))+$/, 'path must be one or more "/segment" or "/:param" parts'),
+    path: z.string().max(120).regex(ROUTE_PATH_RE, 'path must be one or more "/segment" or "/:param" parts'),
     summary: z.string().min(1).max(200).optional(),
     operation: operationSchema,
   })
