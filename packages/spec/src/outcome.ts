@@ -21,6 +21,14 @@ export const WARNING_CODES = [
   "column-type-defaulted",
   "widget-dropped",
   "clarification-unknown-field",
+  // --- the workflow path ---------------------------------------------------------------
+  "label-from-workflow-name",
+  "purpose-from-description",
+  "steps-section-inferred",
+  "step-dropped",
+  "step-narrowed",
+  "step-detail-truncated",
+  "tables-omitted",
 ] as const;
 export type WarningCode = (typeof WARNING_CODES)[number];
 

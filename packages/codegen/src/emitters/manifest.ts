@@ -17,7 +17,11 @@ import { banner, joinLines, str, tsObject, tsStringArray, type ObjectField } fro
 import type { SubAppPlan } from "../plan";
 
 export function emitManifest(plan: SubAppPlan): string {
-  const hasTables = plan.tables.length > 0;
+  // Exactly the condition `generate.ts` uses to decide whether a
+  // `schema.ts` exists at all. Two conditions that must agree, written the
+  // same way in both places: a manifest importing `./schema.js` when no
+  // such file shipped is a sub-app that takes the host down at boot.
+  const hasTables = plan.profile === "table-backed" && plan.tables.length > 0;
   const m = plan.manifestData;
 
   const fields: ObjectField[] = [
@@ -79,8 +83,20 @@ export function emitManifest(plan: SubAppPlan): string {
 
   fields.push(
     hasTables
-      ? { key: "initSchema", value: `(db) => ${plan.names.applySchemaFn}(db)` }
-      : { key: "initSchema", value: "() => {}", comment: ["No domain tables: this sub-app stores nothing of its own."] },
+      ? {
+          key: "initSchema",
+          value: `(db) => ${plan.names.applySchemaFn}(db)`,
+          comment: [
+            'NOT the mini-app shape. This spec asked for profile "table-backed", so this member applies real DDL on every boot for every workspace. `shell-reference`, the host\'s documented floor and the shape a converted workflow targets, carries `initSchema: () => {}` instead.',
+          ],
+        }
+      : {
+          key: "initSchema",
+          value: "() => {}",
+          comment: [
+            "A mini-app stores nothing of its own — byte-identical to `shell-reference/manifest.ts`, the host's only database-free sub-app. There is no schema.ts beside this file and no migration to run: what this app leaves behind is a proposal under memory/proposals/ that a human resolves (contract rule 7).",
+          ],
+        },
     { key: "registerRoutes", value: `(app, ctx) => ${plan.names.registerRoutesFn}(app, ctx)` },
   );
 

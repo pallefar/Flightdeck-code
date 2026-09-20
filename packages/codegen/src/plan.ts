@@ -20,6 +20,7 @@ import {
   MANAGED_COLUMNS,
   RESERVED_SUBAPP_IDS,
   miniAppSpecSchema,
+  profileOf,
   requiredScopeOf,
   versionOf,
   webModuleIdOf,
@@ -30,8 +31,10 @@ import {
   type MiniAppSpec,
   type Operation,
   type RouteSpec,
+  type WorkflowGate,
 } from "./spec-contract";
 import { HOST_VERSION } from "./spec-contract";
+import { tableRefusalReason, type Profile } from "./profile";
 import { assertManifestWouldBoot, type SubAppManifestData } from "./manifest-rules";
 import * as names from "./naming";
 
@@ -73,6 +76,17 @@ export interface PlannedRoute {
   subPath: string;
   summary: string | null;
   operation: Operation;
+  /** The id the emitted page gives this route's form, and the id a
+   * workflow step's `action` resolves to. Derived ONCE here because two
+   * emitters and one cross-check have to agree on it; three copies of
+   * `method + "-" + path` is how a step ends up pointing at a form that
+   * does not exist. */
+  formId: string;
+  /** `<subAppId>-<proposalKind>-`, the exact filename prefix this route
+   * writes under `memory/proposals/`. Non-null only for `propose`. The
+   * page matches it against `listOwnInboxProposals()` to show a step as
+   * already proposed, so it is derived here rather than rebuilt there. */
+  proposalPrefix: string | null;
   /** Present for body-carrying operations: the `const <name> = z.object(...)`
    * emitted above the registrar. */
   bodyConstName: string | null;
@@ -94,8 +108,44 @@ export interface PlannedDomain {
   routes: PlannedRoute[];
 }
 
+/** A `## Procedure` step, resolved: its gate defaulted, its action bound
+ * to a real planned route (or explicitly null), and nothing left for an
+ * emitter to look up for itself. */
+export interface PlannedWorkflowStep {
+  n: number;
+  title: string;
+  detail: string | null;
+  needs: readonly string[];
+  produces: readonly string[];
+  gate: WorkflowGate;
+  action: {
+    domain: string;
+    method: string;
+    subPath: string;
+    label: string;
+    formId: string;
+    operationKind: Operation["kind"];
+    /** Non-null when performing this step files a proposal — which is the
+     * only way a step can ever be observed as done. */
+    proposalPrefix: string | null;
+  } | null;
+}
+
+export interface PlannedWorkflow {
+  name: string;
+  description: string | null;
+  source: string | null;
+  steps: PlannedWorkflowStep[];
+  /** Sub-path of the `list-proposals` route, when the spec declares one.
+   * Null means the page can file proposals but cannot show which steps
+   * already have one — a warning, not a refusal. */
+  proposalsPath: string | null;
+}
+
 export interface SubAppPlan {
   spec: MiniAppSpec;
+  /** `mini-app` unless the spec asked for the other one by name. */
+  profile: Profile;
   id: string;
   label: string;
   version: string;
@@ -108,6 +158,10 @@ export interface SubAppPlan {
   manifestData: SubAppManifestData;
   tables: PlannedTable[];
   domains: PlannedDomain[];
+  /** The Cowork workflow this app was converted from, when the spec
+   * carried one. Null is ordinary — a mini-app need not come from a
+   * workflow — and the page then renders panels alone. */
+  workflow: PlannedWorkflow | null;
   warnings: string[];
   names: {
     manifestConst: string;
@@ -144,6 +198,7 @@ export function planSubApp(input: unknown): SubAppPlan {
   const spec = parsed.data;
   const issues: string[] = [];
   const warnings: string[] = [];
+  const profile = profileOf(spec);
 
   if ((RESERVED_SUBAPP_IDS as readonly string[]).includes(spec.id)) {
     issues.push(
@@ -151,13 +206,27 @@ export function planSubApp(input: unknown): SubAppPlan {
     );
   }
 
+  // ⭐ The profile fence. A mini-app is database-free, and a spec that
+  // declares tables under the default profile is refused BY NAME rather
+  // than quietly generating a migration for somebody's workspace.
+  const declaredTables = spec.tables ?? [];
+  if (profile === "mini-app" && declaredTables.length > 0) {
+    issues.push(tableRefusalReason(spec.id, declaredTables.map((t) => t.name)));
+  }
+  if (profile === "table-backed" && declaredTables.length === 0) {
+    warnings.push(
+      `profile "table-backed" is declared but the spec has no tables — that profile exists only for a sub-app that needs its own storage; the default "mini-app" profile emits the same files minus schema.ts`,
+    );
+  }
+
   const tables = planTables(spec, issues);
   const tablesByBare = new Map(tables.map((t) => [t.bare, t]));
-  const domains = planDomains(spec, tablesByBare, issues, warnings);
+  const domains = planDomains(spec, profile, tablesByBare, issues, warnings);
 
   checkRouteUniqueness(domains, issues);
   checkCapabilityLeastPrivilege(spec, domains, issues);
   checkTablesAreUsed(tables, domains, warnings);
+  const workflow = planWorkflow(spec, domains, issues, warnings);
 
   if (issues.length > 0) throw new SpecRejectedError(`MiniAppSpec "${spec.id}" is not generatable`, issues);
 
@@ -183,6 +252,7 @@ export function planSubApp(input: unknown): SubAppPlan {
 
   return {
     spec,
+    profile,
     id: spec.id,
     label: spec.label,
     version: versionOf(spec),
@@ -195,6 +265,7 @@ export function planSubApp(input: unknown): SubAppPlan {
     manifestData,
     tables,
     domains,
+    workflow,
     warnings,
     names: {
       manifestConst: names.manifestConstName(spec.id),
@@ -266,6 +337,7 @@ function toPlannedColumn(column: ColumnSpec): PlannedColumn {
 
 function planDomains(
   spec: MiniAppSpec,
+  profile: Profile,
   tablesByBare: ReadonlyMap<string, PlannedTable>,
   issues: string[],
   warnings: string[],
@@ -283,7 +355,7 @@ function planDomains(
       title: domain.title ?? titleCase(domain.name),
       fileName: `${domain.name}.ts`,
       registerFn: names.registerDomainRoutesFunctionName(spec.id, domain.name),
-      routes: domain.routes.map((route) => planRoute(spec, domain, route, tablesByBare, issues, warnings)),
+      routes: domain.routes.map((route) => planRoute(spec, profile, domain, route, tablesByBare, issues, warnings)),
     });
   }
   return out;
@@ -291,6 +363,7 @@ function planDomains(
 
 function planRoute(
   spec: MiniAppSpec,
+  profile: Profile,
   domain: DomainSpec,
   route: RouteSpec,
   tablesByBare: ReadonlyMap<string, PlannedTable>,
@@ -304,7 +377,16 @@ function planRoute(
   let table: PlannedTable | null = null;
   if (op.kind === "list-rows" || op.kind === "get-row" || op.kind === "insert-row") {
     table = tablesByBare.get(op.table) ?? null;
-    if (table === null) issues.push(`${where}: operation names unknown table "${op.table}"`);
+    if (table === null) {
+      // Under the default profile there is no table to name, and saying
+      // "unknown table" would send the author off to add one — which is
+      // the thing the profile refuses. Name the profile instead.
+      issues.push(
+        profile === "mini-app"
+          ? `${where}: operation "${op.kind}" reads or writes a table, which profile "mini-app" has none of — a mini-app's routes reach the host only through the capability adapter (list-contracts, list-proposals, propose). Declare profile: "table-backed" if this app genuinely needs storage.`
+          : `${where}: operation names unknown table "${op.table}"`,
+      );
+    }
   }
 
   // Method/operation agreement. A GET that writes, or a POST that only
@@ -346,6 +428,8 @@ function planRoute(
     subPath: route.path,
     summary: route.summary ?? null,
     operation: op,
+    formId: `${route.method.toLowerCase()}-${route.path}`,
+    proposalPrefix: op.kind === "propose" ? `${spec.id}-${op.proposalKind}-` : null,
     bodyConstName: writes ? `${route.method.toLowerCase()}${names.pascalCase(routeSlug(route))}Body` : null,
     paramsConstName: op.kind === "get-row" ? `${route.method.toLowerCase()}${names.pascalCase(routeSlug(route))}Params` : null,
     fields,
@@ -510,6 +594,128 @@ function checkTablesAreUsed(tables: readonly PlannedTable[], domains: readonly P
       warnings.push(`table "${table.bare}" is created by initSchema but no route reads or writes it`);
     }
   }
+}
+
+/** Resolve the `## Procedure` against the routes that were actually
+ * planned.
+ *
+ * ⭐ WHY THIS IS A REFUSAL SITE AND NOT A RENDERING DETAIL. A step whose
+ * action points at a route nobody emitted renders as a button that 404s,
+ * and it renders that way silently — the page has no way to know. The
+ * binding is checked here, once, against the planned domains, for the same
+ * reason every other cross-field check lives in this file.
+ *
+ * The one rule with teeth is contract rule 7. A statutory step may be
+ * PROPOSED and never performed: the orchestrate-workflow skill's own words
+ * are "never advance out of order, never self-approve, never skip a
+ * statutory step", and RPA "may set a file present … but only an
+ * authenticated human may set audited or approved". So a statutory step
+ * bound to an operation that writes state directly is refused. */
+function planWorkflow(
+  spec: MiniAppSpec,
+  domains: readonly PlannedDomain[],
+  issues: string[],
+  warnings: string[],
+): PlannedWorkflow | null {
+  const workflow = spec.workflow;
+  if (workflow === undefined) return null;
+
+  const allRoutes = domains.flatMap((domain) => domain.routes.map((route) => ({ domain, route })));
+  const proposalListings = allRoutes.filter((r) => r.route.operation.kind === "list-proposals");
+  if (proposalListings.length > 1) {
+    issues.push(
+      `the spec declares ${proposalListings.length} "list-proposals" routes — the step rail reads exactly one, and two would make "has this step been proposed?" depend on which the page happened to call`,
+    );
+  }
+  const proposalsPath = proposalListings[0]?.route.subPath ?? null;
+
+  const steps: PlannedWorkflowStep[] = [];
+  const seen = new Set<number>();
+  const boundFormIds = new Set<string>();
+  let previous = 0;
+
+  for (const step of workflow.steps) {
+    const where = `workflow step ${step.n} ("${step.title}")`;
+    if (seen.has(step.n)) {
+      issues.push(`${where} is declared twice`);
+      continue;
+    }
+    seen.add(step.n);
+    if (step.n <= previous) {
+      issues.push(
+        `${where} is numbered below the step before it (${previous}) — the Procedure's numbering IS the order the page renders and the order a person reads, so it has to ascend`,
+      );
+    }
+    previous = step.n;
+
+    let action: PlannedWorkflowStep["action"] = null;
+    const bound = step.action;
+    if (bound !== undefined) {
+      const domain = domains.find((d) => d.name === bound.domain);
+      if (domain === undefined) {
+        issues.push(
+          `${where}: action names domain "${bound.domain}", which this spec does not declare (declared: ${domains.map((d) => `"${d.name}"`).join(", ")})`,
+        );
+      } else {
+        const route = domain.routes.find((r) => r.subPath === bound.path);
+        if (route === undefined) {
+          issues.push(
+            `${where}: action names "${bound.path}" in domain "${bound.domain}", which declares ${domain.routes.map((r) => `"${r.subPath}"`).join(", ")}`,
+          );
+        } else {
+          const gate = step.gate ?? "human";
+          if (gate === "statutory" && route.operation.kind === "insert-row") {
+            issues.push(
+              `${where} is a statutory gate bound to an "insert-row" route, which writes state directly. A statutory step may only be PROPOSED (contract rule 7: propose, don't mutate) — bind it to a "propose" route, or drop the statutory gate if the step is not one.`,
+            );
+          }
+          boundFormIds.add(route.formId);
+          action = {
+            domain: domain.name,
+            method: route.method,
+            subPath: route.subPath,
+            label: route.summary ?? `${route.method} ${route.subPath}`,
+            formId: route.formId,
+            operationKind: route.operation.kind,
+            proposalPrefix: route.proposalPrefix,
+          };
+        }
+      }
+    }
+
+    steps.push({
+      n: step.n,
+      title: step.title,
+      detail: step.detail ?? null,
+      needs: step.needs ?? [],
+      produces: step.produces ?? [],
+      gate: step.gate ?? "human",
+      action,
+    });
+  }
+
+  // A proposal route nobody's step points at still works — it just does
+  // not appear in the rail, which is the surface people will read as the
+  // whole app. Worth a sentence, not a refusal.
+  for (const { domain, route } of allRoutes) {
+    if (route.operation.kind !== "propose" || boundFormIds.has(route.formId)) continue;
+    warnings.push(
+      `${domain.name} ${route.method} ${route.subPath} proposes, but no workflow step names it — it renders under "Other actions" instead of in the step rail`,
+    );
+  }
+  if (proposalsPath === null && steps.some((s) => s.action?.proposalPrefix !== null && s.action !== null)) {
+    warnings.push(
+      `no "list-proposals" route is declared, so the step rail can file proposals but cannot show which steps already have one — add a GET route with operation { kind: "list-proposals" } to give the steps real state`,
+    );
+  }
+
+  return {
+    name: workflow.name,
+    description: workflow.description ?? null,
+    source: workflow.source ?? null,
+    steps,
+    proposalsPath,
+  };
 }
 
 function titleCase(kebab: string): string {

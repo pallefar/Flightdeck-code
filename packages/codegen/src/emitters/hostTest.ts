@@ -23,6 +23,8 @@ import type { SubAppPlan } from "../plan";
 
 export function emitHostTest(plan: SubAppPlan): string {
   const domainFiles = plan.domains.map((d) => `routes/${d.fileName}`);
+  const hasTables = plan.tables.length > 0;
+  const miniApp = plan.profile === "mini-app";
   return joinLines([
     banner([
       `${plan.label} conformance — GENERATED, and meant to stay. Re-derives the sub-app contract's non-negotiables from the files on disk, so a later hand-edit cannot quietly drop one.`,
@@ -38,7 +40,10 @@ export function emitHostTest(plan: SubAppPlan): string {
     "",
     `const SUBAPP_DIR = path.join(process.cwd(), "server", "subapps", ${str(plan.id)});`,
     `const ROUTE_FILES = ${JSON.stringify(domainFiles)};`,
-    `const TABLE_PREFIX = ${str(tablePrefix(plan.id))};`,
+    // Only when there IS DDL to check. An unused const in a file emitted
+    // into somebody else's repository is the kind of small wrongness that
+    // trips their lint and teaches a reader not to trust the rest.
+    hasTables ? `const TABLE_PREFIX = ${str(tablePrefix(plan.id))};` : null,
     "",
     "/** Allowlist, not blocklist: a route file may reach these and nothing",
     " * else. A blocklist only names the escapes someone already thought of. */",
@@ -90,7 +95,21 @@ export function emitHostTest(plan: SubAppPlan): string {
     "    }",
     "  });",
     "",
-    ...(plan.tables.length > 0
+    ...(miniApp
+      ? [
+          // The mini-app property, asserted where it can go stale: in the
+          // host repo, after somebody hand-edits the manifest. A sub-app
+          // that grows an initSchema has grown a migration, and this is
+          // the test that says so before the next boot does.
+          `  it("stays database-free: no schema.ts, and initSchema does nothing", () => {`,
+          `    expect(fs.existsSync(path.join(SUBAPP_DIR, "schema.ts"))).toBe(false);`,
+          `    expect(read("manifest.ts").includes("initSchema: () => {}")).toBe(true);`,
+          `    for (const file of ROUTE_FILES) expect(read(file).includes("rt.db")).toBe(false);`,
+          "  });",
+          "",
+        ]
+      : []),
+    ...(hasTables
       ? [
           `  it("every table it creates carries the sub-app table prefix", () => {`,
           `    const schema = read("schema.ts");`,

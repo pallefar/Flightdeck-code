@@ -21,7 +21,9 @@ export type SpecField =
   | "visibleToRoles"
   | "capabilities"
   | "routes"
-  | "tables";
+  | "tables"
+  /** The numbered procedure of a Cowork workflow, once converted. */
+  | "steps";
 
 export interface ClarifyingQuestion {
   /** Stable key; answer with `answers[id] = "..."` on the next call. */
@@ -104,6 +106,23 @@ export function missingFieldQuestion(
   because: ContractRule,
 ): ClarifyingQuestion {
   return { id: field, field, severity: "required", question, because: rule(because), options: null };
+}
+
+/**
+ * Asked when a workflow has no `## Procedure` heading and more than one section carries a
+ * numbered list. Which numbered list is *the* procedure is a reading of the document, not a
+ * spelling fix, so Studio offers the candidates rather than picking the first one.
+ */
+export function stepsSectionQuestion(candidates: readonly string[]): ClarifyingQuestion {
+  return {
+    id: "steps:section",
+    field: "steps",
+    severity: "required",
+    question:
+      "This workflow has no \"## Procedure\" heading - which section holds the steps the mini app should walk through?",
+    because: rule("failLoud"),
+    options: candidates,
+  };
 }
 
 export function idCollisionQuestion(id: string): ClarifyingQuestion {

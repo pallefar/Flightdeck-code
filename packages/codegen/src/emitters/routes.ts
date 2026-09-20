@@ -115,7 +115,12 @@ export function emitDomainRoutes(plan: SubAppPlan, domain: PlannedDomain): strin
 }
 
 function needsCaps(route: PlannedRoute): boolean {
-  return route.operation.kind === "list-contracts" || route.operation.kind === "propose" || route.operation.kind === "insert-row";
+  return (
+    route.operation.kind === "list-contracts" ||
+    route.operation.kind === "list-proposals" ||
+    route.operation.kind === "propose" ||
+    route.operation.kind === "insert-row"
+  );
 }
 
 function emitMapError(plan: SubAppPlan, usesCapabilityScope: boolean): string {
@@ -239,6 +244,8 @@ function emitOperation(plan: SubAppPlan, route: PlannedRoute): string[] {
       return emitInsertRow(route);
     case "list-contracts":
       return emitListContracts();
+    case "list-proposals":
+      return emitListProposals();
     case "propose":
       return emitPropose(plan, route);
   }
@@ -324,6 +331,37 @@ function emitListContracts(): string[] {
     "    const caps = await ctx.capabilitiesFor(rt.id);",
     "    try {",
     "      return { rows: caps.readContracts() };",
+    "    } catch (err) {",
+    "      return mapError(reply, err);",
+    "    }",
+  ];
+}
+
+/** The sub-app's own filed proposals, by filename.
+ *
+ * This is the whole state model of a database-free mini-app. It stores
+ * nothing, so the only thing it can observe about its own past is the set
+ * of files it wrote under `memory/proposals/` — which the adapter scopes
+ * to this sub-app's own `<id>-` prefix, siblings excluded. The generated
+ * page matches those names against each workflow step's proposal prefix to
+ * say "step 4 has been proposed, and a human resolves it in the Inbox".
+ *
+ * `proposalPath` is built with `+` rather than a template literal, like
+ * every other string in this file, and is the same `memory/proposals/`
+ * spelling the propose handler answers with, so the two agree in the page.
+ *
+ * ⚠ Read-only by construction: `listOwnInboxProposals` returns names. A
+ * route that wanted a proposal's CONTENTS would need a filesystem read,
+ * which the adapter does not offer and which contract rule 3 forbids. */
+function emitListProposals(): string[] {
+  return [
+    "    const caps = await ctx.capabilitiesFor(rt.id);",
+    "    try {",
+    "      const rows = caps.listOwnInboxProposals().map((fileName) => ({",
+    "        fileName,",
+    '        proposalPath: "memory/proposals/" + fileName,',
+    "      }));",
+    "      return { rows };",
     "    } catch (err) {",
     "      return mapError(reply, err);",
     "    }",

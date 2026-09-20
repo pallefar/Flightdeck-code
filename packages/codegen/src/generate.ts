@@ -1,5 +1,21 @@
 /** Spec in, sub-app out. The whole public act of this package.
  *
+ * ⭐ WHAT COMES OUT, BY DEFAULT. The `mini-app` profile (`profile.ts`) is
+ * the one this generator is for: the `shell-reference`-shaped, database-
+ * free floor — `manifest.ts` with `initSchema: () => {}`, `guard.ts`,
+ * `routes/`, `web/src/subapps/<id>/index.tsx` and the conformance test
+ * that travels with them. No `schema.ts`, no DDL, no migration. A spec
+ * that declares tables is refused by name unless it also says
+ * `profile: "table-backed"`.
+ *
+ * ⭐ AND WHAT DOES NOT COME OUT: files on disk. Nothing here writes
+ * anything. `generateSubApp` returns text, which is what lets Studio run
+ * as a sub-app of the host it generates for — a sub-app route reaches the
+ * world only through the injected capability adapter, which has no
+ * filesystem write in it. The generated set becomes ONE inbox proposal a
+ * human applies (`apply.ts` is the CLI half of that, run by a person, not
+ * by a route).
+ *
  * Order matters and is the point:
  *   1. `planSubApp` parses, resolves and cross-checks — and, before
  *      anything is emitted, runs the DERIVED MANIFEST past a local copy of
@@ -67,7 +83,13 @@ export function generateSubApp(input: unknown, options: GenerateOptions = {}): G
     // the flat `tests/` root. The vitest glob is already recursive.
     { path: `tests/subapps/${plan.id}/${camelFile(plan.id)}Conformance.test.ts`, contents: emitHostTest(plan), kind: "host-test" },
   ];
-  if (plan.tables.length > 0) {
+  // ⛔ The one place a schema.ts can be added to the file set, and it is
+  // fenced on the PROFILE as well as on the tables. `planSubApp` already
+  // refuses tables under "mini-app", so the second half of this condition
+  // is unreachable-by-design — which is exactly why it is written down:
+  // the mini-app's "no DDL, no migration" property should not depend on a
+  // refusal three files away still being there.
+  if (plan.profile === "table-backed" && plan.tables.length > 0) {
     files.push({ path: `${server}/schema.ts`, contents: emitSchema(plan), kind: "schema" });
   }
 

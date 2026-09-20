@@ -121,6 +121,44 @@ export const widgetSchema = z
   .strict();
 
 /**
+ * One numbered step of a Cowork workflow, carried into the mini app that walks a person
+ * through it. Steps exist so a converted workflow keeps the shape of the document it came
+ * from - the page renders them in order and never decides for the person.
+ *
+ * `kind` is the whole write story again, one level down from `routes`:
+ *   `display` - the page shows the instruction. No host data is touched, so `capabilities` is empty.
+ *   `read`    - the step reads host contract records, so it needs `read:contracts`.
+ *   `propose` - the step files an inbox proposal, so it needs `write:inbox-proposal`.
+ * There is no `advance` and no `resolve`: contract §5.7 forbids a mini app from advancing or
+ * resolving a gated or statutory step, so the step language cannot express it either.
+ */
+export const specStepSchema = z
+  .object({
+    /** Stable slug, unique within the spec; the generated page keys its sections off it. */
+    key: z
+      .string()
+      .regex(/^[a-z0-9][a-z0-9-]*$/, "step key must be a lowercase slug")
+      .max(48),
+    /** The numbering the source document used ("1", "2b"), kept verbatim so the page matches it. */
+    ordinal: z.string().regex(/^\d{1,3}[a-z]?$/, 'step ordinal must look like "1" or "2b"'),
+    title: z
+      .string()
+      .min(1, "step title must not be empty")
+      .max(120, "step title is rendered verbatim; keep it under 120 characters")
+      .refine((value) => value.trim() === value, "step title must not have leading or trailing whitespace"),
+    /** The rest of the step, in the document's own words. May be empty. */
+    detail: z.string().max(600),
+    kind: z.enum(["display", "read", "propose"]),
+    /**
+     * True when the source says a person decides this step. The page shows it and stops;
+     * it is never a licence to advance the step, only a reason not to.
+     */
+    gated: z.boolean(),
+    capabilities: z.array(capabilitySchema),
+  })
+  .strict();
+
+/**
  * Enablement has two rows: the ceiling row ('*') that grants scopes and the per-project row
  * that can only turn a sub-app off (contract §4). A settings panel therefore belongs to
  * exactly one of those tiers.
@@ -160,6 +198,12 @@ export const miniAppSpecSchema = z
     tables: z.array(tableSchema),
     widgets: z.array(widgetSchema),
     settingsPanel: settingsPanelSchema.nullable(),
+    /**
+     * Present only on a spec converted from a Cowork workflow; the prompt path leaves it
+     * absent. A spec that has steps is a mini app - a walkthrough of a document - and is
+     * database-free by construction (see the refinement below).
+     */
+    steps: z.array(specStepSchema).optional(),
   })
   .strict()
   .superRefine((spec, ctx) => {
@@ -301,6 +345,63 @@ export const miniAppSpecSchema = z
         });
       }
     });
+
+    // --- steps: a converted workflow ----------------------------------------------------
+    const steps = spec.steps ?? [];
+    if (steps.length > 0 && spec.tables.length > 0) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["tables"],
+        message:
+          "a step-driven mini app is database-free: it declares no tables, the way shell-reference declares none",
+      });
+    }
+    for (const dupe of duplicate(steps.map((step) => step.key))) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["steps"],
+        message: `step key "${dupe}" is used twice`,
+      });
+    }
+    steps.forEach((step, index) => {
+      for (const dupe of duplicate(step.capabilities)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["steps", index, "capabilities"],
+          message: `capability "${dupe}" is listed twice on this step`,
+        });
+      }
+      for (const capability of step.capabilities) {
+        if (!declared.has(capability)) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ["steps", index, "capabilities"],
+            message: `step "${step.key}" uses "${capability}" but the manifest does not declare it - the consent screen would understate what the code does`,
+          });
+        }
+      }
+      if (step.kind === "display" && step.capabilities.length > 0) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["steps", index, "capabilities"],
+          message: `step "${step.key}" only displays its instruction, so it must hold no capability`,
+        });
+      }
+      if (step.kind === "read" && !step.capabilities.includes("read:contracts")) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["steps", index, "kind"],
+          message: `step "${step.key}" reads host records but does not hold "read:contracts"`,
+        });
+      }
+      if (step.kind === "propose" && !step.capabilities.includes("write:inbox-proposal")) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["steps", index, "kind"],
+          message: `step "${step.key}" proposes but does not hold "write:inbox-proposal"`,
+        });
+      }
+    });
   });
 
 export type MiniAppSpec = z.infer<typeof miniAppSpecSchema>;
@@ -308,6 +409,7 @@ export type SpecRoute = z.infer<typeof routeSchema>;
 export type SpecTable = z.infer<typeof tableSchema>;
 export type SpecTableColumn = z.infer<typeof tableColumnSchema>;
 export type SpecWidget = z.infer<typeof widgetSchema>;
+export type SpecStep = z.infer<typeof specStepSchema>;
 export type SettingsPanel = z.infer<typeof settingsPanelSchema>;
 
 /** Convenience wrapper so callers do not have to import zod to validate a spec. */

@@ -216,8 +216,80 @@ export const domainSpecSchema = z
   .strict();
 export type DomainSpec = z.infer<typeof domainSpecSchema>;
 
+/** How a step is allowed to complete — carried from the workflow's own
+ * words, not invented here.
+ *
+ * `statutory` is the one that changes generated behaviour: the
+ * orchestrate-workflow skill's Procedure says "never advance out of order,
+ * never self-approve, never skip a statutory step", and contract rule 7
+ * says no mini-app may resolve a gated or statutory step. So a statutory
+ * step may be PROPOSED and never performed, and `plan.ts` refuses a spec
+ * that binds one to an operation which writes state directly. */
+export const WORKFLOW_GATES = ["human", "statutory", "auto"] as const;
+export type WorkflowGate = (typeof WORKFLOW_GATES)[number];
+
+/** One numbered line of a Cowork workflow's `## Procedure`.
+ *
+ * The four descriptive fields are the ones a person actually needs on
+ * screen — the step's own words (`title`/`detail`), what it consumes
+ * (`needs`) and what it leaves behind (`produces`). They are free text
+ * copied out of the skill, so they are LENGTH-BOUNDED and nothing more:
+ * they land in JSX text nodes, never in a path, a filename or SQL. */
+export const workflowStepSchema = z
+  .object({
+    /** The step's number in the Procedure. Not an array index — a step
+     * the conversion dropped must leave a visible gap rather than
+     * silently renumber the ones after it. */
+    n: z.number().int().positive().max(99),
+    title: z.string().min(1).max(120),
+    detail: z.string().min(1).max(600).optional(),
+    needs: z.array(z.string().min(1).max(120)).max(8).optional(),
+    produces: z.array(z.string().min(1).max(120)).max(8).optional(),
+    gate: z.enum(WORKFLOW_GATES).optional(),
+    /** The generated route that performs this step, named the way the
+     * route declares itself. A step with no action is a checklist line:
+     * the page shows it and says, in as many words, that it happens
+     * somewhere else. Most steps of a real workflow are that. */
+    action: z
+      .object({
+        domain: z.string().regex(KEBAB_RE),
+        path: z.string().max(120).regex(ROUTE_PATH_RE),
+      })
+      .strict()
+      .optional(),
+  })
+  .strict();
+export type WorkflowStepSpec = z.infer<typeof workflowStepSchema>;
+
+/** The workflow a mini-app was converted FROM, kept with the app.
+ *
+ * ⭐ Why the generator carries this at all. Without it, a converted
+ * workflow becomes a page of unlabelled forms and the thing a person
+ * actually holds in their head — step 3 waits for step 2, step 5 is
+ * statutory — is the one thing the output loses. With it, the emitted
+ * page is a step rail: the steps in order, what each needs, what each
+ * produced, and which ones this app has already proposed. */
+export const workflowSpecSchema = z
+  .object({
+    /** The skill's frontmatter `name`. */
+    name: z.string().min(1).max(80),
+    /** The skill's frontmatter `description`, trimmed to a blurb. */
+    description: z.string().min(1).max(600).optional(),
+    /** Where the workflow came from, e.g. `skills/orchestrate-workflow/SKILL.md`.
+     * Rendered verbatim as provenance; never opened by anything. */
+    source: z.string().min(1).max(200).optional(),
+    steps: z.array(workflowStepSchema).min(1).max(30),
+  })
+  .strict();
+export type WorkflowSpec = z.infer<typeof workflowSpecSchema>;
+
 export const miniAppSpecSchema = z
   .object({
+    /** Which shape to emit. Absent means `mini-app`: database-free, the
+     * `shell-reference` floor, and the only profile a Cowork-workflow
+     * conversion should ever need. See `profile.ts` for why the other one
+     * is kept and why it has to be asked for by name. */
+    profile: z.enum(PROFILES).optional(),
     id: z.string().min(1).max(40).regex(SUBAPP_ID_RE, "id must match /^[a-z0-9][a-z0-9-]*$/"),
     /** Literal English. The shell renders it verbatim; it is NOT an i18n key. */
     label: z.string().min(1).max(80),
@@ -236,11 +308,20 @@ export const miniAppSpecSchema = z
       })
       .strict()
       .optional(),
+    /** ⛔ NOT the mini-app path. Parsed here so the refusal can NAME the
+     * tables it is refusing (`plan.ts`, via `tableRefusalReason`) instead
+     * of rejecting an unknown key and leaving the author guessing; only a
+     * spec that also says `profile: "table-backed"` gets a schema.ts. */
     tables: z.array(tableSpecSchema).optional(),
+    workflow: workflowSpecSchema.optional(),
     domains: z.array(domainSpecSchema).min(1),
   })
   .strict();
 export type MiniAppSpec = z.infer<typeof miniAppSpecSchema>;
+
+export function profileOf(spec: MiniAppSpec): Profile {
+  return spec.profile ?? DEFAULT_PROFILE;
+}
 
 /** `settingsPanel.webComponentId` is deliberately NOT a spec field: the web
  * loader globs `web/src/subapps/<webComponentId>/SettingsPanel.tsx`, so any
@@ -268,6 +349,11 @@ export function requiredScopeOf(op: Operation): CapabilityScope | null {
     case "list-contracts":
       return "read:contracts";
     case "propose":
+    // Reading its own proposals is gated by the WRITE scope in the host's
+    // `buildCapabilities` — `listOwnInboxProposals` calls
+    // `require("write:inbox-proposal")`. Answering "read:contracts" here
+    // because the route only reads would emit a sub-app that 403s forever.
+    case "list-proposals":
       return "write:inbox-proposal";
     case "list-rows":
     case "get-row":
