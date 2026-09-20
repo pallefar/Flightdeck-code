@@ -165,3 +165,75 @@ describe("the proof, which is not an assumption", () => {
     );
   });
 });
+
+describe("a declared name spelled inside one of our own class words", () => {
+  it('tokenizes "Son" correctly and REPORTS the downstream interaction', () => {
+    // "son" is a substring of "person". The payload is spotless — but the
+    // host's residual scanner matches a full declared name with NO word
+    // boundary, so a DOWNSTREAM scan run with the same names would report
+    // `declaredName` on this package's own `<person:1>`. Refusing here would
+    // reject a real surname over our vocabulary; saying nothing would hand the
+    // caller a payload that fails later for a reason they cannot diagnose.
+    const { text, vault, tagClassNameCollisions } = tokenize("Son hat unterschrieben.", { names: ["Son"] });
+    expect(text).toBe("<person:1> hat unterschrieben.");
+    expect(tagClassNameCollisions).toEqual(["person"]);
+    expect(detokenize(text, vault).text).toBe("Son hat unterschrieben.");
+  });
+
+  it("does not corrupt a tag an earlier pass minted", () => {
+    // THE BUG THIS GUARDS, and it is a real one: the collision sweep mints
+    // `<literal:1>`, and the declared name "Li" — a common surname — matches
+    // INSIDE the word "literal" because the host's recipe matches a full
+    // declared name with no word boundary. A naive second pass rewrites
+    // `<literal:1>` into `<<person:2>teral:1>` and the source can never be
+    // restored. `mapOutsideTags` is why it does not.
+    const { text, vault, tagClassNameCollisions } = tokenize("Vorlage <person:1> und Li.", { names: ["Li"] });
+    expect(text).toBe("Vorlage <literal:1> und <person:2>.");
+    expect(tagClassNameCollisions).toEqual(["literal"]);
+    expect(detokenize(text, vault).text).toBe("Vorlage <person:1> und Li.");
+  });
+
+  it("reports nothing for an ordinary name", () => {
+    expect(tokenize("Anna Berger", { names: ["Anna Berger"] }).tagClassNameCollisions).toEqual([]);
+  });
+});
+
+describe("end to end, the way a caller uses it", () => {
+  it("tokenize -> assess -> model -> detokenize", async () => {
+    const { assessTier } = await import("../tier");
+    const source =
+      "Anna Berger (anna.berger@acme.de) und Carl Schmidt haben den Vertrag " +
+      "am 01.03.2024 gezeichnet. Berger berichtet an Schmidt.";
+    const names = ["Anna Berger", "Carl Schmidt"];
+
+    const { text, vault, findings } = tokenize(source, { names });
+
+    // Nothing personal on the wire.
+    for (const leak of ["Anna", "Berger", "Carl", "Schmidt", "anna.berger@acme.de", "01.03.2024"]) {
+      expect(text, `"${leak}" must not be in the payload`).not.toContain(leak);
+    }
+    // The model can still see that Berger and Schmidt are two people, each
+    // mentioned twice.
+    expect(findings.filter((f) => f.cls === "person").map((f) => f.occurrences)).toEqual([2, 2]);
+
+    const verdict = assessTier(text, vault, { names });
+    expect(verdict.payloadTier).toBe(3);
+    expect(verdict.vaultTier).toBe(4);
+
+    // Ordinals are by FIRST APPEARANCE across all classes, so the email is 1
+    // and the date is 2 — both appear before either name is replaced.
+    expect(text).toBe(
+      "<person:3> (<email:1>) und <person:4> haben den Vertrag am <number:2> gezeichnet. " +
+        "<person:3> berichtet an <person:4>.",
+    );
+
+    // The model rewrites the prose, answers in English, keeps the tags, and
+    // mangles two of them on the way — HTML-escaped and upper-cased.
+    const answer = "Summary: &lt;person:4&gt; approved the contract signed by <PERSON:3> on <number:2>.";
+    const { text: final, report } = detokenize(answer, vault);
+    expect(final).toBe("Summary: Carl Schmidt approved the contract signed by Anna Berger on 01.03.2024.");
+    expect(report.rejected).toEqual([]);
+    expect(report.dropped).toEqual(["<email:1>"]);
+    expect(JSON.stringify(report)).not.toContain("Anna");
+  });
+});
