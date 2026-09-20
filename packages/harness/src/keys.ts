@@ -18,9 +18,9 @@ export const KEY_LENGTH = 32;
 
 export interface KeyingOptions {
   /** Replaces the default five outright — for a peer whose request names things differently. */
-  readonly keyFields?: readonly string[];
+  readonly keyFields?: readonly string[] | undefined;
   /** Added to whichever set is in force. Use this for a peer's extra semantic fields. */
-  readonly extraKeyedFields?: readonly string[];
+  readonly extraKeyedFields?: readonly string[] | undefined;
 }
 
 /** The field list actually in force, deduplicated, in a stable order. */

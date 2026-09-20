@@ -28,7 +28,7 @@ import {
   tryReadFixtureAt,
   writeFixtureAt,
 } from "./fixture";
-import type { FixtureRecord } from "./fixture";
+import type { FixtureRecord, StoredFixture } from "./fixture";
 import type { HarnessCaller, ProviderCallShape, ProviderFn } from "./provider-contract";
 
 export type HarnessMode = "live" | "playback";
@@ -63,7 +63,7 @@ interface CommonOptions<Res> extends KeyingOptions, RedactionOptions {
   readonly fixturesDir: string;
   /** Rebuild a response from stored JSON — for a provider whose response is not
    * a plain object. Without it, playback hands back the parsed JSON as `Res`. */
-  readonly reviveResponse?: (stored: unknown) => Res;
+  readonly reviveResponse?: ((stored: unknown) => Res) | undefined;
 }
 
 export interface LiveHarnessOptions<Req extends ProviderCallShape, Res> extends CommonOptions<Res> {
@@ -71,15 +71,15 @@ export interface LiveHarnessOptions<Req extends ProviderCallShape, Res> extends 
   readonly provider: ProviderFn<Req, Res>;
   /** `keep` leaves an existing recording alone (still calls the provider, still
    * returns the live answer). Default `overwrite`: a live run refreshes. */
-  readonly onExisting?: "overwrite" | "keep";
+  readonly onExisting?: "overwrite" | "keep" | undefined;
   /** Turn a response into JSON. Default: the response itself. */
-  readonly serializeResponse?: (response: Res) => unknown;
+  readonly serializeResponse?: ((response: Res) => unknown) | undefined;
   /** Return the stored round-trip instead of the live object, so live behaves
    * exactly as playback will. Off by default — live should hand back what the
    * provider actually returned. */
-  readonly roundTrip?: boolean;
+  readonly roundTrip?: boolean | undefined;
   /** Injected clock; a recording is otherwise the only nondeterministic byte. */
-  readonly now?: () => Date;
+  readonly now?: (() => Date) | undefined;
 }
 
 export interface PlaybackHarnessOptions<Res> extends CommonOptions<Res> {
@@ -159,7 +159,7 @@ async function nearestFixtures(
   model: string,
   wanted: Readonly<Record<string, unknown>>,
 ): Promise<{ key: string; differingFields: readonly string[] }[]> {
-  let stored;
+  let stored: StoredFixture[];
   try {
     stored = await listFixtures(fixturesDir);
   } catch {
@@ -186,7 +186,9 @@ export function createHarness<Req extends ProviderCallShape, Res>(
 ): Harness<Req, Res> {
   const { fixturesDir, mode } = options;
   const fields = keyFieldsFor(options);
-  const secrets = resolveSecrets(options);
+  // The caller's environment is scanned by default: the commonest way a key
+  // reaches a fixture is a provider echoing one it read from `process.env`.
+  const secrets = resolveSecrets({ secrets: options.secrets, env: options.env ?? process.env });
   const events: HarnessEvent[] = [];
 
   const keyFor = (request: Req): string =>
@@ -217,22 +219,22 @@ export function createHarness<Req extends ProviderCallShape, Res>(
     return revive(record.response);
   }
 
-  async function live(request: Req, live: LiveHarnessOptions<Req, Res>): Promise<Res> {
+  async function recordLive(request: Req, config: LiveHarnessOptions<Req, Res>): Promise<Res> {
     const key = keyFor(request);
     const path = fixturePath(fixturesDir, request.model, key);
 
     const startedAt = Date.now();
-    const response = await live.provider(request);
+    const response = await config.provider(request);
     const durationMs = Date.now() - startedAt;
 
-    if (live.onExisting === "keep" && (await tryReadFixtureAt(path)) !== null) {
+    if (config.onExisting === "keep" && (await tryReadFixtureAt(path)) !== null) {
       events.push({ kind: "kept", key, model: request.model, path, durationMs });
       return response;
     }
 
     const serialized =
-      live.serializeResponse === undefined ? (response as unknown) : live.serializeResponse(response);
-    const now = live.now === undefined ? new Date() : live.now();
+      config.serializeResponse === undefined ? (response as unknown) : config.serializeResponse(response);
+    const now = config.now === undefined ? new Date() : config.now();
 
     const record: FixtureRecord = {
       format: FIXTURE_FORMAT,
@@ -250,7 +252,7 @@ export function createHarness<Req extends ProviderCallShape, Res>(
 
     await writeFixtureAt(path, record);
     events.push({ kind: "recorded", key, model: request.model, path, durationMs });
-    return live.roundTrip === true ? revive(record.response) : response;
+    return config.roundTrip === true ? revive(record.response) : response;
   }
 
   return {
@@ -260,6 +262,6 @@ export function createHarness<Req extends ProviderCallShape, Res>(
     keyFor,
     pathFor,
     call: (request: Req): Promise<Res> =>
-      options.mode === "playback" ? playback(request) : live(request, options),
+      options.mode === "playback" ? playback(request) : recordLive(request, options),
   };
 }

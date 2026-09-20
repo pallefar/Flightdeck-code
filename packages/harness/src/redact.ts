@@ -58,10 +58,10 @@ const SHAPE_RULES: readonly ShapeRule[] = [
 
 export interface RedactionOptions {
   /** Exact strings to scrub wherever they appear. The caller's own key belongs here. */
-  readonly secrets?: readonly string[];
+  readonly secrets?: readonly string[] | undefined;
   /** Environment to harvest credential-shaped values from. Pass `{}` to opt out;
    * defaults to `process.env` at the call site, never read from here implicitly. */
-  readonly env?: Readonly<Record<string, string | undefined>>;
+  readonly env?: Readonly<Record<string, string | undefined>> | undefined;
 }
 
 function escapeRegExp(value: string): string {

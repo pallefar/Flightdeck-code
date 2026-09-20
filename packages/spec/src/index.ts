@@ -43,6 +43,7 @@ export {
   routePathSchema,
   routeSchema,
   settingsPanelSchema,
+  specStepSchema,
   subAppIdSchema,
   tableColumnSchema,
   tableSchema,
@@ -54,6 +55,7 @@ export type {
   MiniAppSpec,
   SettingsPanel,
   SpecRoute,
+  SpecStep,
   SpecTable,
   SpecTableColumn,
   SpecWidget,
@@ -74,6 +76,7 @@ export {
   navSectionQuestion,
   orderQuestions,
   rolesQuestion,
+  stepsSectionQuestion,
   unknownCapabilityQuestion,
 } from "./questions";
 export type { ClarifyingQuestion, QuestionSeverity, SpecField } from "./questions";
@@ -97,3 +100,22 @@ export type { PlanInput, PlannerCompletion, PlannerLlm, PlannerRequest } from ".
 
 export { extractJsonObject } from "./json";
 export type { JsonExtraction } from "./json";
+
+/**
+ * The Cowork-workflow input path. A workflow is a skill file - YAML frontmatter plus a
+ * "## Procedure" of numbered steps - and it arrives as a string in the request body, because a
+ * sub-app route has no filesystem read (contract §5.3). What comes out is a database-free
+ * `MiniAppSpec` whose `steps` are the workflow's own steps.
+ */
+export { PROCEDURE_HEADING, flattenInline, parseWorkflowMarkdown } from "./workflow";
+export type {
+  ParseWorkflowOptions,
+  WorkflowDoc,
+  WorkflowFrontmatter,
+  WorkflowParse,
+  WorkflowSection,
+  WorkflowStep,
+} from "./workflow";
+
+export { autoAdvanceSentence, planFromWorkflow } from "./workflowPlan";
+export type { WorkflowPlanInput } from "./workflowPlan";

@@ -112,10 +112,52 @@ export function checkEmittedInvariants(files: readonly GeneratedFile[], plan: Su
     add(manifest.path, "min-host-version", 'manifest must declare minHostVersion: "5.0.0"');
   }
 
+  checkProfile(files, code, plan, add);
+
   return violations;
 }
 
 type Add = (file: string, rule: string, detail: string) => void;
+
+/** ⭐ THE MINI-APP PROPERTY, CHECKED ON THE OUTPUT.
+ *
+ * `plan.ts` refuses a mini-app spec that declares tables, and `generate.ts`
+ * gates the schema file on the profile. Both are intentions. This reads the
+ * FILES, the way a reviewer would, and answers one question: did anything
+ * that touches a database get emitted anyway?
+ *
+ * It is not redundant with the refusal. A mini-app is database-free because
+ * the host runs `initSchema` on every boot for every workspace and a
+ * generated CREATE TABLE is a migration no proposal can take back — a
+ * property worth more than one lock. If some later emitter grows a DDL
+ * branch, this is what turns that into a thrown error at generation time
+ * rather than a table in somebody's workspace. */
+function checkProfile(files: readonly GeneratedFile[], code: ReadonlyMap<string, string>, plan: SubAppPlan, add: Add): void {
+  if (plan.profile !== "mini-app") return;
+
+  for (const file of files) {
+    if (file.kind === "schema" || file.path.endsWith("/schema.ts")) {
+      add(file.path, "mini-app-no-schema", `profile "mini-app" is database-free, and this file is a schema — no DDL, no migration, no schema.ts`);
+    }
+    if (file.kind === "patch" || file.kind === "host-test") continue;
+    const source = code.get(file.path) ?? file.contents;
+    if (/CREATE\s+TABLE|CREATE\s+INDEX/i.test(source)) {
+      add(file.path, "mini-app-no-ddl", 'contains DDL, which profile "mini-app" never emits — initSchema is a no-op and there is nothing to create');
+    }
+    if (file.kind === "routes-domain" && source.includes("rt.db")) {
+      add(file.path, "mini-app-no-db", 'reaches rt.db, and a mini-app has no tables of its own — its routes reach the host only through ctx.capabilitiesFor(...)');
+    }
+  }
+
+  const manifest = files.find((f) => f.kind === "manifest");
+  if (manifest === undefined) return;
+  if (!manifest.contents.includes("initSchema: () => {}")) {
+    add(manifest.path, "mini-app-no-schema", 'a mini-app manifest must carry `initSchema: () => {}`, exactly as `shell-reference/manifest.ts` does');
+  }
+  if ((code.get(manifest.path) ?? manifest.contents).includes('"./schema.js"')) {
+    add(manifest.path, "mini-app-no-schema", "imports ./schema.js, which a mini-app never ships");
+  }
+}
 
 /** Comments are prose. Every textual check below runs on the file with its
  * comments blanked out, because an emitted banner legitimately quotes the
