@@ -37,6 +37,7 @@
  * that is the only function that decides who is asking.
  */
 import { createHash, timingSafeEqual } from "node:crypto";
+import { pathToFileURL } from "node:url";
 
 import Fastify from "fastify";
 import { z } from "zod";
@@ -287,8 +288,34 @@ export function createServer(options: ServerOptions): ReturnType<typeof Fastify>
   return app;
 }
 
+/**
+ * ⭐ IS THIS MODULE THE ENTRY POINT?
+ *
+ * ⚠ This was `process.argv[1]?.endsWith("server/index.ts")`, which is a
+ * guess about a FILENAME. It happens to work for `npx tsx server/index.ts`
+ * and for `tsx watch server/index.ts` — both were run to check — and it
+ * fails SILENTLY the moment anything renames the file or runs a build
+ * output: `node dist/server/index.js` imports the module, matches nothing,
+ * boots nothing, and prints nothing. A server that exits 0 having never
+ * listened is the worst possible failure for whoever is setting it up.
+ *
+ * The URL comparison is the actual question — "was I the module node was
+ * told to run" — and it is stable across names, directories and build
+ * output. Verified to hold under both runners before replacing the old
+ * check.
+ */
+const isEntryPoint = ((): boolean => {
+  const invoked = process.argv[1];
+  if (invoked === undefined) return false;
+  try {
+    return import.meta.url === pathToFileURL(invoked).href;
+  } catch {
+    return false;
+  }
+})();
+
 /* c8 ignore start — the boot path; `createServer` is what the tests drive. */
-if (process.argv[1]?.endsWith("server/index.ts") === true) {
+if (isEntryPoint) {
   const operator = operatorFromEnv(process.env);
   if (typeof operator === "string") {
     process.stderr.write(`studio: refusing to start — ${operator}\n`);
