@@ -1,0 +1,33 @@
+{
+  "id": "wc-clock",
+  "label": "Works Council Clock",
+  "version": "0.1.0",
+  "icon": "⏱️",
+  "navSection": "Contract pipeline",
+  "summary": "Track the statutory consultation window for a contract folder.",
+  "capabilities": [
+    "read:contracts"
+  ],
+  "visibleToRoles": [
+    "hr_preparer",
+    "hr_reviewer",
+    "wc_liaison",
+    "admin"
+  ],
+  "domains": [
+    {
+      "name": "clocks",
+      "title": "Clocks",
+      "routes": [
+        {
+          "method": "GET",
+          "path": "/contracts",
+          "summary": "Contract folders",
+          "operation": {
+            "kind": "list-contracts"
+          }
+        }
+      ]
+    }
+  ]
+}

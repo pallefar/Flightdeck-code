@@ -14,7 +14,8 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "lint": "eslint .",
-    "redteam": "tsx scripts/redteam-gate.ts"
+    "redteam": "tsx scripts/redteam-gate.ts",
+    "mount": "bash scripts/mount-in-host.sh"
   },
   "dependencies": {
     "fastify": "^5.2.0",
