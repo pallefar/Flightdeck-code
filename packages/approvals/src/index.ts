@@ -17,17 +17,33 @@
  *
  * WHAT A CONSUMER (`packages/registry`) NEEDS, and nothing more:
  *
- *   effectiveGrant({ store, toolId, contentHash, projectId, datasource, tier,
- *                    requestedBy })  ->  Promise<GrantDecision>
+ *   effectiveGrant({ store, directory, toolId, toolContent, projectId,
+ *                    datasource, payload, requestedBy })  ->  Promise<GrantDecision>
+ *
+ * ⭐ NOTE WHAT IS NOT IN THAT LIST: no `tier` and no `contentHash`. Both used to
+ * be caller-supplied, and both were bypasses — a requester declared tier 2 for
+ * a payload guardrails classifies as tier 4 and was allowed with no approval,
+ * and a requester presented a stale content hash for an edited tool and rode the
+ * old signature. A control anchored on a caller's claim about a fact the code
+ * can determine itself is not a control. The tier is DERIVED from `payload` by
+ * `packages/guardrails`, across every representation of it; the content hash is
+ * COMPUTED from `toolContent` by guardrails' single hasher; the approver's kind
+ * is RESOLVED through `IdentityDirectory`; and `'*'` is not a project a caller
+ * may ask in.
  *
  * `GrantDecision.reason` is a code, `GrantDecision.audit` is a body to append
  * through the capability adapter, and `GrantDecision.allowed` is computed
  * fresh from the store on every call — never stored, never cached, never
- * passed around as a boolean (Ph27 Pitfall 5).
+ * passed around as a boolean (Ph27 Pitfall 5). The decision object is SEALED:
+ * `verifyDecision()` / `decisionIsUsable()` are the only honest ways to read
+ * `allowed`, and a spread-and-edit copy fails both.
  */
 
-export { effectiveGrant } from "./decision";
-export type { ApprovalSummary, GrantDecision, GrantRequest } from "./decision";
+export { DECISION_TTL_MS, decisionIsUsable, effectiveGrant, verifyDecision } from "./decision";
+export type { ApprovalSummary, DecisionUsability, GrantDecision, GrantRequest } from "./decision";
+
+export { createMemoryDirectory } from "./directory";
+export type { IdentityDirectory } from "./directory";
 
 export { GRANT_REASONS, isRefusal } from "./reasons";
 export type { GrantReason } from "./reasons";
@@ -58,8 +74,17 @@ export type { EffectiveGrant, GrantRow, Intersection } from "./grant";
 export { admitApproval, approvalDefect, isRevoked } from "./approval";
 export type { ApprovalQuestion, ApprovalRecord, ApprovalVerdict } from "./approval";
 
-export { ACTOR_KINDS, isActor, isActorKind, isSelfApproval, namedHuman } from "./actor";
-export type { Actor, ActorKind, NamedHuman } from "./actor";
+export {
+  ACTOR_KINDS,
+  identityDefect,
+  isActor,
+  isActorKind,
+  isDirectoryEntry,
+  isSelfApproval,
+  namedHumanIdentity,
+  sameSubject,
+} from "./actor";
+export type { Actor, ActorKind, DirectoryEntry, IdentityDefect, NamedHuman } from "./actor";
 
 export { APPROVAL_AUDIT_EVENTS, AUDIT_BODY_FIELDS, auditEvent } from "./audit";
 export type { ApprovalAuditBody, ApprovalAuditEvent, AuditEventInput } from "./audit";
@@ -73,7 +98,9 @@ export {
   DEFAULT_PROJECT_ID,
   PROJECT_SLUG_RE,
   TOOL_ID_RE,
+  isRequestableProjectId,
   isValidContentHash,
   isValidProjectId,
   isValidToolId,
+  toolContentHash,
 } from "./identity";

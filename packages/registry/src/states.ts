@@ -49,13 +49,13 @@ export function isLifecycleState(value: unknown): value is LifecycleState {
  * such thing as a state whose outgoing edges nobody decided.
  */
 export const TRANSITIONS: Readonly<Record<LifecycleState, readonly LifecycleState[]>> = Object.freeze({
-  proposed: Object.freeze(["approved", "rejected"]),
-  approved: Object.freeze(["registered", "retired"]),
-  registered: Object.freeze(["superseded", "retired"]),
-  rejected: Object.freeze([]),
-  superseded: Object.freeze([]),
-  retired: Object.freeze([]),
-}) as Readonly<Record<LifecycleState, readonly LifecycleState[]>>;
+  proposed: Object.freeze<LifecycleState[]>(["approved", "rejected"]),
+  approved: Object.freeze<LifecycleState[]>(["registered", "retired"]),
+  registered: Object.freeze<LifecycleState[]>(["superseded", "retired"]),
+  rejected: Object.freeze<LifecycleState[]>([]),
+  superseded: Object.freeze<LifecycleState[]>([]),
+  retired: Object.freeze<LifecycleState[]>([]),
+});
 
 /** States from which nothing further happens. Derived, never a second list. */
 export const TERMINAL_STATES: readonly LifecycleState[] = Object.freeze(

@@ -32,9 +32,9 @@
  * `redact()` did its job.
  */
 
-import { PII_PATTERNS } from "./lists";
+import { PII_PATTERNS, STUDIO_PATTERNS } from "./lists";
 import { escapeRegExpLiteral, initials } from "./findings";
-import { nameHits } from "./classify";
+import { nameHits } from "./names";
 
 /** Transcribed from `envelope.ts`. Included in the divergence test: a limit
  * that silently grows in one checkout and not the other is the same class of
@@ -71,7 +71,15 @@ export function scrub(raw: string, opts: ScrubOptions = {}): string {
       out = out.replace(new RegExp(`\\b${escapeRegExpLiteral(part)}\\b`, "gi"), initials(part));
     }
   }
-  for (const { re, placeholder } of PII_PATTERNS) {
+  // The host's patterns first, in the HOST'S ORDER — "email runs before
+  // digits, otherwise a numeric local-part would be partly eaten and the
+  // address would survive as a recognisable fragment". Then the
+  // Studio-authored patterns, which are additive and cannot reorder the host's
+  // five. A class this package can DETECT but not REDACT would make `redact`
+  // mean less than `classify`, and `gateModelRequest` would refuse its own
+  // redaction forever — so the two lists are the same list here as they are in
+  // `classifyText`.
+  for (const { re, placeholder } of [...PII_PATTERNS, ...STUDIO_PATTERNS]) {
     out = out.replace(new RegExp(re.source, re.flags.includes("g") ? re.flags : `${re.flags}g`), placeholder);
   }
   if ((opts.truncate ?? true) && out.length > MAX_TEXT_CHARS) out = out.slice(0, MAX_TEXT_CHARS);

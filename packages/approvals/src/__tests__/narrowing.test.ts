@@ -102,12 +102,26 @@ describe("a project enabling with no ceiling is refused", () => {
     expect(decision.projectGranted).toBe(false);
   });
 
-  it("a request scoped to '*' itself is answered by the ceiling row alone", async () => {
+  /**
+   * ⭐ CHANGED DELIBERATELY, AND THIS IS THE STRONGER ASSERTION.
+   *
+   * This used to read "a request scoped to '*' itself is answered by the ceiling
+   * row alone", and it passed. It was also a complete bypass of per-project
+   * narrowing: `projectId` is a field the requester writes, so a project
+   * narrowed to tier 1 asked again as `'*'`, the ceiling row became the project
+   * row, and the narrowing evaporated (see A10 in the red-team suite). A caller
+   * that can name its own scope as the ceiling writes its own ceiling.
+   *
+   * `intersectGrant()` still accepts the same row twice — that is how the
+   * consent-screen view is built — but no REQUEST can reach it.
+   */
+  it("a request scoped to '*' is refused: the ceiling is written, never asked for", async () => {
     const decision = await effectiveGrant({
       store: store([ceiling([[SHAREPOINT, 2]])]),
       ...ask({ datasource: SHAREPOINT, tier: 2, projectId: CEILING_PROJECT_ID }),
     });
-    expect(decision.allowed).toBe(true);
+    expect(decision.allowed).toBe(false);
+    expect(decision.reason).toBe("ceiling_not_requestable");
   });
 });
 

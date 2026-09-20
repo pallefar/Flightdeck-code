@@ -424,7 +424,7 @@ export async function effectiveGrant(request: GrantRequest): Promise<GrantDecisi
 
   // Tier 1 and 2: allowed without a signature, and still recorded.
   if (!requiresNamedApproval(tier)) {
-    const moved = await storeMoved(request, computed, null);
+    const moved = await storeMoved(request, { ceilingRow, projectRow, approvals: null });
     if (moved) return decide(request, computed, moved, state);
     return decide(request, computed, "allowed", state);
   }
@@ -445,7 +445,7 @@ export async function effectiveGrant(request: GrantRequest): Promise<GrantDecisi
   );
   if (!verdict.ok) return decide(request, computed, verdict.reason, state);
 
-  const moved = await storeMoved(request, computed, approvals);
+  const moved = await storeMoved(request, { ceilingRow, projectRow, approvals });
   if (moved) return decide(request, computed, moved, state);
 
   return decide(request, computed, "allowed", {
@@ -470,23 +470,25 @@ export async function effectiveGrant(request: GrantRequest): Promise<GrantDecisi
  * hash and the seal use — so there is one definition in the repository of "are
  * these two records the same", rather than a structural comparison written a
  * third time here.
+ *
+ * Only the ALLOW path calls this. A refusal is already fail-closed, and
+ * re-reading before one would trade a precise reason for a vaguer one.
  */
 async function storeMoved(
   request: GrantRequest,
-  computed: Computed,
-  approvalsRead: readonly ApprovalRecord[] | null,
+  seen: {
+    readonly ceilingRow: GrantRow | null;
+    readonly projectRow: GrantRow | null;
+    readonly approvals: readonly ApprovalRecord[] | null;
+  },
 ): Promise<GrantReason | null> {
   const { store, toolId, projectId } = request;
-  const before = canonicalJson({
-    ceiling: await Promise.resolve(null),
-  });
-  void before;
-  void computed;
   const ceilingAgain = await store.readGrantRow(CEILING_PROJECT_ID, toolId);
   const projectAgain = await store.readGrantRow(projectId, toolId);
-  const approvalsAgain = approvalsRead === null ? null : await store.readApprovals(projectId, toolId);
-  void ceilingAgain;
-  void projectAgain;
-  void approvalsAgain;
-  return null;
+  const approvalsAgain =
+    seen.approvals === null ? null : await store.readApprovals(projectId, toolId);
+  const settled =
+    canonicalJson([ceilingAgain, projectAgain, approvalsAgain]) ===
+    canonicalJson([seen.ceilingRow, seen.projectRow, seen.approvals]);
+  return settled ? null : "store_changed_during_decision";
 }

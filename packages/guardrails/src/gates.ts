@@ -49,7 +49,7 @@
  */
 
 import { classify, type ClassifyOptions } from "./classify";
-import { classifyCode, classifyMarkdown } from "./markdown";
+import { classifyProseAndCode } from "./markdown";
 import { type Classification, type Finding, type Tier, dedupe, sanitizePath, tierOf } from "./findings";
 import { redactTree } from "./scrub";
 import { type Approval, type ApprovalCheck, checkApproval, contentHash } from "./approval";
@@ -339,7 +339,10 @@ export function gateWorkflowIntake(
   ctx: GateContext,
   options: WorkflowIntakeOptions = {},
 ): GateDecision {
-  const findings = classifyMarkdown(markdown);
+  // Read BOTH ways — see `classifyProseAndCode`. A pasted workflow is prose,
+  // and a pasted workflow with a fenced `ts` block in it is also code; which
+  // one the author pasted is not a security property.
+  const findings = classifyProseAndCode(markdown, "<intake>");
   const classification: Classification = { tier: tierOf(findings), findings };
   // The proposal hashed for approval is the document itself: approving one
   // paste must not bless an edited re-paste.
@@ -390,8 +393,7 @@ export function gateGeneratedArtifacts(
     // object keys, and a prose scanner reads straight past `{ salaryEur: 1 }`.
     // A generated `.md` gets the prose pass as well: the union is the point,
     // since guessing a file's genre from its extension is one more anchor.
-    all.push(...classifyCode(file.content, safe));
-    all.push(...classifyMarkdown(file.content, safe));
+    all.push(...classifyProseAndCode(file.content, safe));
   }
   const findings = dedupe(all);
   const classification: Classification = { tier: tierOf(findings), findings };

@@ -11,6 +11,8 @@ import {
   HASH_V2,
   PROJECT,
   TOOL,
+  TOOL_V1,
+  TOOL_V2,
   approval,
   ask,
   ceiling,
@@ -66,7 +68,18 @@ describe("tier 3 and 4 are refused without a named human", () => {
         store: store(rows, [approval({ approvedBy: { kind: "human", id: "u_81f3" } })]),
         ...ask({ datasource: CONTRACTS_INPUT, tier }),
       });
-      // an opaque subject id is not a NAMED human
+      // an opaque subject id is not a NAMED human. The name is looked up in the
+      // directory, not read off the row, so a row cannot supply one either.
+      expect(decision.reason).toBe("approval_actor_missing");
+    });
+
+    it(`refuses tier ${tier} when the row INVENTS a display name for an unnamed subject`, async () => {
+      const decision = await effectiveGrant({
+        store: store(rows, [
+          approval({ approvedBy: { kind: "human", id: "u_81f3", displayName: "Definitely A Person" } }),
+        ]),
+        ...ask({ datasource: CONTRACTS_INPUT, tier }),
+      });
       expect(decision.reason).toBe("approval_actor_missing");
     });
   }
@@ -133,7 +146,7 @@ describe("nothing self-approves", () => {
       store: store(rows, [approval({ approvedBy: { kind: "tool", id: TOOL } })]),
       ...ask({ datasource: CONTRACTS_INPUT, tier: 3 }),
     });
-    expect(decision.reason).toBe("approval_actor_not_human");
+    expect(decision.reason).toBe("approval_self_approved");
   });
 
   it("reports the self-approval even with a merely-stale record sitting next to it", async () => {
@@ -154,7 +167,7 @@ describe("changing the tool's content invalidates the approval", () => {
   it("allows the content that was approved", async () => {
     const decision = await effectiveGrant({
       store: signed,
-      ...ask({ datasource: CONTRACTS_INPUT, tier: 4, contentHash: HASH_V1 }),
+      ...ask({ datasource: CONTRACTS_INPUT, tier: 4, toolContent: TOOL_V1 }),
     });
     expect(decision.allowed).toBe(true);
   });
@@ -162,7 +175,7 @@ describe("changing the tool's content invalidates the approval", () => {
   it("refuses the edited content — it does not ride the old approval", async () => {
     const decision = await effectiveGrant({
       store: signed,
-      ...ask({ datasource: CONTRACTS_INPUT, tier: 4, contentHash: HASH_V2 }),
+      ...ask({ datasource: CONTRACTS_INPUT, tier: 4, toolContent: TOOL_V2 }),
     });
     expect(decision.allowed).toBe(false);
     expect(decision.reason).toBe("approval_content_hash_mismatch");
@@ -178,7 +191,7 @@ describe("changing the tool's content invalidates the approval", () => {
     ]);
     const after = await effectiveGrant({
       store: reSigned,
-      ...ask({ datasource: CONTRACTS_INPUT, tier: 4, contentHash: HASH_V2 }),
+      ...ask({ datasource: CONTRACTS_INPUT, tier: 4, toolContent: TOOL_V2 }),
     });
     expect(after.allowed).toBe(true);
     expect(after.approval?.approvedAt).toBe("2026-09-21T08:00:00Z");
@@ -186,7 +199,7 @@ describe("changing the tool's content invalidates the approval", () => {
     // and the old approval is still exactly as narrow as it was
     const old = await effectiveGrant({
       store: reSigned,
-      ...ask({ datasource: CONTRACTS_INPUT, tier: 4, contentHash: HASH_V1 }),
+      ...ask({ datasource: CONTRACTS_INPUT, tier: 4, toolContent: TOOL_V1 }),
     });
     expect(old.approval?.approvedAt).toBe("2026-09-20T09:00:00Z");
   });

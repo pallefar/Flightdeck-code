@@ -44,10 +44,20 @@ import {
   PII_DENIED_SUBSTRINGS,
   SPECIAL_CATEGORY_SEGMENTS,
   SPECIAL_CATEGORY_SUBSTRINGS,
-  normalizeToken,
+  STUDIO_PERSONAL_TOKENS,
+  STUDIO_RESTRICTED_SUBSTRINGS,
+  STUDIO_RESTRICTED_TOKENS,
+  foldToken,
 } from "./lists";
 import { type Finding, dedupe } from "./findings";
-import { SCHEMA_METAKEYS, classifyText, looksLikeFieldPointer, nameHits } from "./classify";
+import {
+  SCHEMA_METAKEYS,
+  classifyText,
+  decodedVariants,
+  looksLikeFieldPointer,
+  looksLikeLabelPhrase,
+  nameHits,
+} from "./names";
 
 /**
  * Provenance markers: a document that describes itself as coming from a
@@ -115,7 +125,7 @@ export function labelsOf(markdown: string): Label[] {
 /** Whole-document, normalized: letters and digits only, so wording and
  * punctuation cannot hide a compound token. */
 function normalizeDocument(markdown: string): string {
-  return normalizeToken(markdown);
+  return foldToken(markdown);
 }
 
 /**
@@ -148,14 +158,21 @@ const CODE_KEY = /(?:^|[{,;(\[\s])([A-Za-z_$][A-Za-z0-9_$]{0,40})\s*:/gm;
 /** String and template literals, short enough to be an identifier. */
 const CODE_LITERAL = /["'`]([^"'`\n]{1,64})["'`]/g;
 
-function scanText(text: string, where: string, style: TextStyle): Finding[] {
+function scanText(
+  text: string,
+  where: string,
+  styles: readonly TextStyle[],
+  decodeDepth = 2,
+): Finding[] {
   const findings: Finding[] = [];
 
   // 1. Value shapes, anywhere in the text. Style-independent: an IBAN is an
-  //    IBAN in a sentence, in a comment and in a string literal.
+  //    IBAN in a sentence, in a comment and in a string literal. Run ONCE for
+  //    the union of styles, so a document read both ways does not report the
+  //    same match twice with a doubled count.
   findings.push(...classifyText(text, where));
 
-  // 2. Field names, wherever this style puts them.
+  // 2. Field names, wherever these styles put them.
   const push = (token: string, tier: 2 | 3 | 4, via: "field-name" | "special-category", at: string): void => {
     if (tier === 2) return; // business vocabulary is not a finding in free text
     findings.push({
@@ -166,16 +183,17 @@ function scanText(text: string, where: string, style: TextStyle): Finding[] {
     });
   };
 
-  if (style === "prose") {
+  if (styles.includes("prose")) {
     for (const label of labelsOf(text)) {
       for (const hit of nameHits(label.text)) push(hit.token, hit.tier, hit.via, `${where}:line ${label.line}`);
     }
-  } else {
+  }
+  if (styles.includes("code")) {
     const lineAt = (index: number): number => text.slice(0, index).split("\n").length;
     for (const m of text.matchAll(CODE_KEY)) {
       const key = m[1];
       if (!key) continue;
-      const metakey = SCHEMA_METAKEYS.includes(normalizeToken(key));
+      const metakey = SCHEMA_METAKEYS.includes(foldToken(key));
       for (const hit of nameHits(key)) {
         // A metakey's own tier-3 segment hit is suppressed; the field name is
         // the value beside it, picked up by the literal pass below. A tier-4
@@ -186,8 +204,19 @@ function scanText(text: string, where: string, style: TextStyle): Finding[] {
     }
     for (const m of text.matchAll(CODE_LITERAL)) {
       const literal = m[1];
-      if (!literal || !looksLikeFieldPointer(literal)) continue;
-      for (const hit of nameHits(literal)) push(hit.token, hit.tier, hit.via, `${where}:line ${lineAt(m.index ?? 0)}`);
+      if (!literal) continue;
+      // ⚠ A SPACE IS A SPELLING, NOT A DEFENCE. `looksLikeFieldPointer`
+      // rejects anything containing a space, so `"employeeSalary"` was a
+      // tier-4 finding and `"employee salary"` — the same column, the same
+      // disclosure, one character apart — was tier 1. A short multi-word
+      // literal is read as a label; it is matched with `phrase: true`, which
+      // skips the denylist tokens that are also ordinary words of prose, so
+      // `"Please address this"` stays a sentence. See `PROSE_AMBIGUOUS_TOKENS`.
+      const pointer = looksLikeFieldPointer(literal);
+      if (!pointer && !looksLikeLabelPhrase(literal)) continue;
+      for (const hit of nameHits(literal, pointer ? {} : { phrase: true })) {
+        push(hit.token, hit.tier, hit.via, `${where}:line ${lineAt(m.index ?? 0)}`);
+      }
     }
   }
 
@@ -204,28 +233,72 @@ function scanText(text: string, where: string, style: TextStyle): Finding[] {
     }
   }
 
+  // 4. The same text, DECODED. `erika.musterfrau%40te.com` is an email
+  //    address and `btoa("DE89370400440532013000")` is an IBAN; neither is
+  //    visible to a pattern reading the surface bytes. Bounded and openly
+  //    incomplete — `decodedVariants` states exactly how.
+  if (decodeDepth > 0) {
+    for (const decoded of decodedVariants(text, 1)) {
+      findings.push(...scanText(decoded, where, styles, decodeDepth - 1));
+    }
+  }
+
   return dedupe(findings);
 }
 
 /** A pasted Cowork workflow, a README, a comment — prose rules. */
 export function classifyMarkdown(markdown: string, where = "<intake>"): Finding[] {
-  return scanText(markdown, where, "prose");
+  return scanText(markdown, where, ["prose"]);
 }
 
 /** Emitted source, tests, fixtures, snapshots — code rules. */
 export function classifyCode(source: string, where = "<artifact>"): Finding[] {
-  return scanText(source, where, "code");
+  return scanText(source, where, ["code"]);
+}
+
+/**
+ * ⭐ BOTH READINGS OF THE SAME BYTES, which is the only honest answer when
+ * nobody has told the scanner which convention the text follows.
+ *
+ * `gateGeneratedArtifacts` already scanned every emitted file both ways, for
+ * the reason `TextStyle` gives: the JSON fixture copy of a record was refused
+ * because its keys are quoted, while the IDENTICAL data in the `.ts` file
+ * beside it was allowed, because a `.ts` object literal does not quote its
+ * keys — SEC-V5-02 with the two paths one directory apart.
+ *
+ * A STRING VALUE inside a record has exactly the same problem and had no
+ * scanner at all: `{ payload: JSON.stringify(record) }` and
+ * `{ payload: "const rows = [{ salaryEur: 1 }]" }` are the same record in two
+ * conventions, and which one a caller picked is not a security property. So
+ * `classify()` hands every string value to this, `gateWorkflowIntake` reads a
+ * pasted document with it (a workflow doc can contain a fenced code block),
+ * and `gateGeneratedArtifacts` uses it in place of calling both — one scanner,
+ * one answer, whatever the representation.
+ */
+export function classifyProseAndCode(text: string, where = "<text>"): Finding[] {
+  return scanText(text, where, ["prose", "code"]);
 }
 
 /** Exported so a caller can see exactly which vocabularies prose is judged
  * against, without reading this file. Documentation that cannot go stale. */
 export const PROSE_SCOPES = {
-  wholeDocument: ["PII_PATTERNS", "SPECIAL_CATEGORY_SUBSTRINGS", "RECORDING_PROVENANCE_TOKENS"],
-  labelPositionOnly: ["PII_DENIED_SUBSTRINGS", "PII_DENIED_SEGMENTS", "SPECIAL_CATEGORY_SEGMENTS"],
+  wholeDocument: ["PII_PATTERNS", "STUDIO_PATTERNS", "SPECIAL_CATEGORY_SUBSTRINGS", "RECORDING_PROVENANCE_TOKENS"],
+  labelPositionOnly: [
+    "PII_DENIED_SUBSTRINGS",
+    "PII_DENIED_SEGMENTS",
+    "SPECIAL_CATEGORY_SEGMENTS",
+    "STUDIO_RESTRICTED_SUBSTRINGS",
+    "STUDIO_RESTRICTED_TOKENS",
+    "STUDIO_PERSONAL_TOKENS",
+  ],
+  /** Applied to every reading of the text, including the decoded ones. */
+  decoded: ["percent-encoding", "base64", "base64url"],
   counts: {
     deniedSubstrings: PII_DENIED_SUBSTRINGS.length,
     deniedSegments: PII_DENIED_SEGMENTS.length,
     specialSubstrings: SPECIAL_CATEGORY_SUBSTRINGS.length,
     specialSegments: SPECIAL_CATEGORY_SEGMENTS.length,
+    studioRestricted: STUDIO_RESTRICTED_SUBSTRINGS.length + STUDIO_RESTRICTED_TOKENS.length,
+    studioPersonal: STUDIO_PERSONAL_TOKENS.length,
   },
 } as const;

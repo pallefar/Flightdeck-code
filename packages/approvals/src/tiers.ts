@@ -3,24 +3,33 @@
  *
  *   1 Public · 2 Internal · 3 Confidential · 4 Restricted
  *
- * ⛔ THIS PACKAGE NEVER COMPUTES A TIER. Classification is `packages/guardrails`'
- * job (`classify()` walks a value and returns the MAXIMUM tier it finds). An
- * approval decision only ever RECEIVES a tier and asks whether the grants on
- * record reach that far. Two modules deciding what "confidential" means is the
- * divergent-second-opinion defect the host names in `installRow.ts`
- * ("never a second, divergent eligibility query").
+ * ⛔ THIS PACKAGE NEVER *DEFINES* A TIER, AND IT NO LONGER ACCEPTS ONE EITHER.
+ * Classification is `packages/guardrails`' job. Two modules deciding what
+ * "confidential" means is the divergent-second-opinion defect the host names in
+ * `installRow.ts` ("never a second, divergent eligibility query"), so there is
+ * still not one line of classification logic here.
  *
- * The import below is TYPE-ONLY and deliberately narrow: one type, from the
- * leaf module that defines it, so nothing in guardrails' runtime closure is
- * pulled into an approval check. `TierBridge` is a compile-time assertion that
- * the two spellings are the SAME four values — if guardrails ever grows a fifth
- * tier or renumbers, this file fails to compile instead of silently letting a
- * tier fall outside `DATA_TIERS` and read as "not granted".
+ * ⭐ WHAT CHANGED, AND WHY THE IMPORT BELOW IS NO LONGER TYPE-ONLY.
  *
- * NOTE (integration): `packages/guardrails` has no `index.ts` yet — its public
- * surface is still being drawn. When it publishes one, change the specifier
- * below to that index. This is the only line in this package that names
- * guardrails at all.
+ * The old header said an approval decision "only ever RECEIVES a tier", and the
+ * guardrails import was deliberately type-only "so nothing in guardrails'
+ * runtime closure is pulled into an approval check". That was tidy, and it was
+ * the hole: RECEIVING a tier means TRUSTING the party that sends it. A requester
+ * declaring tier 2 for a payload guardrails scores as tier 4 was allowed with no
+ * approval, and the append-only audit body recorded the declared 2.
+ *
+ * Not computing a tier here and not being TOLD one are the same requirement,
+ * and there is exactly one way to have both: CALL the one classifier. So
+ * `decision.ts` imports guardrails' `classifyEveryRepresentation` at runtime and
+ * derives the tier from the payload. That is not a second opinion — it is the
+ * first and only one, reached rather than requested. The cost is an honest
+ * runtime dependency on guardrails, which this comment names instead of a
+ * type-only import implying an independence the design never had.
+ *
+ * `TierBridge` remains a compile-time assertion that the two spellings are the
+ * SAME four values — if guardrails ever grows a fifth tier or renumbers, this
+ * file fails to compile instead of silently letting a tier fall outside
+ * `DATA_TIERS` and read as "not granted".
  */
 
 import type { Tier } from "../../guardrails/src/findings";

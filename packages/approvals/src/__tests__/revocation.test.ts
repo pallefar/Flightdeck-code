@@ -67,13 +67,29 @@ describe("a revocation is visible to the very next call", () => {
 });
 
 describe("every call re-reads the store", () => {
+  /**
+   * ⭐ THE COUNTS DOUBLED ON THE ALLOW PATH, ON PURPOSE. An allowance is
+   * CONFIRMED before it is returned: everything the answer rests on is read a
+   * second time and compared, so a revoke landing between the first reads is
+   * caught rather than straddled (see `decision.ts`, and A8 in the red-team
+   * suite). The property this test guards is unchanged — reads grow with calls,
+   * because nothing is ever cached.
+   */
   it("reads both rows on every call, and the approvals whenever the tier demands one", async () => {
     const s = store(rows, [approval({ tier: 4 })]);
     for (let call = 1; call <= 3; call += 1) {
-      await effectiveGrant({ store: s, ...request });
-      expect(s.counts.grantRows).toBe(call * 2);
-      expect(s.counts.approvals).toBe(call);
+      const d = await effectiveGrant({ store: s, ...request });
+      expect(d.allowed).toBe(true);
+      expect(s.counts.grantRows).toBe(call * 4); // two reads, then two confirming reads
+      expect(s.counts.approvals).toBe(call * 2);
     }
+  });
+
+  it("a REFUSAL is not re-read: fail-closed already, and the reason stays precise", async () => {
+    const s = store([ceiling([[CONTRACTS_INPUT, 4]])]);
+    const d = await effectiveGrant({ store: s, ...request });
+    expect(d.reason).toBe("no_project_row");
+    expect(s.counts.grantRows).toBe(2);
   });
 
   it("reads the project row even when the ceiling turns out to be shut", async () => {
@@ -101,7 +117,7 @@ describe("every call re-reads the store", () => {
 
 describe("there is no cache to go stale", () => {
   const here = dirname(fileURLToPath(import.meta.url));
-  const DECIDING_MODULES = ["decision.ts", "grant.ts", "approval.ts", "audit.ts", "datasource.ts", "tiers.ts", "identity.ts", "reasons.ts"];
+  const DECIDING_MODULES = ["decision.ts", "grant.ts", "approval.ts", "audit.ts", "datasource.ts", "tiers.ts", "identity.ts", "reasons.ts", "actor.ts", "seal.ts"];
 
   /** Things that can only be module-level mutable state or a captured environment. */
   const FORBIDDEN = [/\bnew Map\(/, /\bnew WeakMap\(/, /\bnew WeakSet\(/, /\bglobalThis\b/, /\bprocess\.env\b/];

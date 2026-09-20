@@ -59,6 +59,12 @@ export type FindingVia =
   | "field-name" // a PII_DENIED_* match on a key or path segment
   | "special-category" // a GDPR Art. 9 token on a key or label
   | "label" // a markdown/prose label in key position
+  | "value-shape" // a CONTENT-derived judgement about a value: a name-shaped
+  // value under a person-referring key, a class reassembled from sibling
+  // fragments, a composite (age + date = date of birth), or a node the scan
+  // could not read. Separated from `value-pattern` because it is a heuristic
+  // over content rather than a regex the host also runs, and a human reading
+  // a refusal is owed that distinction.
   | "artifact-path"; // the FILE PATH of a generated artifact
 
 export interface Finding {

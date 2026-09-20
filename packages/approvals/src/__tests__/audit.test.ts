@@ -68,7 +68,7 @@ describe("no data value reaches an audit entry", () => {
   it("a REFUSED decision carries none of it either", async () => {
     const { audit, allowed } = await effectiveGrant({
       store: signed(),
-      ...ask({ datasource: CONTRACTS_INPUT, tier: 4, contentHash: HASH_V2 }),
+      ...ask({ datasource: CONTRACTS_INPUT, tier: 4, toolContent: TOOL_V2 }),
     });
     expect(allowed).toBe(false);
     const serialized = JSON.stringify(audit);

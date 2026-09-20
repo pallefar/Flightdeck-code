@@ -300,6 +300,20 @@ export function classifyText(text: string, where: string): Finding[] {
  */
 const BASE64_SHAPE = /^[A-Za-z0-9+/_-]{16,}={0,2}$/;
 
+/**
+ * Is this decoded byte string plausibly TEXT rather than binary?
+ *
+ * ⚠ The first version of this asked for a letter RATIO of 30%, which reads
+ * like a sensible way to keep PNG headers out of the scanner and is in fact
+ * the same mistake this whole round is about, in miniature: it is a rule
+ * anchored on one shape of the thing being protected. `DE89370400440532013000`
+ * is 22 characters and two letters — 9% — so a base64-encoded German IBAN was
+ * rejected as binary and never scanned, while a base64-encoded sentence was.
+ * The test is therefore "mostly printable, with at least a couple of letters",
+ * which admits an IBAN, a number-heavy CSV row and a sentence alike, and still
+ * rejects the compressed and the encrypted, which nothing here can read
+ * anyway.
+ */
 function looksLikeText(s: string): boolean {
   if (s.length < 6) return false;
   let printable = 0;
@@ -309,7 +323,7 @@ function looksLikeText(s: string): boolean {
     if (c === 9 || c === 10 || c === 13 || (c >= 32 && c < 127) || c > 160) printable += 1;
     if (/[A-Za-z]/.test(ch)) letters += 1;
   }
-  return printable / s.length >= 0.9 && letters / s.length >= 0.3;
+  return printable / s.length >= 0.9 && letters >= 2;
 }
 
 function decodeBase64(s: string): string | null {

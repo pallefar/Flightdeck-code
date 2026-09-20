@@ -27,6 +27,7 @@ import {
   reuseDecision,
 } from "../ledger";
 import { CEILING_PROJECT_ID, isValidContentHash } from "../identity";
+import { LIFECYCLE_STATES, TERMINAL_STATES, TRANSITIONS, canTransition } from "../states";
 import { AGENT, APPROVER, ADMIN, T, miniApp, mustOk, script } from "./support";
 import { approve } from "../ledger";
 
@@ -333,6 +334,32 @@ describe("scripts run the identical lifecycle", () => {
       approve(p.ledger, { artifactId: artifact.id, contentHash: p.entry.contentHash, by: AGENT, at: T.approved })
         .reason,
     ).toBe("approval_actor_not_human");
+  });
+});
+
+describe("the transition table is closed", () => {
+  it("every state has an explicit edge list and three of them are terminal", () => {
+    expect(Object.keys(TRANSITIONS).sort()).toEqual([...LIFECYCLE_STATES].sort());
+    expect([...TERMINAL_STATES].sort()).toEqual(["rejected", "retired", "superseded"]);
+  });
+
+  it("there is no edge back into `approved` — the way back is a new proposal", () => {
+    for (const from of LIFECYCLE_STATES) {
+      if (from === "proposed") continue;
+      expect(canTransition(from, "approved")).toBe(false);
+    }
+  });
+
+  it("a retired revision cannot be re-approved or re-registered", () => {
+    const registered = registeredLedger();
+    const retired = mustOk(
+      retire(registered.ledger, { artifactId: "wc-clock", contentHash: registered.entry.contentHash, by: ADMIN, at: T.later }),
+    );
+    const hash = registered.entry.contentHash;
+    expect(approve(retired.ledger, { artifactId: "wc-clock", contentHash: hash, by: APPROVER, at: T.latest }).reason)
+      .toBe("wrong_state");
+    expect(register(retired.ledger, { artifactId: "wc-clock", contentHash: hash, by: ADMIN, at: T.latest }).reason)
+      .toBe("wrong_state");
   });
 });
 

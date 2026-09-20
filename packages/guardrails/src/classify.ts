@@ -6,10 +6,12 @@
  *
  *   tier 4 — a `PII_DENIED_SUBSTRINGS` hit (salary, compensation, address,
  *            iban, bankaccount, ssn, socialsecurity, taxid, birthdate,
- *            dateofbirth) or a GDPR Art. 9 special category.
- *   tier 3 — a `PII_PATTERNS` hit in a value (email, iban, digits, amount,
- *            date) or a `PII_DENIED_SEGMENTS` field name (person, name,
- *            email, phone, dob, street, postcode, city, ...).
+ *            dateofbirth), a Studio-authored restricted token, or a GDPR
+ *            Art. 9 special category — on a KEY or in a VALUE.
+ *   tier 3 — a value-pattern hit (email, iban, digits, amount, date), a
+ *            `PII_DENIED_SEGMENTS` field name (person, name, email, phone,
+ *            dob, street, postcode, city, ...), or a person-referring field
+ *            name over a name-shaped value.
  *   tier 2 — contract/ticket data carrying no person fields.
  *   tier 1 — everything else.
  *
@@ -31,29 +33,92 @@
  *      paths, not prefixes."
  *
  * The failure was not a bad list. It was a SCOPE that never looked at the
- * second location. So this walker has no anchor, no prefix, no allowlisted
- * root and no early exit: every node of the input is visited and classified
- * on its own, and the result is the MAXIMUM over all of them. Person data
- * reachable by a second path is caught by the second path, because the second
- * path was walked too. `__tests__/second-path.test.ts` is that property
- * restated as a test, in this package's own terms.
+ * second location.
  *
- * Two consequences, both deliberate:
+ * ─────────────────────────────────────────────────────────────────────────
+ * ⚠ AND THE SECOND PATH IS NOT ALWAYS A PATH. IT IS OFTEN AN ENCODING.
+ * ─────────────────────────────────────────────────────────────────────────
+ * This file shipped with the identical bug one layer up, and it is worth
+ * writing down precisely because the file already carried the paragraph above
+ * and was still wrong.
+ *
+ * The walk visited every node — no anchor, no prefix, no early exit — and then
+ * applied the host's field-name denylists to object KEYS ONLY. A string VALUE
+ * got the five value patterns and nothing else. So one record:
+ *
+ *     const r = { employeeSalary: 82000, personName: "…", dateOfBirth: "…" };
+ *
+ *     classify(r)                        → tier 4, three findings
+ *     classify({ payload: JSON.stringify(r) })
+ *                                        → tier 1, ZERO findings
+ *     classifyMarkdown(JSON.stringify(r)) → tier 4, three findings
+ *     classifyCode(JSON.stringify(r))     → tier 4, three findings
+ *
+ * Same bytes, same person, three scanners, two verdicts — and `classify()` is
+ * the only scanner behind `gateRegistration` and `gateModelRequest`, the
+ * outbound gate. That is SEC-V5-02 exactly: an identical copy of the data,
+ * reachable by a second route the guard's scope never looked at, with the
+ * suite green throughout. The second route was not a directory. It was
+ * `JSON.stringify`.
+ *
+ * So the rule this file is now written to is:
+ *
+ *     ONE SCANNER, ONE ANSWER, WHATEVER THE REPRESENTATION.
+ *
+ * and it costs five concrete obligations, each of which is a representation
+ * that reaches the same place:
+ *
+ *   1. a VALUE is scanned with the same vocabulary as a KEY — via the same
+ *      text scanner `markdown.ts` uses, so the answer cannot differ by gate;
+ *   2. a string that PARSES AS JSON is walked as the structure it is;
+ *   3. a string that DECODES (base64, percent) is scanned decoded as well —
+ *      bounded, and honest that it cannot be complete (`decodedVariants`);
+ *   4. a container `Object.entries` cannot see — a `Map`, a `Set`, a
+ *      non-enumerable property, a `Date`, a byte array — is walked anyway;
+ *   5. matching FOLDS first (`foldToken`), so a fullwidth `ｓ` or a Cyrillic
+ *      `а` is the letter it looks like rather than a letter that is deleted.
+ *
+ * Two older consequences, both still deliberate:
  *   - the walk does not stop at the first tier-4 hit (a refusal should be able
  *     to say how many places are affected, not just that one is);
  *   - a truncated walk is tier 4, not "clean so far" — fail-closed, the same
  *     way a missing `.pii-boundary` switch means CLOSED in the host script.
+ *
+ * ─────────────────────────────────────────────────────────────────────────
+ * WHAT IS DELIBERATELY NOT DONE
+ * ─────────────────────────────────────────────────────────────────────────
+ * The scanner does not refuse on generic words in running prose. `markdown.ts`
+ * carries the full argument and the word that proves it (`address`), and the
+ * reasoning is unchanged by any of the above: a gate that fires on every
+ * document gets switched off in week one, and a switched-off gate protects
+ * nobody. Value scanning therefore applies the SAME scopes to a value that the
+ * prose scanner applies to a document — labels, value shapes, unambiguous
+ * Art. 9 compounds — and not a whole-document substring sweep.
  */
 
 import {
   BUSINESS_SEGMENTS,
   PII_DENIED_SEGMENTS,
   PII_DENIED_SUBSTRINGS,
-  PII_PATTERNS,
+  PII_PATTERN_NAMES,
   SPECIAL_CATEGORY_SEGMENTS,
   SPECIAL_CATEGORY_SUBSTRINGS,
-  normalizeToken,
+  STUDIO_PERSONAL_TOKENS,
+  STUDIO_RESTRICTED_SUBSTRINGS,
+  STUDIO_RESTRICTED_TOKENS,
+  foldToken,
 } from "./lists";
+import {
+  SCHEMA_METAKEYS,
+  classifyText,
+  decodedVariants,
+  isPersonReferent,
+  looksLikeFieldPointer,
+  looksLikePersonName,
+  nameHits,
+  parseEmbeddedJson,
+} from "./names";
+import { RECORDING_PROVENANCE_TOKENS, classifyProseAndCode } from "./markdown";
 import {
   type Classification,
   type Finding,
@@ -63,6 +128,23 @@ import {
   sanitizePathSegment,
   tierOf,
 } from "./findings";
+
+/** Re-exported so every caller that already imports the matching layer from
+ * here keeps working. The definitions live in `./names.ts` — see that file's
+ * header for why they had to move out from under the walker. */
+export {
+  SCHEMA_METAKEYS,
+  classifyText,
+  decodedVariants,
+  deniedPiiField,
+  isPersonReferent,
+  looksLikeFieldPointer,
+  looksLikeLabelPhrase,
+  looksLikePersonName,
+  nameHits,
+  parseEmbeddedJson,
+} from "./names";
+export type { NameHit, NameHitOptions } from "./names";
 
 /**
  * KEYS AND VALUES SWAP ROLES BETWEEN A RECORD AND A SCHEMA, and getting this
@@ -83,42 +165,14 @@ import {
  *   schema-mode on a record — `{ status: "person" }` would read an ordinary
  *     enum value as a field name.
  *
- * So the mode is explicit, and each gate picks the one matching what it is
- * actually handed: `gateRegistration` reads a schema, `gateModelRequest` reads
- * a record. Both modes walk every node either way — the SEC-V5-02 property is
- * about SCOPE, and neither mode narrows the scope.
+ * ⚠ THE MODE IS A READING OF FIELD-POINTER-SHAPED VALUES. IT IS NOT A SCOPE.
+ * Both modes scan every node, both modes scan every value with the full text
+ * scanner, both modes decode and both modes walk a `Map`. The difference is
+ * exactly one rule: whether a bare identifier-shaped string is additionally
+ * read as the NAME of a field. Anything else would be a second answer for the
+ * same bytes, which is the bug at the top of this file.
  */
 export type ClassifyMode = "record" | "schema";
-
-/**
- * Keys that are metadata ABOUT a field rather than a field. Only tokens that
- * actually collide with the host's segment list belong here, which today is
- * exactly one: `name`.
- *
- * ⚠ The suppression is narrow on purpose. It drops only the tier-3 SEGMENT
- * hit produced by the metakey itself. A tier-4 substring hit is never
- * suppressed (`salaryName` still reports `salary`), and the value under the
- * metakey is scanned in its place — so `{ name: "salaryEur" }` is tier 4, by
- * the value, which is where the disclosure actually is.
- *
- * ⚠ STATED RESIDUAL: `{ name: "Erika Musterfrau" }` in a schema is not
- * detectable here. A person's name is not a pattern — no regex recognises one
- * — and this package does not pretend otherwise. The cover for the known case
- * is `declaredNames`, the same bargain the host strikes in `redact({ names })`.
- */
-export const SCHEMA_METAKEYS: readonly string[] = ["name"];
-
-/** A string value shaped like a field reference: `salaryEur`,
- * `employee.salary_eur`, `rows[0].iban`. Anything with a space, or starting
- * with a digit, is prose or data and is not read as a field name. */
-const FIELD_POINTER = /^[A-Za-z_$][A-Za-z0-9_$.[\]-]{0,63}$/;
-
-/** Exported for the code scanner, which asks the same question of a string
- * LITERAL it finds in emitted source. One definition, so "what counts as a
- * field reference" cannot mean two things. */
-export function looksLikeFieldPointer(value: string): boolean {
-  return FIELD_POINTER.test(value);
-}
 
 export interface ClassifyOptions {
   /** Names the caller KNOWS are in the data — the ticket's person, the
@@ -138,109 +192,10 @@ export interface ClassifyOptions {
 
 const DEFAULT_MAX_NODES = 50_000;
 
-// ─────────────────────────────────────────────────────────────────────────
-// Field names
-// ─────────────────────────────────────────────────────────────────────────
-
-export interface NameHit {
-  readonly token: string;
-  readonly tier: 2 | 3 | 4;
-  readonly via: "field-name" | "special-category";
-}
-
-/**
- * Every denylist token in `path`, not just the first.
- *
- * The host's `deniedPiiField` returns the FIRST offending token because it
- * only needs to name a reason for one rejection. A classifier needs all of
- * them: `person.salary` is tier 4 for `salary` and tier 3 for `person`, and a
- * refusal that mentions only one of those under-reports what was exposed.
- * `deniedPiiField` below preserves the host's exact first-token behaviour for
- * parity checking; this is the superset.
- */
-export function nameHits(path: string): NameHit[] {
-  const hits: NameHit[] = [];
-  const whole = normalizeToken(path);
-  // Split on path separators too, not just object-path punctuation. The host's
-  // `deniedPiiField` only ever sees a widget field pointer, so `.` and `[]`
-  // are all it needs; `nameHits` also judges FILE paths for
-  // `gateGeneratedArtifacts`, and without `/` a segment rule could never fire
-  // on `data/person/name.json` — the exact-segment tier would be dead for
-  // every artifact path. Additive: a field pointer never contains a slash.
-  const segments = path
-    .split(/[.[\]/\\]+/)
-    .filter(Boolean)
-    .map(normalizeToken)
-    .filter(Boolean);
-
-  for (const bad of SPECIAL_CATEGORY_SUBSTRINGS) {
-    if (whole.includes(bad)) hits.push({ token: bad, tier: 4, via: "special-category" });
-  }
-  for (const bad of SPECIAL_CATEGORY_SEGMENTS) {
-    if (segments.includes(bad)) hits.push({ token: bad, tier: 4, via: "special-category" });
-  }
-  for (const bad of PII_DENIED_SUBSTRINGS) {
-    if (whole.includes(bad)) hits.push({ token: bad, tier: 4, via: "field-name" });
-  }
-  for (const bad of PII_DENIED_SEGMENTS) {
-    if (segments.includes(bad)) hits.push({ token: bad, tier: 3, via: "field-name" });
-  }
-  for (const bad of BUSINESS_SEGMENTS) {
-    if (segments.includes(bad)) hits.push({ token: bad, tier: 2, via: "field-name" });
-  }
-  return hits;
-}
-
-/**
- * The host's `deniedPiiField` from `flightdeck/server/widgets/types.ts`,
- * transcribed byte-for-byte in behaviour: the FIRST denied token in `path`, or
- * null. Kept even though `nameHits` supersedes it, because the divergence test
- * asserts the HOST's function still consults the two lists in this order —
- * substrings over the whole path first, then segments. A host that reordered
- * those tiers would change what "tier 4" means here without changing a single
- * list entry, and a list-only comparison would not see it.
- */
-export function deniedPiiField(path: string): string | null {
-  const whole = normalizeToken(path);
-  for (const bad of PII_DENIED_SUBSTRINGS) {
-    if (whole.includes(bad)) return bad;
-  }
-  for (const seg of path.split(/[.[\]]+/)) {
-    if (!seg) continue;
-    const n = normalizeToken(seg);
-    if (PII_DENIED_SEGMENTS.includes(n)) return n;
-  }
-  return null;
-}
-
-// ─────────────────────────────────────────────────────────────────────────
-// Values
-// ─────────────────────────────────────────────────────────────────────────
-
-/**
- * Every PII class present in `text`, with the offset of the first occurrence
- * and how many there were. The matched text is read and immediately dropped —
- * `m[0]` is never stored, never returned and never interpolated into a
- * message. `m.index` is a number and a number cannot carry a name.
- */
-export function classifyText(text: string, where: string): Finding[] {
-  const out: Finding[] = [];
-  for (const { name, re } of PII_PATTERNS) {
-    const rx = new RegExp(re.source, re.flags.includes("g") ? re.flags : `${re.flags}g`);
-    let first = -1;
-    let count = 0;
-    for (const m of text.matchAll(rx)) {
-      if (first < 0) first = m.index ?? 0;
-      count += 1;
-    }
-    if (count > 0) out.push({ class: name, tier: 3, via: "value-pattern", where, offset: first, count });
-  }
-  return out;
-}
-
-// ─────────────────────────────────────────────────────────────────────────
-// The walk
-// ─────────────────────────────────────────────────────────────────────────
+/** Longest sibling-fragment join considered. See `fragmentFindings`. */
+const MAX_JOIN_CHARS = 512;
+/** A fragment is short. A whole document is not a fragment. */
+const MAX_FRAGMENT_CHARS = 40;
 
 /**
  * The name findings introduced AT this node — the hits on the full path minus
@@ -276,8 +231,71 @@ function findingsForPath(
 }
 
 /**
+ * SIBLING FRAGMENTS — an IBAN that was never in any one field.
+ *
+ * `{ accountPartA: "DE8937040044", accountPartB: "X05320130" }` carries a
+ * German IBAN and neither half reaches the pattern's 11-character minimum.
+ * Six two-character fields carry the same IBAN and not one of them is a
+ * finding. The record is not a record of fragments; it is a record of an IBAN
+ * written down in pieces, and a mini-app that concatenates the pieces gets the
+ * IBAN back. Splitting a value across keys is the value-side twin of splitting
+ * a denied TOKEN across keys, which this walker has caught since day one
+ * (`date.ofBirth`).
+ *
+ * Only the two STRUCTURED classes are considered on a join — an IBAN has a
+ * country code and check digits, an email has a local part and a domain — so
+ * an accidental join is unlikely to produce one. `digits`, `amount` and `date`
+ * are deliberately excluded: concatenating two ordinary numbers produces a
+ * longer number every time, and a gate that fires on every record of numbers
+ * is the rubber-stamped gate again.
+ *
+ * ⚠ STATED FALSE-POSITIVE DIRECTION: a two-letter uppercase code stored beside
+ * a long alphanumeric id can join into something the IBAN pattern accepts.
+ * That over-refuses, which for an outbound gate is the safe direction, and the
+ * finding names `iban` so a human can see what it thought it had.
+ */
+function fragmentFindings(entries: readonly [string, unknown][], where: string): Finding[] {
+  const parts = entries
+    .map(([, v]) => v)
+    .filter((v): v is string => typeof v === "string" && v.length > 0 && v.length <= MAX_FRAGMENT_CHARS);
+  if (parts.length < 2) return [];
+  const joined = parts.join("");
+  if (joined.length > MAX_JOIN_CHARS) return [];
+  const already = new Set(parts.flatMap((p) => classifyText(p, where).map((f) => f.class)));
+  const out: Finding[] = [];
+  for (const f of classifyText(joined, where)) {
+    if (f.class !== "iban" && f.class !== "email") continue;
+    if (already.has(f.class)) continue;
+    out.push({ class: f.class, tier: 3, via: "value-shape", where });
+  }
+  return out;
+}
+
+/**
+ * COMPOSITES — two findings that are a third thing together.
+ *
+ * `{ ageAtSigning: 34, referenceDate: "2026-09-01" }` is a date of birth. It
+ * scored tier 3 as a generic `date`, which at `gateWorkflowIntake` is
+ * APPROVABLE — so a category-4 date of birth was rubber-stampable because it
+ * was only ever named as a date. An age plus a reference date is recoverable
+ * to the day; naming it `dateofbirth` is not a guess, it is arithmetic.
+ *
+ * Kept to the one composite that is arithmetic rather than suspicion. A list
+ * of clever combinations would be a list of false positives.
+ */
+const AGE_TOKENS = new Set(["age", "ages", "birthday"]);
+
+function compositeFindings(findings: readonly Finding[]): Finding[] {
+  const hasAge = findings.some((f) => AGE_TOKENS.has(f.class) && f.via === "field-name");
+  if (!hasAge) return [];
+  const date = findings.find((f) => f.class === "date" && f.via === "value-pattern");
+  if (!date) return [];
+  return [{ class: "dateofbirth", tier: 4, via: "value-shape", where: date.where }];
+}
+
+/**
  * classify — the public entry point. Accepts any JSON-shaped value: an object,
- * an array, a bare string, a number.
+ * an array, a bare string, a number, a `Map`, a class instance.
  */
 export function classify(input: unknown, options: ClassifyOptions = {}): Classification {
   const declaredNames = options.declaredNames ?? [];
@@ -289,7 +307,45 @@ export function classify(input: unknown, options: ClassifyOptions = {}): Classif
   let nodes = 0;
   let truncated = false;
 
-  const visit = (value: unknown, rawPath: string, safePath: string): void => {
+  /**
+   * One string, read every way it can be read. This is the function the bug
+   * at the top of this file was missing: it is the SAME scanner `markdown.ts`
+   * gives a document, handed a value instead, plus the decodes and the
+   * embedded structure.
+   */
+  const visitString = (value: string, rawPath: string, safePath: string, depth: number): void => {
+    const where = safePath === "" ? "<root>" : safePath;
+    // The prose AND code readings, unioned — a value can be either and a
+    // scanner that guesses which is a scanner with a hole. This is the one
+    // call that makes `{ payload: JSON.stringify(record) }` classify like
+    // `record`.
+    findings.push(...classifyProseAndCode(value, where));
+
+    // In a schema, a field-pointer-shaped VALUE is a field name and gets the
+    // host's denylists applied to it — that is where the disclosure lives.
+    if (mode === "schema" && looksLikeFieldPointer(value)) {
+      for (const h of nameHits(value)) {
+        findings.push({ class: h.token, tier: h.tier, via: h.via, where });
+      }
+    }
+
+    if (depth <= 0) return;
+
+    // The serialised record: walked as the structure it is, so the findings
+    // carry real paths rather than one line number.
+    const embedded = parseEmbeddedJson(value);
+    if (embedded !== null) {
+      visit(embedded, joinPath(rawPath, "<json>"), joinPath(safePath, "<json>"), depth - 1);
+    }
+
+    // Decoded readings. Bounded and incomplete on purpose — `decodedVariants`
+    // says exactly how incomplete.
+    for (const decoded of decodedVariants(value)) {
+      visitString(decoded, rawPath, safePath, depth - 1);
+    }
+  };
+
+  const visit = (value: unknown, rawPath: string, safePath: string, depth = 3): void => {
     if (truncated) return;
     nodes += 1;
     if (nodes > maxNodes) {
@@ -298,18 +354,19 @@ export function classify(input: unknown, options: ClassifyOptions = {}): Classif
     }
 
     if (typeof value === "string") {
-      const where = safePath === "" ? "<root>" : safePath;
-      findings.push(...classifyText(value, where));
-      // In a schema, a field-pointer-shaped VALUE is a field name and gets the
-      // host's denylists applied to it — that is where the disclosure lives.
-      if (mode === "schema" && FIELD_POINTER.test(value)) {
-        for (const h of nameHits(value)) {
-          findings.push({ class: h.token, tier: h.tier, via: h.via, where });
-        }
-      }
+      visitString(value, rawPath, safePath, depth);
       return;
     }
-    if (value === null || typeof value !== "object") return;
+    if (value === null || value === undefined) return;
+    if (typeof value === "bigint" || typeof value === "number" || typeof value === "boolean") {
+      // A number is not scanned for patterns: the only class that could fire
+      // on a bare integer is `digits`, and `digits` fires on every epoch
+      // millisecond timestamp in every record in the system. What catches
+      // `{ annualRemuneration: 82000 }` is the FIELD NAME, which is why the
+      // Studio vocabulary in `lists.ts` exists. Stated, not hidden.
+      return;
+    }
+    if (typeof value !== "object") return; // function, symbol
 
     if (seen.has(value)) return; // a cycle is the same data twice, already classified
     seen.add(value);
@@ -317,24 +374,102 @@ export function classify(input: unknown, options: ClassifyOptions = {}): Classif
     if (Array.isArray(value)) {
       value.forEach((item, i) => {
         // An index is a number: it needs no sanitising and leaks nothing.
-        visit(item, joinPath(rawPath, `[${i}]`), joinPath(safePath, `[${i}]`));
+        visit(item, joinPath(rawPath, `[${i}]`), joinPath(safePath, `[${i}]`), depth);
       });
       return;
     }
 
-    const entries = Object.entries(value as Record<string, unknown>);
+    // ── Containers `Object.entries` returns [] for ────────────────────────
+    // `Object.entries(new Map(Object.entries(record)))` is `[]`, so a record
+    // inside a Map was a silent early exit in a walker whose header promised
+    // there were none. Same for a Set, same for a Date, same for a byte
+    // array. Each of these is a second representation of data that reaches
+    // exactly the same place.
+    if (value instanceof Map) {
+      let i = 0;
+      for (const [k, v] of value) {
+        const keyText = typeof k === "string" ? k : `[${i}]`;
+        const safeKey = typeof k === "string" ? sanitizePathSegment(k, i, declaredNames) : `[${i}]`;
+        const childRaw = joinPath(rawPath, keyText);
+        const childSafe = joinPath(safePath, safeKey);
+        if (typeof k === "string") {
+          findings.push(...findingsForPath(childRaw, childSafe === "" ? "<root>" : childSafe, rawPath));
+        } else {
+          visit(k, joinPath(rawPath, `<key${i}>`), joinPath(safePath, `<key${i}>`), depth);
+        }
+        visit(v, childRaw, childSafe, depth);
+        i += 1;
+      }
+      return;
+    }
+    if (value instanceof Set) {
+      let i = 0;
+      for (const v of value) {
+        visit(v, joinPath(rawPath, `[${i}]`), joinPath(safePath, `[${i}]`), depth);
+        i += 1;
+      }
+      return;
+    }
+    if (value instanceof Date) {
+      // A date of birth held as a Date was invisible to a walker that only
+      // scanned strings. Its ISO form is the same disclosure.
+      if (!Number.isNaN(value.getTime())) visitString(value.toISOString(), rawPath, safePath, 0);
+      return;
+    }
+    if (ArrayBuffer.isView(value) || value instanceof ArrayBuffer) {
+      const bytes =
+        value instanceof ArrayBuffer ? new Uint8Array(value) : new Uint8Array(value.buffer, value.byteOffset, value.byteLength);
+      if (bytes.byteLength > 0 && bytes.byteLength <= 65_536) {
+        visitString(Buffer.from(bytes).toString("utf8").replace(/�/g, " "), rawPath, safePath, 1);
+      }
+      return;
+    }
+
+    // ── Own properties, INCLUDING the non-enumerable ones ─────────────────
+    // `Object.entries` returns own-enumerable keys only, so
+    // `Object.defineProperty(carrier, "record", { enumerable: false, … })`
+    // hid a whole record from a walk that visited "every node". A property
+    // that a mini-app can read is a property this scanner has to read.
+    //
+    // ⚠ ACCESSORS ARE NOT INVOKED. Calling an arbitrary getter inside a
+    // security scanner is a side effect the caller did not ask for, and a
+    // getter can throw, block or mutate. A data property is read; an accessor
+    // is reported as a location the scan could not see, at tier 3, which is
+    // the fail-closed direction and is visible in the audit event rather than
+    // silent.
+    const entries: [string, unknown][] = [];
+    for (const key of Object.getOwnPropertyNames(value)) {
+      const descriptor = Object.getOwnPropertyDescriptor(value, key);
+      if (descriptor === undefined) continue;
+      if ("value" in descriptor) {
+        entries.push([key, descriptor.value]);
+      } else {
+        findings.push({
+          class: "unscanned-accessor",
+          tier: 3,
+          via: "value-shape",
+          where: safePath === "" ? "<root>" : safePath,
+        });
+      }
+    }
+
     entries.forEach(([key, child], ordinal) => {
       const safeKey = sanitizePathSegment(key, ordinal, declaredNames);
       const childRaw = joinPath(rawPath, key);
       const childSafe = joinPath(safePath, safeKey);
-      const normalizedKey = normalizeToken(key);
-      const suppress =
-        mode === "schema" && SCHEMA_METAKEYS.includes(normalizedKey) ? normalizedKey : null;
-      findings.push(
-        ...findingsForPath(childRaw, childSafe === "" ? "<root>" : childSafe, rawPath, suppress),
-      );
-      visit(child, childRaw, childSafe);
+      const foldedKey = foldToken(key);
+      const suppress = mode === "schema" && SCHEMA_METAKEYS.includes(foldedKey) ? foldedKey : null;
+      const where = childSafe === "" ? "<root>" : childSafe;
+      findings.push(...findingsForPath(childRaw, where, rawPath, suppress));
+      // A person-referring field name over a name-shaped value. Both halves,
+      // or nothing — see `PERSON_REFERENT_TOKENS`.
+      if (typeof child === "string" && isPersonReferent(key) && looksLikePersonName(child)) {
+        findings.push({ class: "personname", tier: 3, via: "value-shape", where });
+      }
+      visit(child, childRaw, childSafe, depth);
     });
+
+    findings.push(...fragmentFindings(entries, safePath === "" ? "<root>" : safePath));
   };
 
   // The root path itself is classified before the walk: when a caller passes
@@ -357,6 +492,8 @@ export function classify(input: unknown, options: ClassifyOptions = {}): Classif
     });
   }
 
+  findings.push(...compositeFindings(findings));
+
   const deduped = dedupe(findings);
   return { tier: tierOf(deduped), findings: deduped };
 }
@@ -366,3 +503,29 @@ export function classify(input: unknown, options: ClassifyOptions = {}): Classif
 export function requiresApproval(tier: Classification["tier"]): boolean {
   return tier >= 3;
 }
+
+/**
+ * The compiled-in class vocabulary — every `class` a finding from this package
+ * can carry.
+ *
+ * It exists so the "a finding never invents a class name from the data"
+ * property can be asserted against ONE list instead of against an import list
+ * that has to be kept in step by hand. A class name that is not in here is a
+ * value that escaped into a log line.
+ */
+export const FINDING_CLASSES: readonly string[] = [
+  ...new Set<string>([
+    ...PII_PATTERN_NAMES,
+    ...PII_DENIED_SUBSTRINGS,
+    ...PII_DENIED_SEGMENTS,
+    ...BUSINESS_SEGMENTS,
+    ...SPECIAL_CATEGORY_SUBSTRINGS,
+    ...SPECIAL_CATEGORY_SEGMENTS,
+    ...STUDIO_RESTRICTED_SUBSTRINGS,
+    ...STUDIO_RESTRICTED_TOKENS,
+    ...STUDIO_PERSONAL_TOKENS,
+    ...RECORDING_PROVENANCE_TOKENS.map((t) => `provenance:${t}`),
+    "scan-truncated",
+    "unscanned-accessor",
+  ]),
+];

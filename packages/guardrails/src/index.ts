@@ -41,28 +41,44 @@
  */
 
 export {
+  FINDING_CLASSES,
   SCHEMA_METAKEYS,
   classify,
   classifyText,
+  decodedVariants,
   deniedPiiField,
+  isPersonReferent,
   looksLikeFieldPointer,
+  looksLikeLabelPhrase,
+  looksLikePersonName,
   nameHits,
+  parseEmbeddedJson,
   requiresApproval,
 } from "./classify";
-export type { ClassifyMode, ClassifyOptions, NameHit } from "./classify";
+export type { ClassifyMode, ClassifyOptions, NameHit, NameHitOptions } from "./classify";
 
 export { dedupe, initials, joinPath, maxTier, sanitizePath, sanitizePathSegment, tierOf } from "./findings";
 export type { Classification, Finding, FindingVia, Tier } from "./findings";
 
 export {
+  ALL_VALUE_PATTERNS,
   BUSINESS_SEGMENTS,
+  PERSON_REFERENT_TOKENS,
   PII_DENIED_SEGMENTS,
   PII_DENIED_SUBSTRINGS,
   PII_PATTERNS,
   PII_PATTERN_NAMES,
+  PROSE_AMBIGUOUS_TOKENS,
   SPECIAL_CATEGORY_SEGMENTS,
   SPECIAL_CATEGORY_SUBSTRINGS,
+  STUDIO_PATTERNS,
+  STUDIO_PERSONAL_TOKENS,
+  STUDIO_RESTRICTED_SUBSTRINGS,
+  STUDIO_RESTRICTED_TOKENS,
+  foldChars,
+  foldToken,
   normalizeToken,
+  splitTokens,
 } from "./lists";
 export type { PiiPattern } from "./lists";
 
@@ -74,6 +90,7 @@ export {
   RECORDING_PROVENANCE_TOKENS,
   classifyCode,
   classifyMarkdown,
+  classifyProseAndCode,
   labelsOf,
 } from "./markdown";
 export type { TextStyle } from "./markdown";
@@ -116,3 +133,6 @@ export {
   stripCommentLines,
 } from "./host-source";
 export type { HostAvailability, HostPattern } from "./host-source";
+
+export { REPRESENTATIONS_DERIVED, classifyEveryRepresentation } from "./representations";
+export type { RepresentationOptions } from "./representations";
