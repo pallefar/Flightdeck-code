@@ -23,3 +23,7 @@ coverage/
 
 # gauntlet scratch: neutral A/B judging dirs and round artifacts
 .gauntlet/
+
+# builder scratch: throwaway probes and virtual-FS roots used while prototyping
+.fd-probe/
+.fd-virtual/
