@@ -115,11 +115,11 @@ export interface SubAppManifest {
  * re-assert the same thing from inside the host repo. */
 export const subAppManifestSchema: {
   parse(value: unknown): SubAppManifest;
-  safeParse(value: unknown): { readonly success: boolean; readonly data?: SubAppManifest; readonly error?: unknown };
+  safeParse(value: unknown): { readonly success: boolean; readonly data?: SubAppManifest; readonly error?: any };
 };
 
 export type SubAppRequest = FastifyRequest;
-\`;
+`;
 
 /** ⚠ DECLARED FOR COMPILATION ONLY. A sub-app's MOUNTED code may not
  * import this — FD-I002 and FD-C003 refuse it, and those run before the
@@ -133,7 +133,7 @@ const REGISTRY_DTS = `import type { SubAppManifest } from "./types.js";
 export const SUBAPP_MANIFESTS: SubAppManifest[];
 export const HOST_VERSION: string;
 export function isVersionNewer(version: string, baseline: string): boolean;
-\`;
+`;
 
 const DB_DTS = `/** Whatever the host hands \`initSchema\`. Rows are \`any\` on purpose —
  * see the header of host-surface.ts — but the METHOD list is closed,
@@ -198,7 +198,11 @@ const CAPABILITIES_DTS = `import type { SubAppCapabilities } from "./types.js";
  * CALL time. That refusal needs a type. */
 export class CapabilityDeniedError extends Error {
   constructor(message?: string);
-  readonly capability?: string;
+  /** ⚠ OPEN. The gate knows this refusal EXISTS, because the contract
+   * requires one; it knows nothing about what it carries, and an invented
+   * member list would reject correct code for using a field the real one
+   * has. */
+  readonly [detail: string]: any;
 }
 
 export function capabilitiesFor(subAppId: string, grantedScopes: readonly string[]): SubAppCapabilities;

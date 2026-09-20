@@ -115,6 +115,12 @@ export function Workbench({ store, onPrompt, onStop }: WorkbenchProps) {
     count: number | undefined;
     tone?: "error" | "warn";
   }> = [
+    {
+      id: "run",
+      label: "Run",
+      count: steps.total === 0 ? undefined : steps.total,
+      ...(steps.failed > 0 ? { tone: "error" as const } : {}),
+    },
     { id: "files", label: "Files", count: candidate?.files.length },
     { id: "diff", label: "Diff", count: set === null ? undefined : set.changes.filter((c) => c.kind !== "unchanged").length },
     { id: "preview", label: "Preview", count: undefined },
@@ -137,6 +143,8 @@ export function Workbench({ store, onPrompt, onStop }: WorkbenchProps) {
         busy={state.busy}
         onSubmit={handlePrompt}
         onSelectRound={(id) => store.selectRound(id)}
+        run={running}
+        onStop={handleStop}
       />
 
       <main className="fd-main">
@@ -159,6 +167,17 @@ export function Workbench({ store, onPrompt, onStop }: WorkbenchProps) {
             </button>
           ))}
           <span className="fd-tabs__spacer" />
+          {/* The aggregate the tree's dots answer one file at a time: is
+              there anything of mine in this round, and is any of it stuck
+              waiting for me? */}
+          {edited.conflicted > 0 && (
+            <span className="fd-tabs__edits fd-tabs__edits--conflict">
+              {edited.conflicted} conflict{edited.conflicted === 1 ? "" : "s"}
+            </span>
+          )}
+          {edited.dirty > 0 && <span className="fd-tabs__edits">{edited.dirty} unsaved</span>}
+          {edited.saved > 0 && <span className="fd-tabs__edits">{edited.saved} edited</span>}
+          {edited.locked > 0 && <span className="fd-tabs__edits">{edited.locked} locked</span>}
           {round !== null && (
             <span className="fd-tabs__id">
               round #{round.ordinal} · {round.candidate.manifest.id} · {round.candidate.manifest.envVar}
@@ -167,7 +186,12 @@ export function Workbench({ store, onPrompt, onStop }: WorkbenchProps) {
         </div>
 
         <div className="fd-body">
-          {candidate === null ? (
+          {/* Before the candidate check: the run pane is the only one that
+              is useful while there is no candidate yet, which is exactly
+              when a person most wants to know what is happening. */}
+          {state.view === "run" ? (
+            <RunPane run={run} busy={state.busy && running !== null && running === run} onStop={handleStop} />
+          ) : candidate === null ? (
             <div className="fd-empty">
               <strong>No sub-app yet.</strong>
               <span>
@@ -186,6 +210,21 @@ export function Workbench({ store, onPrompt, onStop }: WorkbenchProps) {
               file={fileAt(state, state.selectedPath)}
               onSelect={(path) => store.selectFile(path)}
               onToggle={(path) => store.toggleDir(path)}
+              draftStates={draftStates(state)}
+              locks={state.locks}
+              editor={{
+                generated: generatedFileAt(state, state.selectedPath),
+                draft: draftFor(state, state.selectedPath),
+                locked: state.selectedPath !== null && state.locks.has(state.selectedPath),
+                beingWritten: beingWritten(state),
+                historical,
+                onEdit: (path, text) => store.editFile(path, text),
+                onSave: (path) => store.saveFile(path),
+                onRevert: (path) => store.revertFile(path),
+                onRestore: (path) => store.restoreGenerated(path),
+                onResolve: (path, choice) => store.resolveConflict(path, choice),
+                onToggleLock: (path) => store.toggleLock(path),
+              }}
             />
           ) : state.view === "diff" ? (
             <DiffPane set={set} selectedPath={state.selectedPath} onSelect={(path) => store.selectFile(path)} />
