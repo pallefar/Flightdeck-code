@@ -15,8 +15,13 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { assertManifestWouldBoot, subAppManifestSchema } from "../manifest-rules";
 import { readEmittedManifest } from "../testing/readEmittedManifest";
+import { HOST_ROOT } from "../../../guardrails/src/host-source";
 
-const CONTRACT_SUBAPPS = "/home/user/project-contract/flightdeck/server/subapps";
+// ⚠ DERIVED, NOT HARDCODED. This was the literal Linux path, so on any
+// machine whose checkout lives elsewhere the file was simply absent and
+// this whole file skipped — silently, and on a MAC that is every run.
+// `HOST_ROOT` is the one place that reads FLIGHTDECK_HOST_ROOT.
+const CONTRACT_SUBAPPS = `${HOST_ROOT}/flightdeck/server/subapps`;
 const REAL_MANIFESTS = ["shell-reference", "docusign", "maps", "advantage"];
 const available = fs.existsSync(CONTRACT_SUBAPPS);
 

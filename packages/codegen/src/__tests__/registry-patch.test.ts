@@ -9,6 +9,7 @@ import { describe, expect, it } from "vitest";
 import { RegistryPatchError, buildRegistryPatch } from "../registry-patch";
 import { planSubApp } from "../plan";
 import { registryFixture, wcClockSpec } from "../fixtures/specs";
+import { HOST_ROOT } from "../../../guardrails/src/host-source";
 
 const patch = buildRegistryPatch(planSubApp(wcClockSpec));
 
@@ -147,7 +148,11 @@ describe("the diff a human reads is the edit the tool makes", () => {
  * use — applied to the REAL `server/subapps/registry.ts` from the contract
  * checkout, not to a fixture shaped to suit the patcher. A diff that only
  * ever applies to its own fixture is a diff nobody can use. */
-const REAL_REGISTRY = "/home/user/project-contract/flightdeck/server/subapps/registry.ts";
+// ⚠ DERIVED, NOT HARDCODED. This was the literal Linux path, so on any
+// machine whose checkout lives elsewhere the file was simply absent and
+// this whole file skipped — silently, and on a MAC that is every run.
+// `HOST_ROOT` is the one place that reads FLIGHTDECK_HOST_ROOT.
+const REAL_REGISTRY = `${HOST_ROOT}/flightdeck/server/subapps/registry.ts`;
 const canRunGitApply = (() => {
   if (!fs.existsSync(REAL_REGISTRY)) return false;
   try {

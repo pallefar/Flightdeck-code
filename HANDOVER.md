@@ -126,7 +126,11 @@ npm test               # expect: 2207 passed, 0 skipped  — see the warning bel
 ### 2.3 The host repo
 
 Everything that points at the host is an **environment variable with a Linux
-default** — there are no hardcoded paths to edit:
+default** — there are no hardcoded paths to edit. (That sentence was FALSE when
+first written: three host-comparison test files hardcoded the Linux path and
+ignored `FLIGHTDECK_HOST_ROOT`, so on a Mac they would have skipped silently on
+every run. Fixed; the variable is now honoured, verified by pointing it
+elsewhere and watching 12 tests move from passing to skipped.)
 
 ```bash
 export FLIGHTDECK_HOST_ROOT=/Users/you/project-contract   # guardrails read this

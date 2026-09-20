@@ -37,8 +37,13 @@
  */
 import fs from "node:fs";
 import { describe, expect, it } from "vitest";
+import { HOST_ROOT } from "../../../guardrails/src/host-source";
 
-const HOST = "/home/user/project-contract/flightdeck/server/services/ai/envelope.ts";
+// ⚠ DERIVED, NOT HARDCODED. This was the literal Linux path, so on any
+// machine whose checkout lives elsewhere the file was simply absent and
+// this whole file skipped — silently, and on a MAC that is every run.
+// `HOST_ROOT` is the one place that reads FLIGHTDECK_HOST_ROOT.
+const HOST = `${HOST_ROOT}/flightdeck/server/services/ai/envelope.ts`;
 const MIRROR = new URL("../host-mirror.ts", import.meta.url).pathname;
 const available = fs.existsSync(HOST);
 
