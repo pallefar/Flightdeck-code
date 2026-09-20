@@ -1,0 +1,25 @@
+# dependencies
+node_modules/
+
+# build output
+dist/
+build/
+*.tsbuildinfo
+
+# test / coverage
+coverage/
+.vitest/
+
+# local env — never commit keys
+.env
+.env.local
+.env.*.local
+
+# editor / OS
+.DS_Store
+*.swp
+.idea/
+.vscode/
+
+# gauntlet scratch: neutral A/B judging dirs and round artifacts
+.gauntlet/
