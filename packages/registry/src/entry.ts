@@ -29,8 +29,14 @@
  * and the derived view (`entryView`) is built per call from both.
  */
 
-import { isValidWorkflowId } from "./identity";
-import { isActor, type Actor, type NamedHuman } from "./actor";
+import {
+  isActor,
+  isSameActor,
+  isSelfApproval,
+  namedHuman,
+  type Actor,
+  type NamedHuman,
+} from "./actor";
 import {
   ARTIFACT_VERSION_RE,
   isArtifactKind,
@@ -39,7 +45,12 @@ import {
   type Capability,
 } from "./artifact";
 import { CAPABILITIES } from "../../spec/src/vocabulary";
-import { isValidArtifactId, isValidContentHash, isValidProjectId } from "./identity";
+import {
+  isValidArtifactId,
+  isValidContentHash,
+  isValidProjectId,
+  isValidWorkflowId,
+} from "./identity";
 import type { RegistryReason } from "./reasons";
 import type { LifecycleState } from "./states";
 
@@ -211,16 +222,11 @@ export function approverDefect(
 ): RegistryReason | null {
   if (!isActor(approver)) return "invalid_actor";
   if (approver.kind !== "human") return "approval_actor_not_human";
-  if (!namedHumanOf(approver)) return "approval_actor_missing";
-  if (selfApproval(approver, artifactId)) return "approval_self_approved";
-  if (sameActor(approver, proposedBy)) return "approval_by_proposer";
+  if (!namedHuman(approver)) return "approval_actor_missing";
+  if (isSelfApproval(approver, artifactId)) return "approval_self_approved";
+  if (isSameActor(approver, proposedBy)) return "approval_by_proposer";
   return null;
 }
-
-// Imported through local aliases so the guardrail-4 helpers are named once, at
-// the top of this file's dependency list, rather than inline in a branch.
-import { isSelfApproval as selfApproval, namedHuman as namedHumanOf } from "./actor";
-import { isSameActor as sameActor } from "./actor";
 
 export function projectIdDefect(projectId: unknown): RegistryReason | null {
   return isValidProjectId(projectId) ? null : "invalid_project_id";
