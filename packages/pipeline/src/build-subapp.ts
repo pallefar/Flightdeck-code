@@ -54,9 +54,21 @@ export interface BuildFromPromptInput extends PlanInput {
 }
 
 export interface BuildDeps {
-  /** Already gated. Compose it with `gatedPlannerLlm` — this function does not
-   * do it for you, because a caller that wants a different policy should have
-   * to say so in one visible place rather than by passing a flag in here. */
+  /**
+   * ⚠ RAW, NOT `gatedPlannerLlm` — and this comment used to say the opposite.
+   *
+   * It read "Already gated. Compose it with `gatedPlannerLlm`", which was
+   * true of an earlier design and is now the one instruction that would
+   * break this path. `gatedPlannerLlm` pseudonymises and gates
+   * `request.user` — the prompt the PLANNER assembles, scaffolding and all —
+   * which assesses as tier 4 and sends nothing; the measured symptom was a
+   * guardrail refusal surfacing as `invalid_draft`.
+   *
+   * This function gates the INPUT boundary itself, before the planner builds
+   * anything, and `__tests__/build-subapp.test.ts` asserts the model is never
+   * called on a refusal. Double-gating is not belt and braces here; it is two
+   * seams where the design has one.
+   */
   readonly llm: PlannerLlmLike;
   readonly ctx: GateContext;
   readonly digest: Digest;
