@@ -157,6 +157,31 @@ export type TextStyle = "prose" | "code";
  * Global and mid-line, unlike the prose label rules. */
 const CODE_KEY = /(?:^|[{,;(\[\s])([A-Za-z_$][A-Za-z0-9_$]{0,40})\s*:/gm;
 /** String and template literals, short enough to be an identifier. */
+/**
+ * Is the value position at `from` a TypeScript TYPE rather than data?
+ *
+ * Built only from primitive type keywords, their arrays, and unions of
+ * those — so a match contains no literal of any kind and cannot carry a
+ * disclosure. Quoted literals are deliberately NOT admitted: `name: "Anna
+ * Sørensen"` must stay a finding, and a literal union (`"text" | "number"`)
+ * is scanned by the `CODE_LITERAL` pass regardless.
+ *
+ * The slice stops at the first `;` or newline so a declaration cannot reach
+ * across into the next line's data, and is capped so a pathological line
+ * cannot make this quadratic.
+ */
+const PRIMITIVE_TYPE = "(?:string|number|boolean|bigint|symbol|unknown|any|never|void|null|undefined|Date|object)";
+const TYPE_ONLY = new RegExp(
+  `^\\s*(?:readonly\\s+)?${PRIMITIVE_TYPE}(?:\\s*\\[\\s*\\])?` +
+    `(?:\\s*\\|\\s*(?:readonly\\s+)?${PRIMITIVE_TYPE}(?:\\s*\\[\\s*\\])?)*\\s*$`,
+);
+
+function isTypeAnnotation(text: string, from: number): boolean {
+  const slice = text.slice(from, from + 120);
+  const stop = slice.search(/[;\n]/);
+  return TYPE_ONLY.test(stop === -1 ? slice : slice.slice(0, stop));
+}
+
 const CODE_LITERAL = /["'`]([^"'`\n]{1,64})["'`]/g;
 
 function scanText(
@@ -171,7 +196,27 @@ function scanText(
   //    IBAN in a sentence, in a comment and in a string literal. Run ONCE for
   //    the union of styles, so a document read both ways does not report the
   //    same match twice with a doubled count.
-  findings.push(...classifyText(text, where));
+  //
+  // ⚠ CAPTURE REFERENCES ARE MASKED FIRST, and only where code is in play.
+  //
+  // The host's `amount` pattern is `(?:€|EUR|\bUSD\b|\$)\s?\d[\d.,]*`, so
+  // `"$1 $2"` — a regex REPLACEMENT STRING — reads as two dollar amounts.
+  // The emitters use exactly that to humanise a camelCase key, so every
+  // generated mini-app carried a tier-3 `amount` finding and
+  // `gateGeneratedArtifacts` refused all of them. This repo's own
+  // `revocation.test.ts` contains the same `"$1"`.
+  //
+  // ⛔ THE PATTERN ITSELF IS NOT NARROWED. It is transcribed from the host
+  // and `__tests__/divergence.test.ts` requires it to match entry for entry
+  // — the first attempt at this changed it and that test said no, correctly.
+  // So the narrowing lives HERE, where the style is known, and it is a
+  // narrowing of one shape in one context: `$` followed by exactly one digit
+  // and no separator. `$10`, `$1.50` and `$1,000` are untouched, and so is
+  // every `€`/`EUR`/`USD` amount — `$` is the only marker that collides with
+  // a capture reference. The replacement is the same LENGTH, so every offset
+  // a finding reports still points where it did.
+  const scanned = styles.includes("code") ? text.replace(/\$(\d)(?![\d.,])/g, "#$1") : text;
+  findings.push(...classifyText(scanned, where));
 
   // 2. Field names, wherever these styles put them.
   const push = (token: string, tier: 2 | 3 | 4, via: "field-name" | "special-category", at: string): void => {
@@ -185,8 +230,32 @@ function scanText(
   };
 
   if (styles.includes("prose")) {
+    // ⭐ AND THE DECLARATION RULE APPLIES HERE TOO — which is where the
+    // finding actually came from.
+    //
+    // `interface FieldDescriptor { name: string }` was suppressed in the
+    // code branch and reported anyway, because `labelsOf` reads
+    // `  name: string;` as a markdown `Label: value` line. A `.ts` file is
+    // scanned BOTH ways (`classifyProseAndCode`, deliberately — guessing a
+    // file's genre from its extension is one more anchor), so a fix in one
+    // branch is not a fix.
+    //
+    // Guarded on `styles.includes("code")`: in a real markdown document
+    // "Name: string" is a label with a value and stays a finding. Only text
+    // being read as SOURCE gets the type-annotation reading.
+    const alsoCode = styles.includes("code");
+    const lines = alsoCode ? text.split(/\r?\n/) : [];
     for (const label of labelsOf(text)) {
-      for (const hit of nameHits(label.text)) push(hit.token, hit.tier, hit.via, `${where}:line ${label.line}`);
+      let declaration = false;
+      if (alsoCode) {
+        const line = lines[label.line - 1] ?? "";
+        const colon = line.indexOf(":");
+        declaration = colon !== -1 && isTypeAnnotation(line, colon + 1);
+      }
+      for (const hit of nameHits(label.text)) {
+        if (declaration && hit.tier === 3 && hit.via === "field-name") continue;
+        push(hit.token, hit.tier, hit.via, `${where}:line ${label.line}`);
+      }
     }
   }
   if (styles.includes("code")) {
@@ -211,7 +280,22 @@ function scanText(
       const key = m[1];
       if (!key) continue;
       const metakey = SCHEMA_METAKEYS.includes(foldToken(key));
+      // ⭐ A TYPE ANNOTATION IS NOT A VALUE.
+      //
+      // `CODE_KEY` finds `key:` wherever it appears, which in TypeScript
+      // includes a DECLARATION. `interface FieldDescriptor { name: string }`
+      // was read as a field called `name` holding something — and since the
+      // emitters put that interface in every generated web module, the
+      // artifact gate refused every mini-app this repo can produce.
+      //
+      // The suppression is deliberately narrow: the value must be built ONLY
+      // from primitive type keywords, so it is data-free by construction.
+      // `name: "Anna Sørensen"` is not a type and is not suppressed. Tier 4
+      // is never suppressed, and neither is a `via: "label"` hit — the same
+      // line the metakey rule below draws, for the same reason.
+      const declaration = isTypeAnnotation(text, (m.index ?? 0) + m[0].length);
       for (const hit of nameHits(key)) {
+        if (declaration && hit.tier === 3 && hit.via === "field-name") continue;
         // A metakey's own tier-3 segment hit is suppressed; the field name is
         // the value beside it, picked up by the literal pass below. A tier-4
         // substring hit is never suppressed.

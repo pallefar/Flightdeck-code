@@ -87,28 +87,28 @@ describe("prompt → proposal, end to end", () => {
     // than skipping keeps it visible.
     const outcome = await buildSubAppFromPrompt({ prompt: PROMPT }, deps(goodModel));
 
-    // ⭐ IT NOW REACHES CODE. `translate-spec.ts` bridges @spec's document to
-    // @codegen's, `generateSubApp` emits 25 files — the host half AND the
-    // standalone harness — and the path stops at the OUTPUT gate rather than
-    // at a schema error about `domains`.
+    // ⭐ PROMPT → PROPOSAL, END TO END. Guardrails, model, draft, @spec's
+    // evidence gates, the @spec→@codegen translator, the emitters, the
+    // conformance gate and the output gate — all of it, in one call, with no
+    // API key because the model is a function.
     //
-    // ⛔ AND THE OUTPUT GATE REFUSES, for three findings that are all false
-    // positives on generated TypeScript:
-    //     `name: string;`   in `interface FieldDescriptor`  → class "name"
-    //     `name: string;`   in `interface WorkflowDescriptor`
-    //     `"$1 $2"`         a regex replacement             → class "amount" ×2
-    // The first two are TYPE ANNOTATIONS — a declaration holds no value, so
-    // there is nothing there to disclose. The third is a capture-group
-    // reference that the amount pattern reads as two dollar amounts.
-    //
-    // Asserted rather than skipped, and NOT worked around by renaming the
-    // emitter's fields: "a space is a spelling, not a defence" is this
-    // package's own rule about exactly that move. The fix belongs in the
-    // scanner, which is a PII detector and gets its own change.
-    expect(outcome.status).toBe("artifacts-refused");
-    if (outcome.status !== "artifacts-refused") return;
-    expect(outcome.decision.decision).toBe("refuse");
-    expect(outcome.decision.findings.map((f) => f.class).sort()).toEqual(["amount", "name", "name"]);
+    // This assertion has moved three times in three commits, and each move
+    // was a real blocker coming down: `generation-refused` (no translator),
+    // then `translation-refused` (the planner's example declared a table),
+    // then `artifacts-refused` (the output scanner read generated TypeScript
+    // as data). Naming the honest end each time is what made the next one
+    // findable.
+    expect(outcome.status).toBe("proposed");
+    if (outcome.status !== "proposed") return;
+    const paths = outcome.generated.files.map((f) => f.path);
+    // The host half a Flightdeck mount needs...
+    expect(paths).toContain("server/subapps/works-council-gaps/manifest.ts");
+    expect(paths).toContain("server/subapps/works-council-gaps/guard.ts");
+    expect(paths).toContain("server/subapps/works-council-gaps/routes/gaps.ts");
+    expect(paths).toContain("web/src/subapps/works-council-gaps/index.tsx");
+    // ...and the standalone harness, so the sub-app also runs on its own.
+    expect(paths).toContain("standalone/server.ts");
+    expect(paths).toContain("standalone/index.html");
   });
 
   it("⭐ the two spec FORMATS are bridged — and the bridge refuses rather than guesses", async () => {
