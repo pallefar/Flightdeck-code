@@ -171,6 +171,11 @@ describe("the whole path, over HTTP", () => {
     const body = res.json() as Record<string, unknown>;
     expect(body["ok"]).toBe(true);
     expect(typeof body["modelKeyConfigured"]).toBe("boolean");
+    // ⭐ THE EFFECTIVE MODEL, never null on a healthy install. This said
+    // `null` on a default install — the field reads the FLIGHTDECK_MODEL
+    // override, and reported "none" for the model the provider would
+    // actually use. Found by booting the server, not by a test.
+    expect(body["model"]).toBe("claude-opus-5");
     // The key's VALUE must not be reachable through this endpoint by any name.
     const key = process.env["ANTHROPIC_API_KEY"];
     if (key !== undefined && key.length > 0) expect(res.body).not.toContain(key);

@@ -54,6 +54,7 @@ import { isNamedHuman } from "../packages/guardrails/src/approval-pure";
 import { buildSubAppFromPrompt } from "../packages/pipeline/src/build-subapp";
 import { AnthropicProvider } from "../packages/providers/src/anthropic";
 import { anthropicConfigFromEnv } from "../packages/providers/src/config";
+import { DEFAULT_MODEL } from "../packages/providers/src/models";
 import { plannerLlm } from "../packages/providers/src/planner-bridge";
 
 /** SHA-256 over UTF-8 — the Node half, so `node:crypto` is allowed here.
@@ -192,8 +193,16 @@ export function createServer(options: ServerOptions): ReturnType<typeof Fastify>
 
   app.get("/api/studio/health", async () => ({
     ok: true,
+    // ⚠ THE EFFECTIVE MODEL, not the override.
+    //
+    // This read `anthropicConfigFromEnv().config.model`, which is populated
+    // only when FLIGHTDECK_MODEL is in the environment — so a perfectly
+    // healthy default install answered `"model": null` while the provider
+    // would in fact use DEFAULT_MODEL. A health endpoint that says "none"
+    // about the thing it is going to use is worse than one that says
+    // nothing. Found by booting the server and reading its own answer.
+    model: anthropicConfigFromEnv().config.model ?? DEFAULT_MODEL,
     // Whether a key EXISTS, never anything about it.
-    model: anthropicConfigFromEnv().config.model ?? null,
     modelKeyConfigured: (process.env["ANTHROPIC_API_KEY"] ?? "").length > 0,
   }));
 
