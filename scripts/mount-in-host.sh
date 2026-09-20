@@ -2,31 +2,48 @@
 # Prove a Studio-generated sub-app actually mounts in the real Flightdeck host.
 #
 # This is the only test that answers "does it work in Flightdeck?" rather than
-# "does it satisfy our idea of Flightdeck's rules". It runs the HOST'S OWN test
-# suite with a generated sub-app in SUBAPP_MANIFESTS.
+# "does it satisfy our idea of Flightdeck's rules". It runs the HOST'S OWN suite
+# with a generated sub-app in SUBAPP_MANIFESTS.
 #
-# It NEVER writes to the host checkout. It builds a throwaway copy, symlinks the
-# host's node_modules (1.1G — copying it would be absurd), and works there. The
-# real checkout is read-only input.
+# ── WHY THE SANDBOX IS THE WHOLE REPO, NOT JUST flightdeck/ ──────────────
+# The first version of this script copied only `flightdeck/`. Six test files
+# then failed with ENOENT on paths like
+# `/tmp/processes/contracts-de/engine/eval/run_eval.py`, because tests such as
+# `tests/subapps/maps/mapsStageD.test.ts` do `path.join(__dirname, "..", "..")`
+# to reach `processes/` and `engine/` in the REPO ROOT, one level above
+# flightdeck/. Sandboxing flightdeck/ alone puts those hops in /tmp.
+#
+# Those six failures were not caused by generated code — a clean-baseline run
+# reproduced all six — but a harness that fails six files for its own reasons
+# cannot tell you whether the seventh is yours. So the sandbox mirrors the repo.
+#
+# It NEVER writes to the host checkout: the whole repo is COPIED (41M without
+# .git/node_modules), and only node_modules — 1.1G, absurd to copy — is
+# symlinked. A test that writes, writes into the copy.
 set -euo pipefail
 
-HOST="${HOST:-/home/user/project-contract/flightdeck}"
-SPEC="${SPEC:-$(dirname "$0")/../fixtures/wc-clock.spec.json}"
-SANDBOX="${SANDBOX:-/tmp/fd-sandbox}"
+REPO="${REPO:-/home/user/project-contract}"
+HOST_REL="${HOST_REL:-flightdeck}"
+SPEC="${SPEC:-$(cd "$(dirname "$0")/.." && pwd)/fixtures/wc-clock.spec.json}"
+ROOT="${SANDBOX:-/tmp/fd-sandbox}"
+SANDBOX="$ROOT/$HOST_REL"
 STUDIO="$(cd "$(dirname "$0")/.." && pwd)"
 
-[ -d "$HOST/server/subapps" ] || { echo "not a Flightdeck host: $HOST" >&2; exit 2; }
-[ -d "$HOST/node_modules" ] && [ "$(ls "$HOST/node_modules" | wc -l)" -gt 10 ] || {
-  echo "host deps missing — run: (cd $HOST && npm install)" >&2; exit 2; }
+[ -d "$REPO/$HOST_REL/server/subapps" ] || { echo "not a Flightdeck repo: $REPO" >&2; exit 2; }
+[ "$(ls "$REPO/$HOST_REL/node_modules" 2>/dev/null | wc -l)" -gt 10 ] || {
+  echo "host deps missing — run: (cd $REPO/$HOST_REL && npm install)" >&2; exit 2; }
 
-echo "==> sandbox: copying host (excluding node_modules, .git)"
-rm -rf "$SANDBOX"; mkdir -p "$SANDBOX"
-tar -C "$HOST" --exclude=node_modules --exclude=.git -cf - . | tar -C "$SANDBOX" -xf -
-ln -s "$HOST/node_modules" "$SANDBOX/node_modules"
+echo "==> sandbox: copying the whole repo (excluding .git, node_modules)"
+rm -rf "$ROOT"; mkdir -p "$ROOT"
+tar -C "$REPO" --exclude=.git --exclude=node_modules -cf - . | tar -C "$ROOT" -xf -
+ln -s "$REPO/$HOST_REL/node_modules" "$SANDBOX/node_modules"
 
-echo "==> baseline: host fences before we touch anything"
-( cd "$SANDBOX" && npx vitest run tests/subapps/subappManifest.test.ts \
-    tests/subapps/subappImportClosure.test.ts tests/subapps/i18nSplit.test.ts 2>&1 | tail -4 )
+fences() {
+  ( cd "$SANDBOX" && npx vitest run tests/subapps/ 2>&1 | tail -3 )
+}
+
+echo "==> baseline: the host's sub-app suite, before we touch anything"
+BEFORE="$(fences)"; echo "$BEFORE"
 
 echo "==> generating from $SPEC"
 ( cd "$STUDIO" && npx tsx packages/codegen/src/cli.ts --spec "$SPEC" --out "$SANDBOX" )
@@ -34,11 +51,10 @@ echo "==> generating from $SPEC"
 echo "==> applying the emitted registry patch"
 ( cd "$SANDBOX" && patch -p1 < server/subapps/registry.ts.patch && rm server/subapps/registry.ts.patch )
 
-echo "==> the fences, with a generated sub-app mounted"
-cd "$SANDBOX"
-npx vitest run tests/subapps/subappManifest.test.ts tests/subapps/i18nSplit.test.ts 2>&1 | tail -4
-npx vitest run tests/subapps/subappImportClosure.test.ts tests/subapps/subappCapabilityEscape.test.ts 2>&1 | tail -4
-npx vitest run tests/subapps/wc-clock/ 2>&1 | tail -4
+echo "==> the same suite, with a generated sub-app mounted"
+AFTER="$(fences)"; echo "$AFTER"
 
 echo
-echo "==> mounted. The host validated it, not us."
+echo "==> compare. Mounting must ADD passing tests and add no failures."
+echo "    before: $(echo "$BEFORE" | grep -oE 'Tests.*' || true)"
+echo "    after:  $(echo "$AFTER"  | grep -oE 'Tests.*' || true)"
