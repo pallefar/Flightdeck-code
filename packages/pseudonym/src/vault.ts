@@ -63,6 +63,17 @@
  *   4. THE VALUES ARE NOT PROPERTIES OF ANYTHING REACHABLE. `vaultEntries`
  *      is exported for `detokenize` only; `index.ts` does not re-export it.
  *
+ *   5. ⭐ NOBODY OUTSIDE THE PACKAGE IS EVER HOLDING ONE, AND IT DOES NOT
+ *      OUTLIVE ITS ROUND TRIP. This is the defence the first four could not
+ *      supply. `index.ts` used to export `Vault`, `vaultClasses`,
+ *      `tokenize` and `detokenize`; holding a vault and being able to
+ *      detokenize against it IS the capability to read it, one hand-written
+ *      tag at a time, and no amount of hardening the OBJECT touches that.
+ *      The vault is now a local of `withPseudonymisation`, is passed to
+ *      nothing the caller supplies, and is put through `discardVault` in a
+ *      `finally` — so a reference obtained by any means at all is a dead
+ *      object once the call is over.
+ *
  * ⚠ WHAT THIS IS NOT: a capability boundary. Anything in this process can
  * `import { vaultEntries } from "./vault"` and read every value. That is not
  * a defect to fix — `detokenize` has to read them, so the module must expose

@@ -86,6 +86,75 @@ export const MAX_REQUEST_BYTES = 32 * 1024;
  * declares none. */
 export const MAX_COUNT = 10_000;
 
+/**
+ * ⭐ STUDIO-AUTHORED, AND THE ANSWER TO "A COUNT IS A NUMERIC CHANNEL".
+ *
+ * ─────────────────────────────────────────────────────────────────────────
+ * WHAT A CEILING ALONE DOES NOT DO
+ * ─────────────────────────────────────────────────────────────────────────
+ * The host's argument for per-key ceilings is right and is kept: "a ceiling
+ * alone cannot tell 4,200 documents from a EUR 4,200 monthly gross, but a
+ * ceiling attached to `gatewayCount` can". It is true of `gatewayCount <= 500`
+ * and it is FALSE of `docCount <= MAX_COUNT`, because a ceiling of 10,000
+ * admits 1985 (a birth year), 4200 (a monthly gross) and 2051 (the tail of an
+ * IBAN) INTACT. Measured across the twelve count keys, the structured region
+ * carried about 146 bits per request — a salary and a date of birth together,
+ * through the channel whose whole claim is "we only send counts".
+ *
+ * A ceiling bounds the MAGNITUDE. What was unbounded was the PRECISION.
+ *
+ * ─────────────────────────────────────────────────────────────────────────
+ * THE RULE, APPLIED TO INTEGERS
+ * ─────────────────────────────────────────────────────────────────────────
+ * If a caller can author the bytes, they do not go on the wire unless they
+ * are a member of a compiled-in set. So a count is SNAPPED UP to the nearest
+ * member of this ladder, and it is the LADDER MEMBER that travels. 1985 and
+ * 2051 both become 2000; 4200 becomes 5000. The birth year, the salary and
+ * the IBAN tail do not survive the trip.
+ *
+ * ⚠ SNAPPED, NOT REFUSED, and the reason is worth stating. Refusing a
+ * non-member would be purer, and it would also refuse `docCount: 4200` — a
+ * request the host allows and `__tests__/build.test.ts` asserts is
+ * expressible. The honest cost is the other way round: a count on the wire is
+ * now an UPPER BOUND on the caller's count rather than the count. That is
+ * what `kind: "count"` is for ("how many documents, roughly"), and it is
+ * stated on `EnvelopeFact` so no reader has to infer it.
+ *
+ * ⚠ WHAT THIS DOES NOT CLOSE: the CHOICE of rung. ~5.5 bits per count fact
+ * remain, which is why `MAX_COUNT_FACTS` exists and why
+ * `information-encoded-in-the-choice-of-bounded-integers` is in
+ * `ENVELOPE_CLASSES_NOT_CHECKED`. A control may refuse; it may never certify.
+ *
+ * Dense where counts are read literally (a spec with 12 fields is 12), coarse
+ * where they are read as magnitudes.
+ */
+export const COUNT_LADDER: readonly number[] = [
+  0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16,
+  18, 20, 24, 28, 32, 40, 50, 64, 80, 100,
+  128, 160, 200, 250, 320, 400, 500, 640, 800, 1000,
+  1250, 1600, 2000, 2500, 3200, 4000, 5000, 6400, 8000, 10_000,
+];
+
+/**
+ * ⭐ HOW MANY BOUNDED INTEGERS MAY TRAVEL TOGETHER.
+ *
+ * The per-fact bound is a magnitude; this is the bound on the REQUEST. Twelve
+ * count keys at ~5.5 bits each is ~66 bits, which is still a salary and a
+ * date of birth. Four is ~22, and four counts is more than any Studio task
+ * has ever needed: the fixtures in this repo use one or two.
+ *
+ * ⛔ RAISING THIS WIDENS THE ONLY NUMERIC CHANNEL THE ENVELOPE HAS. It is a
+ * governance change, in the host's own words about its own limits.
+ */
+export const MAX_COUNT_FACTS = 4;
+
+/** The smallest ladder rung >= `value`, or `null` when the value is past the
+ * top of the ladder (which the key's own ceiling has already refused). */
+export function snapCount(value: number): number | null {
+  for (const rung of COUNT_LADDER) if (rung >= value) return rung;
+  return null;
+}
+
 // ─────────────────────────────────────────────────────────────────────────
 // Tasks
 // ─────────────────────────────────────────────────────────────────────────
@@ -379,6 +448,24 @@ function assertTablesCohere(): void {
       throw new Error(`envelope: key "${key}" declares a max but is not a count`);
     }
   }
+  // ⭐ EVERY CEILING MUST ITSELF BE A RUNG. Otherwise snapping a legal value
+  // upward could carry it PAST the key's own ceiling — a widening introduced
+  // by the thing that was meant to narrow. Asserted at import, not hoped for.
+  for (const [key, policy] of Object.entries(FACT_KEY_POLICY)) {
+    if (policy.kind !== "count") continue;
+    const max = policy.max ?? MAX_COUNT;
+    if (!COUNT_LADDER.includes(max)) {
+      throw new Error(`envelope: count key "${key}" has ceiling ${max}, which is not a rung of COUNT_LADDER`);
+    }
+  }
+  for (let i = 1; i < COUNT_LADDER.length; i += 1) {
+    const previous = COUNT_LADDER[i - 1];
+    const current = COUNT_LADDER[i];
+    if (previous === undefined || current === undefined || current <= previous) {
+      throw new Error("envelope: COUNT_LADDER must be strictly ascending — `snapCount` walks it in order");
+    }
+  }
+  if (COUNT_LADDER[0] !== 0) throw new Error("envelope: COUNT_LADDER must start at 0 — a count of zero is a count");
   for (const [name, members] of Object.entries(VOCABULARIES)) {
     if (members.length === 0) throw new Error(`envelope: vocabulary "${name}" is empty`);
   }

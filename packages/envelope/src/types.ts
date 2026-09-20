@@ -26,6 +26,7 @@
  */
 
 import type { FactKind } from "./allowlists";
+import type { ProvenanceStatementCode } from "./coverage";
 
 // ─────────────────────────────────────────────────────────────────────────
 // Facts
@@ -43,6 +44,15 @@ import type { FactKind } from "./allowlists";
  */
 export type EnvelopeFact =
   | { readonly kind: "enum"; readonly vocabulary: string; readonly value: string }
+  /**
+   * ⚠ `value` IS A RUNG OF `COUNT_LADDER`, NOT THE CALLER'S NUMBER. It is the
+   * smallest rung at or above what the caller said, so it reads as an UPPER
+   * BOUND on their count. The reason is in `allowlists.ts`: a per-key ceiling
+   * bounds the magnitude and leaves the precision unbounded, and the
+   * precision is where a birth year, a monthly gross and the tail of an IBAN
+   * ride a channel that only admits "counts". Small counts are rungs
+   * themselves, so a spec with 12 fields is still 12.
+   */
   | { readonly kind: "count"; readonly value: number }
   | { readonly kind: "fieldName"; readonly value: string }
   | { readonly kind: "text"; readonly value: string; readonly provenance: TextProvenance };
@@ -64,20 +74,38 @@ export type EnvelopeFact =
  */
 export interface TextProvenance {
   readonly basis: "pseudonymised";
-  /** The package that produced the text and the report. */
+  /** The package that produced the text and the report. A compiled-in
+   * literal: it is what this envelope REQUIRES the caller to have used, not
+   * something the caller gets to name. */
   readonly by: "packages/pseudonym";
-  /** What the pseudonymiser said the TRANSMITTED text may be treated as. */
-  readonly payloadTier: number;
-  /** What it said the vault is. Always 4, and the vault is not here. */
-  readonly vaultTier: number;
-  /** Detectors that ran. */
+  /** What the pseudonymiser said the TRANSMITTED text may be treated as. A
+   * bounded integer, 1-4, checked before it is carried. */
+  readonly payloadTier: 1 | 2 | 3 | 4;
+  /** What it said the vault is. Always 4, and the vault is not here — a
+   * report that says anything else is malformed, not interesting. */
+  readonly vaultTier: 4;
+  /** Detectors that ran. ⭐ EVERY MEMBER IS DRAWN FROM
+   * `COVERAGE_DETECTOR_VOCABULARY` BY IDENTITY. A report naming a detector
+   * this package has not compiled in is REFUSED, not passed through. */
   readonly checked: readonly string[];
-  /** Classes of personal data that scan CANNOT see. Never empty. */
+  /** Classes of personal data that scan CANNOT see. Members of
+   * `COVERAGE_CLASS_VOCABULARY`, by identity. */
   readonly unchecked: readonly string[];
-  /** Which spellings of the payload the residual proof covered. */
+  /** Which spellings of the payload the residual proof covered. Members of
+   * `COVERAGE_REPRESENTATION_VOCABULARY`, by identity. */
   readonly representations: readonly string[];
-  /** The pseudonymiser's own one-line statement, carried verbatim. */
-  readonly statement: string;
+  /**
+   * ⭐ WHAT REPLACED THE PSEUDONYMISER'S PROSE `statement`.
+   *
+   * The report's `statement` was carried VERBATIM onto the wire, which made
+   * it an unbounded, unallowlisted, caller-authored free-text channel inside
+   * the one region this package had told itself was closed — the 20,000-char
+   * statement, the nested stringify and the regex-evading prose all rode it.
+   * It is now DROPPED at the door. This code is derived by the envelope from
+   * the report's two structured fields and is one of four compiled-in
+   * constants. See `coverage.ts`.
+   */
+  readonly statementCode: ProvenanceStatementCode;
 }
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -110,6 +138,12 @@ export interface CoverageReportLike {
     readonly unchecked: readonly string[];
     readonly representations: readonly string[];
   };
+  /** ⛔ READ, TYPE-CHECKED, AND THEN DROPPED. It is the pseudonymiser's prose,
+   * and prose authored elsewhere does not reach the wire — see
+   * `TextProvenance.statementCode`. It stays on this interface because
+   * `TierAssessment` really does have it and the compile-time assignability
+   * assertion must keep holding; it is a field the envelope READS to decide
+   * the report is well-formed, not a field the envelope CARRIES. */
   readonly statement: string;
 }
 
@@ -169,6 +203,13 @@ export const ENVELOPE_CLASSES_NOT_CHECKED: readonly string[] = [
   "biometric-or-photo-reference",
   "free-text-detail-that-identifies-by-context",
   "an-encoding-the-serialised-form-does-not-reveal",
+  // ⭐ THE COUNT CHANNEL'S RESIDUE, NAMED. A `count` is a bounded integer and
+  // is now snapped to a member of `COUNT_LADDER`, which destroys the
+  // precision a birth year, a monthly gross or an IBAN tail needs. What it
+  // cannot destroy is the CHOICE of bucket: a caller who controls several
+  // count facts still controls a few bits per request. `buildEnvelope` states
+  // the measured figure in its `Assurance`; nothing here looks for it.
+  "information-encoded-in-the-choice-of-bounded-integers",
 ];
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -196,6 +237,10 @@ export type RefusalCode =
   | "count-not-a-safe-integer"
   | "count-negative"
   | "count-over-ceiling"
+  /** More `count` facts in one request than `MAX_COUNT_FACTS`. A ceiling on
+   * one integer bounds one integer; a ceiling on how many of them travel
+   * together is what bounds the request's aggregate capacity. */
+  | "too-many-count-facts"
   | "text-must-use-the-pseudonymised-channel"
   | "text-channel-not-an-array"
   | "text-entry-malformed"
@@ -204,6 +249,18 @@ export type RefusalCode =
   | "text-coverage-report-malformed"
   | "text-payload-tier-restricted"
   | "text-over-max-chars"
+  /** The whole text entry — bounded text PLUS bounded provenance — is over
+   * `MAX_TEXT_FACT_CHARS`. The advertised bound now bounds the metadata too. */
+  | "text-fact-over-max-chars"
+  /** `coverage.unchecked` named a class that is not in
+   * `COVERAGE_CLASS_VOCABULARY`. The offending string is NOT echoed. */
+  | "text-coverage-class-not-in-vocabulary"
+  /** `coverage.checked` named a detector that is not in
+   * `COVERAGE_DETECTOR_VOCABULARY`. */
+  | "text-coverage-detector-not-in-vocabulary"
+  /** `coverage.representations` named a spelling that is not in
+   * `COVERAGE_REPRESENTATION_VOCABULARY`. */
+  | "text-representation-not-in-vocabulary"
   | "too-many-text-facts"
   | "text-residual-pii"
   | "duplicate-fact-key"

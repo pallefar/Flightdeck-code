@@ -50,7 +50,12 @@ const REPORT: CoverageReportLike = {
   coverage: {
     checked: ["quasi-identifier-signal-words", "name-shaped-span", "vault-entry-classes"],
     unchecked: ["undeclared-personal-name", "postal-address", "free-text-detail-that-identifies-by-context"],
-    representations: ["as-written", "percent-decoded", "entity-decoded"],
+    // ⚠ EVERY ONE OF THESE IS NOW A COMPILED-IN CONSTANT AND IS CHECKED AS
+    // ONE. This fixture used to say "entity-decoded", which is not a name
+    // `packages/pseudonym` has ever produced — the real constant is
+    // `html-entity-decoded` — and nothing noticed, because the report was
+    // carried rather than validated. That is the hole in one line.
+    representations: ["as-written", "percent-decoded", "html-entity-decoded"],
   },
   statement:
     "payload may be treated as tier three (from four); vault stays restricted; reasons: pseudonymised-natural-person, bounded-scan-coverage",
@@ -185,7 +190,13 @@ describe("⭐ a bounded text fact is NOT as safe as a fieldName fact, and says s
     expect(fact.provenance.by).toBe("packages/pseudonym");
     expect(fact.provenance.unchecked).toEqual(REPORT.coverage.unchecked);
     expect(fact.provenance.vaultTier).toBe(4);
-    expect(fact.provenance.statement).toBe(REPORT.statement);
+    // ⭐ THE PSEUDONYMISER'S PROSE DOES NOT TRAVEL. It used to be copied
+    // verbatim onto the wire, which made `assessment.statement` an unbounded
+    // caller-authored free-text channel inside the region this package calls
+    // closed. What travels is a code the envelope owns.
+    expect("statement" in fact.provenance).toBe(false);
+    expect(fact.provenance.statementCode).toBe("pseudonymised-reduced-coverage-partial");
+    expect(result.wire).not.toContain("may be treated as tier three");
     // And the envelope's own assurance absorbed them: the limits of the
     // evidence are the limits of the envelope.
     for (const klass of REPORT.coverage.unchecked) expect(result.assurance.notChecked).toContain(klass);

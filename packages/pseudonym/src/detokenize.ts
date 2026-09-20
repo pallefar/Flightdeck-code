@@ -41,12 +41,27 @@
  * those exports that "the obvious way to use this package is also the safe
  * one", and that sentence was false while both were on the surface.
  *
- * Both halves are fixed: `vaultTags` is gone from `index.ts`, and an input
- * that restores two or more DISTINCT entries while carrying nothing of the
- * model's own — nothing but whitespace, commas and semicolons between the
- * tags — is refused with `VaultDumpError`. `onTagOnlyOutput: "restore"` is
- * there for the caller who meant it. See `TAG_LIST_CARRIER` for how narrow
- * the shape is, and why it has to be narrow.
+ * That refusal is still here — an input that restores two or more DISTINCT
+ * entries while carrying nothing of the model's own, nothing but whitespace,
+ * commas and semicolons between the tags, is `VaultDumpError`, and
+ * `onTagOnlyOutput: "restore"` is there for the caller who meant it. See
+ * `TAG_LIST_CARRIER` for how narrow the shape is, and why it has to be.
+ *
+ * ⚠ BUT IT IS NOT WHAT THE PACKAGE'S SAFETY CLAIM RESTS ON, AND MUST NOT BE
+ * READ AS IF IT WERE. It inspects THE SHAPE OF ONE CALL, so it refuses
+ * `detokenize(everyTag, vault)` and is silent about the same dump asked for
+ * one tag at a time:
+ *
+ *     for (const cls of classes) for (let i = 1; i <= n; i++)
+ *       out.push(detokenize(`<${cls}:${i}>`, vault).text);   // never trips
+ *
+ * A check on the shape of a call is one `for` loop away from being
+ * irrelevant. The structural answer is that `detokenize` and `Vault` are no
+ * longer on the package's surface at all: `withPseudonymisation` owns the
+ * vault for the length of one round trip and hands it to nobody, so an
+ * outside loop has no object to address. This function is a second line of
+ * defence for the case where the untrusted REPLY is the thing asking for the
+ * key ring.
  *
  * ─────────────────────────────────────────────────────────────────────────
  * THE MANGLE POLICY, CONTINUED

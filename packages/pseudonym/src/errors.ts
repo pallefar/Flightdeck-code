@@ -53,7 +53,8 @@ export class VaultSerializationError extends PseudonymError {
     super(
       "refused: a Vault must never be serialised. It is the re-identification key " +
         "(GDPR Recital 26) and is category 4 regardless of the tier of the payload it " +
-        "was derived from. Send `result.text`; keep `result.vault` host-side.",
+        "was derived from. Send the `text` withPseudonymisation() hands your `send` " +
+        "callback; the vault stays inside that call and is destroyed when it ends.",
     );
     this.name = "VaultSerializationError";
   }
@@ -109,8 +110,15 @@ export class VaultSealedError extends PseudonymError {
  *
  * `vaultTags` is no longer exported (see `index.ts`), but no export list can
  * fix this on its own: a tag is seven ASCII words and a counter, so anyone
- * holding a bare `Vault` can write the list out by hand. The surface fix and
- * this refusal are one change in two places.
+ * holding a bare `Vault` can write the list out by hand.
+ *
+ * ⚠ AND NEITHER CAN THIS REFUSAL, WHICH IS WHY IT IS NO LONGER THE FIX. It
+ * reads the shape of ONE call, so the same dump asked for one tag per call
+ * walks straight past it. What closes the dump is that nobody outside the
+ * package is holding a `Vault` at all: `withPseudonymisation` owns it for the
+ * length of one round trip. This error now covers the case where the
+ * untrusted REPLY is what asks for the key ring — prompt injection aimed at
+ * this layer looks exactly like a list of tags.
  *
  * ⛔ WHAT IS REFUSED, EXACTLY: an input that restores TWO OR MORE DISTINCT
  * vault entries while containing nothing of the model's own — no word, no

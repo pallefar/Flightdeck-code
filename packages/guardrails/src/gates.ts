@@ -200,9 +200,17 @@ function resolve(
   return build("approval-required", REASONS.needsApproval, check);
 }
 
-/** A subject identifier for the audit body, taken from the proposal's own `id`
+/**
+ * A subject identifier for the audit body, taken from the proposal's own `id`
  * when it has one. Run through the same sanitiser as any path segment: an `id`
- * is caller-supplied, and this value goes into an append-only chain. */
+ * is caller-supplied, and this value goes into an append-only chain.
+ *
+ * ⛔ NOT USED BY `gateModelRequest` ANY MORE — see `MODEL_REQUEST_SUBJECT`. A
+ * registration `id` is a mini-app identifier that governance has to be able to
+ * read back ("wc-clock"), and the spec it names is a thing a human registers;
+ * an outbound model request is an anonymous call whose id nobody registered,
+ * and `salary_of_Anna_Mueller_92000` matches the pattern below perfectly.
+ */
 function subjectOf(value: unknown, fallback: string): string {
   if (value !== null && typeof value === "object") {
     const id = (value as Record<string, unknown>)["id"];
@@ -264,6 +272,11 @@ export function gateRegistration(spec: unknown, ctx: GateContext): GateDecision 
  * on the signature deliberately — silently ignoring a security option is how
  * a caller keeps believing in it.
  */
+/** The whole of what a model-request audit event says about WHICH request it
+ * was, beyond its content hash. A compiled-in constant: this gate takes no
+ * caller-chosen identifier. */
+export const MODEL_REQUEST_SUBJECT = "<model-request>";
+
 export interface ModelRequestConfig {
   readonly onTier3?: "refuse" | "redact";
   readonly onTier4?: "refuse" | "redact";
@@ -378,7 +391,20 @@ export function gateModelRequest(
   ctx: GateContext,
   config: ModelRequestConfig = {},
 ): ModelRequestDecision {
-  const subject = subjectOf(request, "<model-request>");
+  // ⭐ COMPILED-IN, AND THE CALLER'S `id` IS NOT READ AT ALL.
+  //
+  // This line used to be `subjectOf(request, "<model-request>")`, which admits
+  // any `/^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/` the caller wrote and puts it in
+  // the audit body — and the audit body is append-only, replicated, and read
+  // by people who were not in the room. A request the envelope REFUSED still
+  // wrote `subject: "salary_of_Anna_Mueller_92000"` into the chain: the exact
+  // key-as-channel case the host's `FACT_KEY_POLICY` exists to close, reopened
+  // one layer above the envelope. Sixty-four characters of caller prose is a
+  // free-text channel however identifier-shaped it looks.
+  //
+  // Nothing is lost that was not already there: `audit.contentHash` is on
+  // every decision and is what correlates a request with its approval.
+  const subject = MODEL_REQUEST_SUBJECT;
   const names = ctx.declaredNames ?? [];
   const built = buildEnvelope(request, names.length > 0 ? { names } : {});
 

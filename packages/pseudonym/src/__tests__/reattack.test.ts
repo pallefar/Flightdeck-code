@@ -32,8 +32,20 @@ describe("the package surface cannot be assembled into a vault dump", () => {
     // half of the fix that removes the OBVIOUS spelling of it.
     expect(Object.keys(surface)).not.toContain("vaultTags");
     expect("vaultTags" in surface).toBe(false);
-    // Class names stay: a class is a compiled-in constant and buys nothing.
-    expect(Object.keys(surface)).toContain("vaultClasses");
+
+    // ⚠ `vaultClasses` USED TO BE ASSERTED PRESENT HERE, on the grounds that a
+    // class name is a compiled-in constant and buys nothing. It bought the
+    // loop bound: `for (const cls of vaultClasses(vault)) for (i = 1…)` is the
+    // dump, one tag per call, and no shape check on `detokenize` can see it.
+    // It is off the surface with `Vault`, `tokenize` and `detokenize`, and the
+    // assertion is inverted rather than deleted — see `vault-dump.test.ts`,
+    // which checks the whole surface BY IDENTITY so a rename cannot restore
+    // the capability quietly.
+    for (const gone of ["vaultClasses", "Vault", "tokenize", "detokenize", "assessTier"]) {
+      expect(Object.keys(surface), gone).not.toContain(gone);
+    }
+    // Still true of the module-internal function, which is what the package's
+    // own code and tests use.
     expect(vaultClasses(build().vault)).toEqual(["email", "number", "person"]);
   });
 

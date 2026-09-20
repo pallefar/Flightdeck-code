@@ -23,8 +23,18 @@
  *       { task: "studio.spec.draft", facts: { field: { kind: "fieldName", value: "startDate" } } },
  *       { names: ["Jane Doe"] },
  *     );
- *     if (!result.ok) return report(result.failures);   // keys and codes only
- *     send(result.wire);                                 // iff disposition is "ready"
+ *     if (!result.ok) return report(result.failures);        // keys and codes only
+ *     if (result.disposition !== "ready") {                  // ⭐ NOT A COMMENT.
+ *       return askAHuman(result);                            // the envelope is
+ *     }                                                      // what they approve
+ *     send(result.wire);
+ *
+ * ⚠ THE DISPOSITION CHECK IS A BRANCH IN THIS EXAMPLE AND NOT A TRAILING
+ * COMMENT, because an example is the first thing a caller copies. It used to
+ * read `send(result.wire); // iff disposition is "ready"`, which is a
+ * `requires-human-approval` envelope going out over the wire in every
+ * codebase that pasted it. `gateModelRequest` gets this right; a caller
+ * reading only this file would not have.
  *
  * ─────────────────────────────────────────────────────────────────────────
  * THE RULE THAT GOVERNS EVERY EXPORT BELOW
@@ -48,6 +58,7 @@
 
 export {
   AI_TASKS,
+  COUNT_LADDER,
   FACT_KEY_ALLOWLIST,
   FACT_KEY_POLICY,
   FACT_KINDS,
@@ -57,6 +68,7 @@ export {
   HOST_FIELD_NAME_ALLOWLIST,
   HOST_VOCABULARIES,
   MAX_COUNT,
+  MAX_COUNT_FACTS,
   MAX_REQUEST_BYTES,
   MAX_TEXT_CHARS,
   MAX_TEXT_FACTS,
@@ -69,17 +81,48 @@ export {
   factKeyPolicy,
   isKnownModel,
   isSelectableProvider,
+  snapCount,
   vocabulary,
 } from "./allowlists";
 export type { AiTaskId, FactKeyPolicy, FactKind } from "./allowlists";
 
 export {
   APPROVAL_REASON_CODES,
+  COUNT_CHANNEL_BITS,
   DEFAULT_PROVIDER,
   REFUSAL_REASON,
   buildEnvelope,
   describeEnvelope,
 } from "./build";
+
+/**
+ * ⭐ THE PROVENANCE ALLOWLIST — the same move as `allowlists.ts`, one level in.
+ *
+ * The coverage report a text fact arrives with is EVIDENCE THE CALLER BRINGS,
+ * and evidence is VALIDATED, not carried. Every string in it must be a member
+ * of one of these three compiled-in vocabularies; the pseudonymiser's prose
+ * `statement` is dropped at the door and replaced by a code this package owns.
+ *
+ * ⛔ The rule, without an exception for "it is only metadata": IF A CALLER CAN
+ * AUTHOR THE BYTES, THEY DO NOT GO ON THE WIRE UNLESS THEY ARE A MEMBER OF A
+ * COMPILED-IN SET. `assertNoResidualPii` stays as belt and braces and is never
+ * the reason a field is allowed.
+ */
+export {
+  COVERAGE_CLASS_VOCABULARY,
+  COVERAGE_DETECTOR_VOCABULARY,
+  COVERAGE_REPRESENTATION_VOCABULARY,
+  MAX_COVERAGE_ENTRIES,
+  MAX_PROVENANCE_CHARS,
+  MAX_TEXT_FACT_CHARS,
+  PROVENANCE_STATEMENT_CODES,
+  PSEUDONYM_DETECTORS_CHECKED,
+  PSEUDONYM_REPRESENTATIONS,
+  PSEUDONYM_UNCHECKED_CLASSES,
+  admitCoverageList,
+  provenanceStatementCode,
+} from "./coverage";
+export type { ProvenanceStatementCode } from "./coverage";
 export type { BuildOptions } from "./build";
 
 export { ENVELOPE_CLASSES_NOT_CHECKED, isEnvelope, isRefusal } from "./types";
