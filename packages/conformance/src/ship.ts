@@ -31,12 +31,27 @@
  *     the underlying message, and the caller is told what was rolled
  *     back. A step is never recorded as complete because nobody looked. */
 import { constants } from "node:fs";
+import { admitComplianceRecord, type ComplianceRefusal } from "../../compliance/src/record";
 import { copyFile, lstat, mkdir, open, rename, rm, unlink } from "node:fs/promises";
 import { isAbsolute, join, relative, resolve, sep } from "node:path";
 import { randomUUID } from "node:crypto";
 import { analyzeCandidate, type CandidateSubApp } from "./analyze";
 import { ConformanceError } from "./gate";
 import { verifySubApp, type VerificationReport, type VerifyOptions } from "./verify";
+
+/**
+ * Refused before anything was opened, because the host's compliance gate
+ * did not certify this candidate. The CODE is carried; the record is not,
+ * because a record names stacks and timestamps a caller did not choose.
+ */
+export class ComplianceRequiredError extends Error {
+  constructor(readonly code: ComplianceRefusal | "no-record-supplied") {
+    super(
+      `refused: this write needs a passing studio-compliance-record for THIS spec (${code}). Run scripts/promote.sh and pass its record, or use dryRun to plan without writing.`,
+    );
+    this.name = "ComplianceRequiredError";
+  }
+}
 
 export interface ShipOptions extends VerifyOptions {
   /** The host repo the sub-app is being added to. Absolute. */
@@ -46,6 +61,25 @@ export interface ShipOptions extends VerifyOptions {
   readonly allowOverwrite?: readonly string[];
   /** Verify and plan, report exactly what would happen, write nothing. */
   readonly dryRun?: boolean;
+  /**
+   * ⭐ THE HOST'S OWN COMPLIANCE VERDICT, REQUIRED TO WRITE.
+   *
+   * A real ship puts generated code into the host repo — that IS production,
+   * and the user requirement is that nothing reaches it without the eval and
+   * compliance gate having passed. `scripts/promote.sh` runs that gate
+   * (`gate.sh`, five stacks including the PII boundary check and the Python
+   * engine eval) and writes a `studio-compliance-record/1` file. Until now
+   * nothing read it.
+   *
+   * Pass the PARSED record and the sha256 of the spec that produced this
+   * candidate; `admitComplianceRecord` decides. Absent on a real write is a
+   * refusal, not a default.
+   *
+   * ⛔ NOT required for `dryRun`. Planning is not shipping, and a gate that
+   * blocked people from LOOKING at what would happen would be routed around
+   * within a week.
+   */
+  readonly compliance?: { readonly record: unknown; readonly specSha256: string; readonly now?: number };
 }
 
 export type WriteStatus =
@@ -121,6 +155,22 @@ export async function shipSubApp(candidate: CandidateSubApp, options: ShipOption
   // ── 1. Earn the right to write. ──────────────────────────────────
   const report = await verifySubApp(candidate, options);
   if (!report.verified) throw new ConformanceError(report);
+
+  // ⭐ AND EARN IT FROM THE HOST TOO. Studio's own conformance says the code
+  // is shaped correctly; it says nothing about whether the host's compliance
+  // gate — the PII boundary check and the engine eval among them — passed
+  // with this candidate mounted. Only `promote.sh` can answer that, and its
+  // answer was being written to a file nobody opened.
+  if (options.dryRun !== true) {
+    if (options.compliance === undefined) {
+      throw new ComplianceRequiredError("no-record-supplied");
+    }
+    const admitted = admitComplianceRecord(options.compliance.record, {
+      specSha256: options.compliance.specSha256,
+      ...(options.compliance.now === undefined ? {} : { now: options.compliance.now }),
+    });
+    if (!admitted.ok) throw new ComplianceRequiredError(admitted.code);
+  }
 
   const analysis = analyzeCandidate(candidate);
   if (!analysis.ok) throw new ConformanceError(report);

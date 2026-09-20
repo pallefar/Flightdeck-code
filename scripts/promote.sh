@@ -63,12 +63,39 @@ else
 fi
 
 echo "==> [2/6] Studio conformance red-team (planted violations must all block)"
-if ( cd "$STUDIO" && npm run redteam >"$ROOT/redteam.log" 2>&1 ) && \
-   grep -qE '^[0-9]+/\1? ?planted|planted violations produced a BLOCKING finding' "$ROOT/redteam.log"; then
-  tail -1 "$ROOT/redteam.log"
-  note_pass "conformance-redteam"
+# ⚠ THIS CHECK WAS BROKEN IN BOTH DIRECTIONS, and a real run found it.
+#
+#   grep -qE '^[0-9]+/\1? ?planted|planted violations produced a BLOCKING finding'
+#
+# 1. `\1` is a BACK-REFERENCE, which ERE does not have. GNU grep answered
+#    "Invalid back reference" and exited non-zero, so this stack reported
+#    FAIL on a run whose red-team had just printed "7/7 planted violations
+#    produced a BLOCKING finding". promote.sh could therefore never report
+#    ready, and the compliance record could never say so either.
+# 2. Had the pattern been valid it would have been worse: the second
+#    alternative matches the SENTENCE with no count in it at all, so
+#    "0/7 planted violations produced a BLOCKING finding" — every planted
+#    violation slipping through — matches and passes.
+#
+# Replaced with an explicit comparison: the two numbers must be equal AND
+# non-zero. No regex cleverness, and nothing that passes when the run found
+# nothing.
+if ( cd "$STUDIO" && npm run redteam >"$ROOT/redteam.log" 2>&1 ); then
+  SUMMARY="$(grep -oE '[0-9]+/[0-9]+ planted violations produced a BLOCKING finding' "$ROOT/redteam.log" | tail -1)"
+  RT_GOT="${SUMMARY%%/*}"
+  RT_WANT="$(printf '%s' "${SUMMARY#*/}" | cut -d' ' -f1)"
+  if [ -n "$SUMMARY" ] && [ "$RT_GOT" = "$RT_WANT" ] && [ "${RT_GOT:-0}" -gt 0 ] 2>/dev/null; then
+    echo "  $SUMMARY"
+    # The red-team's OWN skips, surfaced. This script's doctrine is that a
+    # skip is never invisible; that applies to a stack's internals too.
+    RT_SKIPS="$(grep -c '^  SKIP' "$ROOT/redteam.log" || true)"
+    [ "${RT_SKIPS:-0}" -gt 0 ] && echo "  note: red-team skipped $RT_SKIPS planted case(s) — see $ROOT/redteam.log"
+    note_pass "conformance-redteam"
+  else
+    note_fail "conformance-redteam"; echo "  no 'N/N planted' summary with N>0 — see $ROOT/redteam.log"
+  fi
 else
-  note_fail "conformance-redteam"
+  note_fail "conformance-redteam"; echo "  the red-team run itself failed — see $ROOT/redteam.log"
 fi
 
 echo "==> [3/6] generate + mount the candidate"

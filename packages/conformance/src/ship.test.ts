@@ -8,7 +8,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { ConformanceError } from "./gate";
-import { ShipRefused, shipSubApp } from "./ship";
+import { ComplianceRequiredError, ShipRefused, shipSubApp } from "./ship";
 import {
   MANIFEST_PATH,
   PATCH_PATH,
@@ -38,6 +38,30 @@ async function exists(path: string): Promise<boolean> {
   }
 }
 
+/**
+ * ⭐ A PASSING COMPLIANCE RECORD, as `scripts/promote.sh` writes one.
+ *
+ * `shipSubApp` writes into the host repo, which IS production, so it now
+ * requires the host's own compliance gate to have certified THIS spec. These
+ * cases are about the write path, so they supply a valid record and the
+ * compliance cases below supply broken ones.
+ */
+const SPEC_SHA = "46927a342179b43c2a00a53ea848068fc8d2c168ba2dc825649a661316fca2de";
+const CERTIFIED = {
+  specSha256: SPEC_SHA,
+  now: Date.parse("2026-09-20T10:00:00Z"),
+  record: {
+    schema: "studio-compliance-record/1",
+    at: "2026-09-20T09:00:00Z",
+    specSha256: SPEC_SHA,
+    passed: ["studio-suite", "conformance-redteam", "generate-and-mount", "build-web", "host-gate"],
+    failed: [],
+    skipped: [],
+    readyForProduction: true,
+    verdict: "ready",
+  },
+};
+
 async function seed(root: string, path: string, contents: string): Promise<void> {
   await mkdir(dirname(join(root, path)), { recursive: true });
   await writeFile(join(root, path), contents, "utf8");
@@ -52,7 +76,7 @@ describe("shipping an app that verifies", () => {
     const root = await hostRepo();
     const candidate = conformingSubApp();
 
-    const result = await shipSubApp(candidate, { root, repoRoot: REPO_ROOT });
+    const result = await shipSubApp(candidate, { root, repoRoot: REPO_ROOT, compliance: CERTIFIED });
 
     expect(result.committed).toBe(true);
     expect(result.report.verified).toBe(true);
@@ -84,7 +108,7 @@ describe("shipping an app that does not verify", () => {
     // Compiles-nowhere: the contract gate is happy, the compiler is not.
     const broken = editFile(conformingSubApp(), ROUTES_PATH, "return reply.code(201).send({ ok: true });", 'return reply.code("201").send({ ok: true });');
 
-    await expect(shipSubApp(broken, { root, repoRoot: REPO_ROOT })).rejects.toBeInstanceOf(ConformanceError);
+    await expect(shipSubApp(broken, { root, repoRoot: REPO_ROOT, compliance: CERTIFIED })).rejects.toBeInstanceOf(ConformanceError);
     expect(await readdir(root)).toEqual([]);
   }, SLOW);
 });
@@ -98,7 +122,7 @@ describe("what the write path refuses even when the code is fine", () => {
     // earlier ones do not apply.
     const escaping = withFile(conformingSubApp(), "tests/subapps/wc-clock/../../../escaped.md", "# notes\n");
 
-    const error = await shipSubApp(escaping, { root, repoRoot: REPO_ROOT }).catch((e: unknown) => e);
+    const error = await shipSubApp(escaping, { root, repoRoot: REPO_ROOT, compliance: CERTIFIED }).catch((e: unknown) => e);
     expect(error).toBeInstanceOf(ShipRefused);
     expect((error as ShipRefused).message).toContain("escaped.md");
     // ⭐ All-or-nothing: the six perfectly good files did not land either.
@@ -110,7 +134,7 @@ describe("what the write path refuses even when the code is fine", () => {
     const root = await hostRepo();
     await seed(root, MANIFEST_PATH, "// written by a human, months ago\n");
 
-    const error = await shipSubApp(conformingSubApp(), { root, repoRoot: REPO_ROOT }).catch((e: unknown) => e);
+    const error = await shipSubApp(conformingSubApp(), { root, repoRoot: REPO_ROOT, compliance: CERTIFIED }).catch((e: unknown) => e);
     expect(error).toBeInstanceOf(ShipRefused);
     expect((error as ShipRefused).message).toContain("allowOverwrite");
     expect(await readFile(join(root, MANIFEST_PATH), "utf8")).toBe("// written by a human, months ago\n");
@@ -121,7 +145,7 @@ describe("what the write path refuses even when the code is fine", () => {
     const root = await hostRepo();
     await seed(root, MANIFEST_PATH, "// written by a human, months ago\n");
 
-    const result = await shipSubApp(conformingSubApp(), { root, repoRoot: REPO_ROOT, allowOverwrite: [MANIFEST_PATH] });
+    const result = await shipSubApp(conformingSubApp(), { root, repoRoot: REPO_ROOT, allowOverwrite: [MANIFEST_PATH], compliance: CERTIFIED });
 
     expect(result.committed).toBe(true);
     expect(result.writes.find((w) => w.path === MANIFEST_PATH)?.status).toBe("overwritten");
@@ -135,7 +159,7 @@ describe("what the write path refuses even when the code is fine", () => {
     await writeFile(join(elsewhere, "target.ts"), "// somewhere else entirely\n", "utf8");
     await symlink(join(elsewhere, "target.ts"), join(root, MANIFEST_PATH));
 
-    const error = await shipSubApp(conformingSubApp(), { root, repoRoot: REPO_ROOT, allowOverwrite: [MANIFEST_PATH] }).catch((e: unknown) => e);
+    const error = await shipSubApp(conformingSubApp(), { root, repoRoot: REPO_ROOT, allowOverwrite: [MANIFEST_PATH], compliance: CERTIFIED }).catch((e: unknown) => e);
     expect(error).toBeInstanceOf(ShipRefused);
     expect((error as ShipRefused).message).toContain("symlink");
     expect(await readFile(join(elsewhere, "target.ts"), "utf8")).toBe("// somewhere else entirely\n");
@@ -150,7 +174,7 @@ describe("when the filesystem says no in the middle", () => {
     // up is the step that fails, after five files have already landed.
     await mkdir(join(root, WEB_PATH), { recursive: true });
 
-    const error = await shipSubApp(conformingSubApp(), { root, repoRoot: REPO_ROOT, allowOverwrite: [WEB_PATH] }).catch((e: unknown) => e);
+    const error = await shipSubApp(conformingSubApp(), { root, repoRoot: REPO_ROOT, allowOverwrite: [WEB_PATH], compliance: CERTIFIED }).catch((e: unknown) => e);
 
     expect(error).toBeInstanceOf(ShipRefused);
     const refused = error as ShipRefused;
@@ -165,4 +189,58 @@ describe("when the filesystem says no in the middle", () => {
       expect(write.status).toBe("rolled-back");
     }
   }, SLOW);
+});
+
+
+/**
+ * ⭐ THE HOST'S COMPLIANCE GATE, AT THE WRITE BOUNDARY.
+ *
+ * Studio's own conformance says the code is shaped correctly. It says
+ * nothing about whether the HOST's gate — five stacks, including the PII
+ * boundary check and the Python engine eval — passed with this candidate
+ * mounted. Only `scripts/promote.sh` can answer that, and its answer was
+ * written to a file nobody opened.
+ */
+describe("nothing reaches the host repo without the host's own verdict", () => {
+  it("⭐ no record at all — refused, and NOT ONE FILE is written", async () => {
+    const root = await hostRepo();
+    const error = await shipSubApp(conformingSubApp(), { root, repoRoot: REPO_ROOT }).catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(ComplianceRequiredError);
+    // The refusal happens before anything is opened. A gate that refuses
+    // after a partial write is a gate that corrupted the host repo.
+    expect(await readdir(root).catch(() => [])).toEqual([]);
+  });
+
+  it("⭐ a record whose verdict contradicts its own evidence", async () => {
+    const root = await hostRepo();
+    const lying = {
+      ...CERTIFIED,
+      record: { ...CERTIFIED.record, failed: ["host-gate"], readyForProduction: true },
+    };
+    const error = await shipSubApp(conformingSubApp(), { root, repoRoot: REPO_ROOT, compliance: lying }).catch(
+      (e: unknown) => e,
+    );
+    expect(error).toBeInstanceOf(ComplianceRequiredError);
+    expect((error as ComplianceRequiredError).code).toBe("verdict-contradicts-its-own-evidence");
+    expect(await readdir(root).catch(() => [])).toEqual([]);
+  });
+
+  it("⭐ a record for a different spec is not a licence to ship this one", async () => {
+    const root = await hostRepo();
+    const other = { ...CERTIFIED, specSha256: `${"0".repeat(63)}1` };
+    const error = await shipSubApp(conformingSubApp(), { root, repoRoot: REPO_ROOT, compliance: other }).catch(
+      (e: unknown) => e,
+    );
+    expect(error).toBeInstanceOf(ComplianceRequiredError);
+    expect((error as ComplianceRequiredError).code).toBe("spec-hash-mismatch");
+  });
+
+  it("⛔ but a DRY RUN needs no record — planning is not shipping", async () => {
+    // A gate that stopped people LOOKING at what would happen would be
+    // routed around within a week.
+    const root = await hostRepo();
+    const result = await shipSubApp(conformingSubApp(), { root, repoRoot: REPO_ROOT, dryRun: true });
+    expect(result.writes.length).toBeGreaterThan(0);
+    expect(await readdir(root).catch(() => [])).toEqual([]);
+  });
 });
