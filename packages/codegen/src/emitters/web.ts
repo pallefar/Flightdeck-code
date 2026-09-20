@@ -112,7 +112,7 @@ export function emitWebModule(plan: SubAppPlan): string {
       "",
       "Refusals are routed on the HTTP status and the body's `code` — never on the server's prose, which is developer-facing English and must not land inside a translated sentence later.",
     ]),
-    `import { useCallback, useEffect, useState, type CSSProperties, type FormEvent, type ReactNode } from "react";`,
+    `import { Fragment, useCallback, useEffect, useState, type CSSProperties, type FormEvent, type ReactNode } from "react";`,
     `import type { SubAppModule } from "../registry";`,
     "",
     `const ROUTE_PREFIX = ${str(plan.routePrefix)};`,
@@ -363,7 +363,10 @@ const metaRow: CSSProperties = { display: "flex", flexWrap: "wrap", alignItems: 
 const metaLabel: CSSProperties = { fontSize: 11, letterSpacing: "0.08em", textTransform: "uppercase", minWidth: 62 };
 const actionRow: CSSProperties = { marginTop: 10, paddingTop: 10, borderTop: "1px dashed " + T.line };
 const summaryRow: CSSProperties = { display: "flex", flexWrap: "wrap", alignItems: "center", gap: 12, margin: "0 0 14px" };
-const trackStyle: CSSProperties = { flex: "1 1 180px", minWidth: 120 };
+/** ⚠ BOUNDED. \`flex: 1 1 180px\` let an always-empty track stretch across ~500px
+ * of a 1040px column, where it reads as a stray grey rule rather than a meter.
+ * A progress bar should be the size of the thing it measures. */
+const trackStyle: CSSProperties = { flex: "0 1 180px", minWidth: 120, maxWidth: 220 };
 const fieldRow: CSSProperties = { display: "flex", flexWrap: "wrap", alignItems: "center", gap: 8, margin: "6px 0" };
 const fieldLabel: CSSProperties = { minWidth: 120, fontSize: 12, color: T.muted };
 
@@ -484,6 +487,60 @@ function proposalNames(payload: unknown): string[] {
   return out;
 }
 
+/** \`folderName\` -> "Folder name". The API's key, read out loud.
+ *
+ * A table headed \`ticket | dir | folderName\` is a JSON dump with a border:
+ * those are the server's field names, and the reader is a works-council
+ * officer, not the person who wrote the route. This does the smallest honest
+ * thing \u2014 split the camelCase, sentence-case the result \u2014 and does NOT
+ * invent a label the data does not support: an unrecognised key still shows
+ * its own words, just as words. */
+function humanColumn(key: string): string {
+  const spaced = key
+    .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+    .replace(/[_-]+/g, " ")
+    .trim();
+  if (spaced.length === 0) return key;
+  return spaced.charAt(0).toUpperCase() + spaced.slice(1).toLowerCase();
+}
+
+/** What the route answered, as fields rather than as a stringified blob.
+ *
+ * This was \`setOk(JSON.stringify(answer))\` rendered in a monospace box, so a
+ * successful filing confirmed itself with
+ * \`{"proposal":"memory/proposals/wc-clock-review-TE-4711.json","hash":"9f2a\u2026"}\`.
+ * That is the shape of the response, not the answer to "did it work?", and the
+ * one part a person needs \u2014 the path a human will open in the Inbox \u2014 is the
+ * hardest part of it to read.
+ *
+ * ⚠ NOTHING IS INVENTED HERE. The keys are whatever the route sent, run through
+ * the same \`humanColumn\` as the table; a non-object answer still prints
+ * verbatim. The change is presentation, and it drops nothing. */
+function OkAnswer({ answer }: { answer: unknown }) {
+  if (answer === null || typeof answer !== "object" || Array.isArray(answer)) {
+    return <code className="mono">{String(answer)}</code>;
+  }
+  const entries = Object.entries(answer as Record<string, unknown>);
+  if (entries.length === 0) return <span>Done.</span>;
+  return (
+    <>
+      <strong>Done.</strong>
+      <dl style={{ margin: "6px 0 0", display: "grid", gridTemplateColumns: "auto 1fr", gap: "2px 10px" }}>
+        {entries.map(([key, value]) => (
+          <Fragment key={key}>
+            <dt className="muted" style={{ fontSize: 12 }}>
+              {humanColumn(key)}
+            </dt>
+            <dd className="mono" style={{ margin: 0, overflowWrap: "anywhere" }}>
+              {typeof value === "object" && value !== null ? JSON.stringify(value) : String(value)}
+            </dd>
+          </Fragment>
+        ))}
+      </dl>
+    </>
+  );
+}
+
 function RowTable({ rows }: { rows: Array<Record<string, unknown>> }) {
   if (rows.length === 0) return <p className="muted">Nothing here yet.</p>;
   const columns = Object.keys(rows[0] ?? {});
@@ -492,7 +549,11 @@ function RowTable({ rows }: { rows: Array<Record<string, unknown>> }) {
       <thead>
         <tr>
           {columns.map((column) => (
-            <th key={column}>{column}</th>
+            // \`title\` keeps the RAW key one hover away, because somebody
+            // debugging a route needs the name the server actually sent.
+            <th key={column} title={column}>
+              {humanColumn(column)}
+            </th>
           ))}
         </tr>
       </thead>
@@ -515,7 +576,7 @@ function RouteForm({ form, onDone }: { form: FormDescriptor; onDone: (answer: un
   const [values, setValues] = useState<Record<string, string | boolean>>({});
   const [busy, setBusy] = useState(false);
   const [refusal, setRefusal] = useState<Refusal | null>(null);
-  const [ok, setOk] = useState<string | null>(null);
+  const [ok, setOk] = useState<unknown>(null);
 
   async function submit(event: FormEvent) {
     event.preventDefault();
@@ -539,7 +600,7 @@ function RouteForm({ form, onDone }: { form: FormDescriptor; onDone: (answer: un
     }
     try {
       const answer = await call(form.method, form.path, body);
-      setOk(JSON.stringify(answer));
+      setOk(answer);
       setValues({});
       onDone(answer);
     } catch (err) {
@@ -588,9 +649,9 @@ function RouteForm({ form, onDone }: { form: FormDescriptor; onDone: (answer: un
         {busy ? "Working…" : form.label}
       </button>
       {refusal && <RefusalBox refusal={refusal} />}
-      {ok && (
+      {ok !== null && (
         <div className="okbox" role="status">
-          <code className="mono">{ok}</code>
+          <OkAnswer answer={ok} />
         </div>
       )}
     </form>
@@ -831,17 +892,38 @@ function WorkflowRail({ workflow }: { workflow: WorkflowDescriptor | null }) {
   const proposable = steps.filter((step) => step.action !== null && step.action.proposalPrefix !== null).length;
   const proposed = statuses.filter((status) => status.state === "proposed").length;
   const percent = proposable === 0 ? 0 : Math.round((proposed / proposable) * 100);
+  const elsewhere = steps.length - proposable;
 
   return (
     <section data-workflow={workflow.name}>
       <div style={summaryRow}>
+        {/* ⭐ THE DENOMINATOR IS NOT THE WORKFLOW, AND NOW IT SAYS SO.
+            This read "0 of 2 proposable steps filed" beside a half-page
+            progress track, on a SIX-step workflow. The words were accurate and
+            the composition was not: the most prominent number on the page
+            measured a third of the procedure, and an empty bar next to it
+            reads as "nothing has happened" about all of it — when four of the
+            six steps were never this app's to do. The count of steps that
+            happen elsewhere is the missing half of the sentence. */}
         <span className="chip">
-          <b className="mono">{String(proposed)}</b> of <b className="mono">{String(proposable)}</b> proposable steps filed
+          <b className="mono">{String(proposed)}</b> of <b className="mono">{String(proposable)}</b>{" "}
+          {proposable === 1 ? "step" : "steps"} this app can file
         </span>
         <span className="progress" style={trackStyle}>
           <span className="fill" style={{ width: String(percent) + "%" }} />
         </span>
-        {workflow.source !== null && <span className="muted mono">{workflow.source}</span>}
+        {elsewhere > 0 && (
+          <span className="muted" style={{ fontSize: 12 }}>
+            {String(elsewhere)} of {String(steps.length)} happen outside this app
+          </span>
+        )}
+        {workflow.source !== null && (
+          // The skill this workflow was converted FROM. It is provenance, not
+          // navigation, so it stops competing with the numbers beside it.
+          <span className="muted mono" style={{ fontSize: 11, opacity: 0.75 }}>
+            from {workflow.source}
+          </span>
+        )}
       </div>
       {proposalsPath === null && (
         <p className="muted" style={{ margin: "0 0 12px", fontSize: 12 }}>

@@ -81,8 +81,30 @@ describe("a converted workflow's page, rendered", () => {
   });
 
   it("counts progress in the host's monospace, and starts honest at zero", () => {
-    expect(html).toContain('<b class="mono">0</b> of <b class="mono">2</b> proposable steps filed');
+    expect(html).toContain('<b class="mono">0</b> of <b class="mono">2</b>');
     expect(html).toContain('<span class="fill" style="width:0%">');
+  });
+
+  it("⭐ says what its denominator EXCLUDES, so the bar cannot be read as the whole workflow", () => {
+    // This chip read "0 of 2 proposable steps filed" beside a half-page track,
+    // on a SIX-step workflow. Accurate words, misleading composition: the most
+    // prominent number on the page measured a third of the procedure, and an
+    // empty bar next to it reads as "nothing has happened" about all of it —
+    // when four of the six were never this app's to do.
+    //
+    // Asserted as a RELATION rather than as copy: whatever the sentence says,
+    // the two counts have to add up to the step total, so a future edit that
+    // drops the second half fails here.
+    const scoped = /<b class="mono">(\d+)<\/b> of <b class="mono">(\d+)<\/b>/.exec(html);
+    expect(scoped).not.toBeNull();
+    const elsewhere = /(\d+) of (\d+) happen outside this app/.exec(html);
+    expect(elsewhere, "the page does not say how many steps it cannot act on").not.toBeNull();
+    if (scoped === null || elsewhere === null) return;
+    const canFile = Number(scoped[2]);
+    const outside = Number(elsewhere[1]);
+    const total = Number(elsewhere[2]);
+    expect(canFile + outside).toBe(total);
+    expect(total).toBeGreaterThan(canFile); // else the caveat is vacuous
   });
 
   it("wears the host's visual language rather than a stylesheet of its own", () => {
@@ -95,8 +117,14 @@ describe("a converted workflow's page, rendered", () => {
     expect(html).not.toContain("<style");
   });
 
-  it("names where the workflow came from", () => {
-    expect(html).toContain('<span class="muted mono">skills/orchestrate-workflow/SKILL.md</span>');
+  it("names where the workflow came from, as provenance rather than as a headline", () => {
+    // Still present — a converted workflow should say what it was converted
+    // from. But it is a source path, so it stops competing with the numbers
+    // beside it: smaller, dimmed, and prefixed so it reads as an attribution
+    // instead of as something to click.
+    expect(html).toContain("skills/orchestrate-workflow/SKILL.md");
+    expect(html).toMatch(/from skills\/orchestrate-workflow\/SKILL\.md/);
+    expect(html).toMatch(/font-size:11px;opacity:0\.75[^>]*>from skills/);
   });
 });
 
