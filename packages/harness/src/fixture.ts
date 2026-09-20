@@ -13,6 +13,9 @@
  * racing leave either the old file or the new one — never a half-written JSON
  * document that every later playback fails to parse. */
 import { mkdir, readFile, readdir, rename, unlink, writeFile } from "node:fs/promises";
+import { assessTier } from "../../pseudonym/src/tier";
+import { Vault } from "../../pseudonym/src/vault";
+import { classify } from "../../guardrails/src/pure";
 import { randomBytes } from "node:crypto";
 import { dirname, join } from "node:path";
 import { canonicalStringify } from "./canonical";
@@ -127,7 +130,96 @@ export async function tryReadFixtureAt(path: string): Promise<FixtureRecord | nu
   }
 }
 
-export async function writeFixtureAt(path: string, record: FixtureRecord): Promise<void> {
+/**
+ * A recording that cannot be committed, refused before it reaches disk.
+ *
+ * Names CLASSES and sanitised locations — never the value that tripped it.
+ * The whole point is that the value does not get written down.
+ */
+export class FixtureNotCommittableError extends Error {
+  constructor(
+    readonly path: string,
+    readonly tier: number,
+    readonly classes: readonly string[],
+  ) {
+    super(
+      `refused: this recording assesses as tier ${tier} (${classes.join(", ")}) and was NOT written to ${path}. ` +
+        `Fixtures are committed files; redaction covers credentials, not people. Re-record from input that does not carry personal data.`,
+    );
+    this.name = "FixtureNotCommittableError";
+  }
+}
+
+export interface WriteFixtureOptions {
+  /** Names the caller already knows are in play, so they are found as names
+   * rather than as whatever shape they happen to take. */
+  readonly declaredNames?: readonly string[];
+}
+
+export async function writeFixtureAt(
+  path: string,
+  record: FixtureRecord,
+  options: WriteFixtureOptions = {},
+): Promise<void> {
+  // ⭐ "REDACTION SO A RECORDING IS COMMITTABLE" — NOW TRUE RATHER THAN SAID.
+  //
+  // This package's header claims a recording is committable because it is
+  // redacted. `redact.ts` matches api keys, tokens, passwords and cookies:
+  // CREDENTIALS. It has never looked for a person. So a live recording wrote
+  // the request and the full response to a file that goes into git, and
+  // whether that file contained someone's name depended entirely on what was
+  // in the prompt.
+  //
+  // A fixture is an emitted file, so it gets the rule emitted files already
+  // have: `gateGeneratedArtifacts` refuses tier 3/4 outright, "because
+  // personal data in emitted files is a bug in generation and the remedy for
+  // a bug is to fix it". There is deliberately no opt-out — an escape hatch
+  // here would be used by the exact caller who most needs the refusal.
+  // ⚠ THE PAYLOAD, NOT THE WHOLE RECORD. Classifying the record entire
+  // reported tier 3 `digits` on 24 fixtures whose only offence was a hex
+  // `key`, a `durationMs` and a token count — structural metadata this
+  // harness wrote itself. What arrives from outside, and is therefore
+  // capable of carrying a person, is the request and the response.
+  // ── TWO RULES, BECAUSE THEY ANSWER TWO QUESTIONS ──────────────────────
+  //
+  // Both thresholds were MEASURED against real payloads, not chosen:
+  //
+  //   bare name in a prompt   classify tier 1   assessTier tier 4
+  //   IBAN / email            classify tier 4   assessTier tier 4
+  //   the REAL planner call   classify tier 1   assessTier tier 3
+  //   harness metadata        classify tier 1   assessTier tier 2
+  //
+  // `classify` finds STRUCTURED identifiers — an email, an IBAN, a phone
+  // number — and none of those belongs in a committed file, so tier 3 is the
+  // line, the same one `gateGeneratedArtifacts` draws.
+  //
+  // `classify` does NOT find a bare person's name in prose; `declaredNames`
+  // informs field-name checks and is not a name matcher. `assessTier` does
+  // find one — `unverified-name-shaped-content` — but it also rates the
+  // system's OWN ordinary planner exchange tier 3, because "visible to legal
+  // and admin" is a quasi-identifier signal. Refusing that would make the
+  // recorder unusable for the thing it exists to record.
+  //
+  // So the pseudonymiser's line here is 4, its own "do not transmit"
+  // ceiling: a name nobody declared, or a special-category signal. Tier 3
+  // from role words alone is not a reason to refuse a fixture.
+  const payload = { request: record.request, response: record.response };
+  const assessment = assessTier(JSON.stringify(payload), new Vault(), {
+    ...(options.declaredNames === undefined ? {} : { names: [...options.declaredNames] }),
+  });
+  if (assessment.payloadTier >= 4) {
+    const classes = [...new Set(assessment.reasons.filter((r) => r.floor >= 4).map((r) => r.code))].sort();
+    throw new FixtureNotCommittableError(path, assessment.payloadTier, classes);
+  }
+
+  const classification = classify(payload, {
+    ...(options.declaredNames === undefined ? {} : { declaredNames: [...options.declaredNames] }),
+  });
+  if (classification.tier >= 3) {
+    const classes = [...new Set(classification.findings.map((f) => f.class))].sort();
+    throw new FixtureNotCommittableError(path, classification.tier, classes);
+  }
+
   await mkdir(dirname(path), { recursive: true });
 
   // Canonical bytes, indented: re-recording an unchanged call produces an

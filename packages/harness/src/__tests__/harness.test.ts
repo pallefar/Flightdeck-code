@@ -328,11 +328,19 @@ describe("keyed on the request, never on call order", () => {
       env: {},
     });
     await recorder.call(ask("same question", "test-model-1"));
-    await recorder.call(ask("same question", "Other/Model:2"));
+    // ⚠ LOWERCASE, and that is not cosmetic. This said "Other/Model:2", and
+    // `writeFixtureAt` now refuses a recording whose payload assesses as
+    // tier 4 — which "Other Model" does, as `unverified-name-shaped-content`:
+    // two capitalised words are exactly what a person's name looks like, and
+    // the pseudonymiser cannot tell them apart without being told. The slug
+    // escaping this case exists to test is unaffected by the case of the
+    // letters, so the fixture uses a spelling that is not name-shaped rather
+    // than the guard learning an exception.
+    await recorder.call(ask("same question", "other/model:2"));
 
     expect((await readdir(dir)).sort()).toEqual(["other-model-2", "test-model-1"]);
     const player = createHarness<TestRequest, TestResponse>({ mode: "playback", fixturesDir: dir, env: {} });
-    expect(await player.call(ask("same question", "Other/Model:2"))).toEqual({ text: "from Other/Model:2" });
+    expect(await player.call(ask("same question", "other/model:2"))).toEqual({ text: "from other/model:2" });
   });
 
   it("keeps a model id from escaping the fixtures directory", async () => {
