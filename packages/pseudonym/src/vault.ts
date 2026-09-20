@@ -122,6 +122,18 @@ interface VaultState {
  */
 const STORE = new WeakMap<Vault, VaultState>();
 
+/**
+ * Vaults whose store has been DELETED on purpose, rather than never having
+ * had one. Kept so `stateOf` can tell "this round trip is over" apart from
+ * "this is not one of our objects" — two different bugs, and a caller who
+ * gets the wrong message goes looking in the wrong place.
+ *
+ * `withPseudonymisation` discards the vault in a `finally`, so a reference
+ * captured out of that frame by any means is a dead object afterwards rather
+ * than a live key ring.
+ */
+const DISCARDED = new WeakSet<Vault>();
+
 const INSPECT: symbol = Symbol.for("nodejs.util.inspect.custom");
 
 export class Vault {
@@ -145,8 +157,13 @@ export class Vault {
     throw new VaultSerializationError();
   }
 
-  /** Defence 3a — string interpolation into a prompt template. */
+  /** Defence 3a — string interpolation into a prompt template.
+   *
+   * Deliberately does NOT go through `stateOf`: a discarded vault must still
+   * be printable. A debug path that throws is a debug path that gets wrapped
+   * in a `try` and then ignored. */
   toString(): string {
+    if (DISCARDED.has(this)) return "[Vault discarded]";
     return `[Vault ${stateOf(this).byOrdinal.size} entries]`;
   }
 
@@ -185,6 +202,12 @@ Object.defineProperty(Vault.prototype, INSPECT, {
 function stateOf(vault: Vault): VaultState {
   const state = STORE.get(vault);
   if (state === undefined) {
+    if (DISCARDED.has(vault)) {
+      throw new PseudonymError(
+        "refused: this vault was discarded when its round trip ended — a vault lives for " +
+          "exactly one withPseudonymisation() call and is destroyed on every exit from it",
+      );
+    }
     throw new PseudonymError(
       "refused: this object is not a Vault built by this module — its store does not exist, " +
         "and treating it as an empty vault would silently report a payload as carrying nothing",
@@ -308,4 +331,31 @@ export function sealVault(vault: Vault): Vault {
 
 export function isSealed(vault: Vault): boolean {
   return stateOf(vault).sealed;
+}
+
+/**
+ * ⛔ DESTROY THE STORE. After this, the Vault instance is an object with no
+ * state anywhere: `internValue`, `lookupOrdinal`, `vaultEntries`, `vaultTags`,
+ * `vaultClasses` and `size` all throw, and the values are unreachable from
+ * anything — including code inside this module.
+ *
+ * `withPseudonymisation` calls this in a `finally`, which is what makes "the
+ * vault does not outlive the round trip" a property of the code rather than a
+ * hope about garbage collection. Deleting beats waiting for the instance to
+ * become unreachable, because whether it has become unreachable depends on
+ * what the CALLER did with the references it was handed, and the whole point
+ * of that function is that it hands out none.
+ *
+ * Idempotent. There is no undo, for the same reason there is no `unseal`.
+ */
+export function discardVault(vault: Vault): void {
+  STORE.delete(vault);
+  DISCARDED.add(vault);
+}
+
+/** Whether `discardVault` has been called on this vault. For tests and for a
+ * caller inside this package that wants to assert the lifetime rather than
+ * trust it. Says nothing about the contents — there are none left. */
+export function isDiscarded(vault: Vault): boolean {
+  return DISCARDED.has(vault);
 }
