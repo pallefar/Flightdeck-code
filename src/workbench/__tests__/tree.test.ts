@@ -65,8 +65,8 @@ describe("buildTree", () => {
 
   it("puts tier-root files above subdirectories", () => {
     const names = buildTree(files)
-      .filter((n) => n.tier === "server" && n.type !== "tier")
-      .map((n) => (n.type === "dir" ? `${n.name}/` : n.name));
+      .filter((n) => n.tier === "server")
+      .map((n) => (n.type === "dir" ? `${n.name}/` : n.type === "file" ? n.name : ""));
     expect(names.indexOf("manifest.ts")).toBeLessThan(names.indexOf("routes/"));
   });
 

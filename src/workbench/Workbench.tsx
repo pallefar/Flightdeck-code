@@ -1,0 +1,180 @@
+/** The workbench shell — the only component that reads the store.
+ *
+ * ── WHY EXACTLY ONE COMPONENT SUBSCRIBES ────────────────────────────
+ * Every pane under this one takes plain props and returns markup. That is
+ * what makes them testable without a store, a provider or a DOM: render
+ * `GatePane` with a candidate and assert on the output. The reference
+ * implementation lets each component subscribe to its own atoms, which is
+ * a good shape when panes are independent — but here the diff pane is a
+ * function of two rounds, the preview of a round AND the enable layers,
+ * and the tree of a round AND the change set AND the findings. Those
+ * derivations have to agree with each other, and the cheapest way to
+ * guarantee that is for one component to derive them once and hand them
+ * down.
+ *
+ * `useSyncExternalStore` is the whole subscription. The store returns a
+ * frozen snapshot whose identity changes only on a real change, which is
+ * the contract that hook wants — see `store.ts` for why the no-op case is
+ * load-bearing rather than an optimisation. */
+import { useCallback, useMemo, useSyncExternalStore } from "react";
+import { ChatPane } from "./components/ChatPane";
+import { DiffPane } from "./components/DiffPane";
+import { FileTreePane } from "./components/FileTreePane";
+import { GatePane } from "./components/GatePane";
+import { PreviewPane } from "./components/PreviewPane";
+import { buildPreview } from "./preview/state";
+import {
+  changeByPath,
+  changeSet,
+  currentCandidate,
+  currentRound,
+  fileAt,
+  findingsByPath,
+  gateSummary,
+  treeNodes,
+} from "./selectors";
+import type { WorkbenchStore } from "./store";
+import { WORKBENCH_CSS } from "./theme";
+import type { WorkbenchView } from "./types";
+
+export interface WorkbenchProps {
+  readonly store: WorkbenchStore;
+  /** Called when a person submits a prompt. The workbench does not own the
+   * model: it opens the round, hands the caller the turn id, and lets the
+   * caller stream into it and settle it. That keeps every transport
+   * decision — fetch, SSE, a test double — outside the UI. */
+  readonly onPrompt: (text: string, turnId: string) => void;
+}
+
+export function Workbench({ store, onPrompt }: WorkbenchProps) {
+  const state = useSyncExternalStore(store.subscribe, store.getState, store.getState);
+
+  const round = currentRound(state);
+  const candidate = currentCandidate(state);
+  const summary = useMemo(() => gateSummary(candidate), [candidate]);
+  const findings = useMemo(() => findingsByPath(candidate), [candidate]);
+  const set = changeSet(state);
+
+  // A stable getter, so the adapter reads the CURRENT layers on every
+  // request rather than the ones captured when the preview was built —
+  // contract §5.2, never cache a boolean.
+  const layers = useCallback(() => store.getState().enable, [store]);
+  const preview = useMemo(
+    () => buildPreview({ candidate, layers }),
+    [candidate, layers],
+  );
+
+  const handlePrompt = useCallback(
+    (text: string) => {
+      const turnId = store.prompt(text);
+      if (turnId !== null) onPrompt(text, turnId);
+    },
+    [store, onPrompt],
+  );
+
+  // `count` and `tone` are explicitly `| undefined` rather than optional:
+  // under `exactOptionalPropertyTypes` an absent property and a present
+  // `undefined` one are different types, and these are computed.
+  const tabs: ReadonlyArray<{
+    id: WorkbenchView;
+    label: string;
+    count: number | undefined;
+    tone?: "error" | "warn";
+  }> = [
+    { id: "files", label: "Files", count: candidate?.files.length },
+    { id: "diff", label: "Diff", count: set === null ? undefined : set.changes.filter((c) => c.kind !== "unchanged").length },
+    { id: "preview", label: "Preview", count: undefined },
+    {
+      id: "gate",
+      label: "Gate",
+      count: summary.errors + summary.warnings || undefined,
+      ...(summary.errors > 0 ? { tone: "error" as const } : summary.warnings > 0 ? { tone: "warn" as const } : {}),
+    },
+  ];
+
+  return (
+    <div className="fd-wb">
+      <style>{WORKBENCH_CSS}</style>
+
+      <ChatPane
+        turns={state.turns}
+        rounds={state.rounds}
+        selectedRoundId={state.selectedRoundId}
+        busy={state.busy}
+        onSubmit={handlePrompt}
+        onSelectRound={(id) => store.selectRound(id)}
+      />
+
+      <main className="fd-main">
+        <div className="fd-tabs" role="tablist" aria-label="Workbench views">
+          {tabs.map((tab) => (
+            <button
+              key={tab.id}
+              type="button"
+              role="tab"
+              className="fd-tab"
+              aria-selected={state.view === tab.id}
+              onClick={() => store.setView(tab.id)}
+            >
+              {tab.label}
+              {tab.count !== undefined && tab.count > 0 && (
+                <span className={`fd-tab__count${tab.tone === "error" ? " fd-tab__count--error" : tab.tone === "warn" ? " fd-tab__count--warn" : ""}`}>
+                  {tab.count}
+                </span>
+              )}
+            </button>
+          ))}
+          <span className="fd-tabs__spacer" />
+          {round !== null && (
+            <span className="fd-tabs__id">
+              round #{round.ordinal} · {round.candidate.manifest.id} · {round.candidate.manifest.envVar}
+            </span>
+          )}
+        </div>
+
+        <div className="fd-body">
+          {candidate === null ? (
+            <div className="fd-empty">
+              <strong>No sub-app yet.</strong>
+              <span>
+                Describe what you want in the chat. Studio plans it against the sub-app contract, generates the
+                source, and runs the conformance gate before anything reaches this pane.
+              </span>
+            </div>
+          ) : state.view === "files" ? (
+            <FileTreePane
+              nodes={treeNodes(state)}
+              selectedPath={state.selectedPath}
+              changes={changeByPath(set)}
+              findings={findings}
+              collapsedDirs={state.collapsedDirs}
+              focusedRule={state.focusedRule}
+              file={fileAt(state, state.selectedPath)}
+              onSelect={(path) => store.selectFile(path)}
+              onToggle={(path) => store.toggleDir(path)}
+            />
+          ) : state.view === "diff" ? (
+            <DiffPane set={set} selectedPath={state.selectedPath} onSelect={(path) => store.selectFile(path)} />
+          ) : state.view === "preview" ? (
+            <PreviewPane
+              state={preview}
+              enable={state.enable}
+              onEnable={(patch) => store.setEnable(patch)}
+              onRevealFile={(path) => store.revealFile(path)}
+            />
+          ) : (
+            <GatePane
+              candidate={candidate}
+              summary={summary}
+              filter={state.severityFilter}
+              focusedRule={state.focusedRule}
+              onFilter={(filter) => store.setSeverityFilter(filter)}
+              onFocusRule={(rule) => store.focusRule(rule)}
+              onReveal={(path) => store.revealFile(path)}
+            />
+          )}
+        </div>
+      </main>
+    </div>
+  );
+}

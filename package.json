@@ -4,14 +4,17 @@
   "private": true,
   "type": "module",
   "description": "Prompt-to-mini-app builder for Flightdeck OS",
-  "engines": { "node": ">=20" },
+  "engines": {
+    "node": ">=20"
+  },
   "scripts": {
     "dev": "vite",
     "dev:server": "tsx watch server/index.ts",
     "build": "tsc -b && vite build",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "lint": "eslint ."
+    "lint": "eslint .",
+    "redteam": "tsx scripts/redteam-gate.ts"
   },
   "dependencies": {
     "fastify": "^5.2.0",
