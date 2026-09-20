@@ -36,13 +36,14 @@
  * either language — and because the MODEL may answer in either, so
  * `assessTier` can be run on model output too.
  *
- * Matching is on a STEM plus a bounded ending, over a lowercased,
- * umlaut-folded copy of both the text AND the list entry — so
- * `Geschäftsführer`, `Geschaeftsfuehrer`, `geschaftsfuhrer` and
- * `Geschäftsführerin` all hit. The full argument, and the stated cost of the
- * window, is at `signalStem` below. All three lists are compiled-in
- * constants, so a reported signal is loggable — it names a word from this
- * file, never a span of the scanned text.
+ * Matching is on THE WHOLE ENTRY plus one ending from a closed inflection
+ * list, over a lowercased, umlaut-folded copy of both the text AND the list
+ * entry — so `Geschäftsführer`, `Geschaeftsfuehrer`, `geschaftsfuhrer` and
+ * `Geschäftsführerin` all hit, while `Psychologe` does not hit `psychisch`
+ * and `behindert` does not hit `behinderung`. The full argument, and what the
+ * closed list costs, is at `signalPattern` below. All three lists are
+ * compiled-in constants, so a reported signal is loggable — it names a word
+ * from this file, never a span of the scanned text.
  */
 
 /** GDPR Art. 9 — the categories whose processing is prohibited absent a
@@ -56,9 +57,11 @@ export const SPECIAL_CATEGORY_SIGNALS: readonly string[] = [
   "arbeitsunfahigkeit",
   "krankmeldung",
   "krankschreibung",
-  // Separable-prefix participles. `signalStem` trims a TAIL, so it can never
-  // reach `krankgemeldet` from `krankmeldung` — the `ge` infix is not a tail.
-  // Carried as their own entries rather than pretended to be covered.
+  // Separable-prefix participles. An entry is matched as ITSELF plus an
+  // inflectional ending, so `krankgemeldet` is not reachable from
+  // `krankmeldung`. Carried as their own entries rather than pretended to be
+  // covered — the same answer this file gives for every derivation that is
+  // not the entry plus an ending.
   "krankgemeldet",
   "krankgeschrieben",
   "arztlich",
@@ -81,8 +84,13 @@ export const SPECIAL_CATEGORY_SIGNALS: readonly string[] = [
   "sick note",
   "medical certificate",
   "disability",
+  // English `-y` -> `-ies` and `-is` -> `-es` are not the entry plus an
+  // ending, so they are their own entries rather than reached by a stem.
+  "disabilities",
   "diagnosis",
+  "diagnoses",
   "pregnancy",
+  "pregnancies",
   "pregnant",
   "occupational health",
   // trade union membership
@@ -91,6 +99,7 @@ export const SPECIAL_CATEGORY_SIGNALS: readonly string[] = [
   "verdi",
   "ig metall",
   "trade union",
+  "trade unions",
   "union member",
   "union membership",
   // religion
@@ -239,7 +248,7 @@ function escapeRegExp(s: string): string {
 
 /**
  * ─────────────────────────────────────────────────────────────────────────
- * WHY MATCHING IS ON A STEM AND NOT ON A WHOLE WORD
+ * WHY AN ENTRY IS MATCHED AS ITSELF PLUS A BOUNDED INFLECTION
  * ─────────────────────────────────────────────────────────────────────────
  * It used to be `\b<entry>\b` — the entry as a whole word, both ends
  * anchored. That is one-representation anchoring again, and the representation
@@ -254,95 +263,123 @@ function escapeRegExp(s: string): string {
  * nominative singulars is a list of one spelling each, and the whole-word
  * anchor made that the only spelling that counted.
  *
- * So an entry is now matched as STEM + A BOUNDED ENDING:
+ * ⚠ THE FIRST FIX FOR THAT WAS TOO WIDE, AND THIS IS THE SECOND. It TRIMMED A
+ * DERIVATIONAL TAIL off the entry and then allowed up to five arbitrary
+ * letters after the remainder. The trimmed remainder is frequently a
+ * DIFFERENT WORD, so the window walked straight into unrelated vocabulary:
  *
- *   1. the entry is FOLDED (`foldForSignals`) before anything else. This also
- *      fixes a latent miss — the list was required to be "written already
- *      folded" and `sexuelle orientierung` was not (folding turns `ue` into
- *      `u`, so the entry could never match its own folded text).
- *   2. ONE derivational tail is trimmed if the entry is long enough and the
- *      remainder is still at least `STEM_MIN` characters: `krankmeldung` →
- *      `krankmeld`, `schwerbehindertenvertretung` → `schwerbehindertenvertret`,
- *      `krankheit` → `krank`, `prokurist` → `prokur`.
- *   3. the match is `\b` + stem + up to `SUFFIX_WINDOW` more letters + `\b`.
- *      BOTH ends are still anchored — the trailing `\b` is what keeps this a
- *      bounded ending rather than a prefix match, and it is why
- *      `bewerkstelligt` still does not fire anything.
+ *     schwanger    -> schwang   -> `schwangen`  (past tense of *schwingen*)
+ *     behinderung  -> behinder  -> `behindert`  (the ordinary verb *behindern*)
+ *     abteilung    -> abteil    -> `Abteil`     (a train compartment)
+ *     psychisch    -> psych     -> `Psychologe`
+ *     head of      -> head of   -> `head office`
  *
- * Entries shorter than `STEMMABLE_MIN` are matched as whole words exactly as
- * before. That is not timidity, it is the difference between a signal and
- * noise: `verdi` + an ending would fire on `verdient`, and `werk` + an ending
- * would fire on `Werkzeug`.
+ * The first two fire the Art. 9 floor — the one floor `assessTier` will not
+ * reduce — so a false positive there is the expensive kind: an ordinary
+ * sentence pins a whole document at tier 4 forever. A one-directional
+ * detector is allowed to be incomplete; it is NOT licensed to be wrong about
+ * words it never listed, because "a hit only refuses a reduction" stops being
+ * a cheap cost once the hit is unconditional.
  *
- * ⚠ STATED COST: the window admits compounds nobody listed — `sick note`
- * reaches `sick nothing`, `head of` reaches `head office`. Every one of those
- * is a FALSE POSITIVE IN THE SAFE DIRECTION: a hit only ever REFUSES a tier
- * reduction. A miss ships a document. The asymmetry is the whole reason these
- * lists are one-directional, and it is why the window is not tightened
- * further.
+ * So NOTHING IS TRIMMED ANY MORE. An entry is matched as:
  *
- * ⚠ STATED LIMIT: a stem is not a lemmatiser. Separable-prefix verb forms
- * (`krankgemeldet` from `Krankmeldung`) are NOT reachable by trimming a tail,
- * so the forms that matter in this domain are carried as their own entries
- * above rather than pretended to be covered.
+ *     `\b` + the FOLDED ENTRY IN FULL + one optional ending from
+ *     `SIGNAL_INFLECTIONS` + `\b`
+ *
+ * Both ends are still anchored, and the ending comes from a CLOSED LIST of
+ * German and English inflectional endings rather than from a window of
+ * arbitrary letters. That is what makes the match a form OF THE ENTRY instead
+ * of any word that happens to start with a fragment of it:
+ *
+ *     krankmeldung   + en     -> `Krankmeldungen`                ✓
+ *     betriebsrat    + in     -> `Betriebsrätin`                 ✓ (folded)
+ *     betriebsrat    + s      -> `Betriebsrats`                  ✓
+ *     werksleiter    + in     -> `Werksleiterin`                 ✓
+ *     abteilung      + en     -> `Abteilungen`                   ✓
+ *     schwanger      + e/en   -> `schwangere`, `schwangeren`     ✓
+ *     schwanger      + —      -> `schwangen`                     ✗ not a form
+ *     behinderung    + —      -> `behindert`                     ✗ not a form
+ *     abteilung      + —      -> `Abteil`                        ✗ not a form
+ *     psychisch      + —      -> `Psychologe`                    ✗ not a form
+ *     head of        + —      -> `head office`                   ✗ not a form
+ *
+ * ⚠ WHAT THAT COSTS, STATED: a derivation that is not the entry plus an
+ * ending is no longer reachable — `Schwerbehindertenvertreterin` cannot be
+ * produced from `…vertretung`, and `disabilities` cannot be produced from
+ * `disability`. Those forms are CARRIED AS THEIR OWN ENTRIES above, which is
+ * the same answer this file already gave for separable-prefix participles
+ * (`krankgemeldet`). A listed form is a form somebody decided on; a trimmed
+ * stem plus five letters was a form nobody had looked at.
+ *
+ * ⚠ AND ONE ENTRY IS AN ORDINARY VERB. English `plant` (and German `plant`,
+ * from *planen*) is a verb as often as it is a site, so `We plant trees` and
+ * `Die Abteilung plant eine Umstrukturierung` both fired the site signal.
+ * `NOUN_ONLY_SIGNALS` requires a determiner or preposition in front of those
+ * entries, which is the cheapest approximation of "used as a noun" that does
+ * not need a parser.
  */
 
-/** An entry must be at least this long before any ending is allowed. */
-const STEMMABLE_MIN = 6;
-/** What is left after trimming a tail must be at least this long. */
-const STEM_MIN = 5;
-/** How many extra letters may follow the stem before the word must end. */
-const SUFFIX_WINDOW = 5;
-
-/** German and English derivational/inflectional tails, LONGEST FIRST so that
- * `ungen` is trimmed before `en` and `erin` before `in`. Only one is ever
- * trimmed. Each is short enough that the window can still reach the entry's
- * own spelling, which is checked by `signalPattern`. */
-const DERIVATIONAL_TAILS: readonly string[] = [
-  "ungen",
-  "ung",
-  "heit",
-  "keit",
-  "isch",
-  "erin",
-  "ist",
-  "ern",
-  "en",
-  "er",
-  "in",
-  "es",
-  "is",
-  "e",
-  "s",
-  "y",
+/** German and English inflectional endings an entry may carry. A CLOSED list:
+ * every one of these turns the entry into a FORM OF THE ENTRY, never into a
+ * different word. Longest first for readability; the regex backtracks anyway. */
+const SIGNAL_INFLECTIONS: readonly string[] = [
+  "innen", // Betriebsrätinnen
+  "ern", // Werken
+  "nen", // Kolleginnen after a trailing -in entry
+  "en", // Krankmeldungen, Gewerkschaften
+  "es", // Betriebsrates, offices
+  "er", // Standorter, managers
+  "in", // Betriebsrätin, Werksleiterin
+  "e", // Standorte, schwangere
+  "n", // Diagnosen, Therapien
+  "s", // Betriebsrats, departments
 ];
 
 /**
- * The stem a signal entry is matched by. Exported so a test — and a reader —
+ * Entries that are an ordinary VERB in their own language as well as a noun
+ * on this list. They count only where a determiner or preposition puts them
+ * in noun position — `at the plant` yes, `we plant trees` no.
+ *
+ * Kept as a named set of TWO characters of policy rather than deleted from
+ * the list: `the plant` genuinely narrows a population and dropping it would
+ * be a miss, which is the expensive direction.
+ */
+const NOUN_ONLY_SIGNALS: ReadonlySet<string> = new Set(["plant"]);
+
+/** Determiners and prepositions that put the next word in noun position.
+ * Folded, lowercase — the same shape the scanned text is folded into. */
+const NOUN_DETERMINERS: readonly string[] = [
+  "the", "a", "an", "our", "your", "their", "its", "his", "her", "this", "that",
+  "these", "those", "each", "every", "one", "another", "any", "no",
+  "at", "in", "on", "from", "to", "of", "per", "near", "by", "for",
+  "der", "die", "das", "den", "dem", "des", "ein", "eine", "einen", "einem",
+  "eines", "einer", "im", "am", "zum", "zur", "vom", "unser", "unsere", "unserem",
+];
+
+/**
+ * The form a signal entry is matched by. Exported so a test — and a reader —
  * can see exactly what each entry was reduced to rather than trusting that
  * the reduction was sensible.
+ *
+ * ⚠ THE ANSWER IS NOW "NOTHING WAS REDUCED": this returns the folded entry IN
+ * FULL. It kept its name because the previous answer — a trimmed stem — was
+ * the defect, and a reader who checks this function is entitled to see that
+ * the reduction is gone rather than to find the function gone.
  */
 export function signalStem(signal: string): string {
-  const folded = foldForSignals(signal);
-  if (folded.length < STEMMABLE_MIN) return folded;
-  for (const tail of DERIVATIONAL_TAILS) {
-    if (tail.length > SUFFIX_WINDOW) continue; // the window could not reach the entry again
-    if (!folded.endsWith(tail)) continue;
-    const stem = folded.slice(0, folded.length - tail.length);
-    if (stem.length >= STEM_MIN && /[a-z]$/.test(stem)) return stem;
-  }
-  return folded;
+  return foldForSignals(signal);
 }
 
-/** `\b` stem `[a-z]{0,N}` `\b`. Both ends anchored: the window is a bounded
- * ENDING, never an open prefix. */
+/** `\b` entry `(?:ending)?` `\b`, with a determiner required in front of the
+ * handful of entries that are also ordinary verbs. Both ends anchored, and
+ * the ending comes from a closed list, so the match is always a FORM OF THE
+ * ENTRY and never a word that merely begins like one. */
 function signalPattern(signal: string): RegExp {
   const folded = foldForSignals(signal);
-  const stem = signalStem(signal);
-  if (stem === folded && folded.length < STEMMABLE_MIN) {
-    return new RegExp(`\\b${escapeRegExp(folded)}\\b`);
-  }
-  return new RegExp(`\\b${escapeRegExp(stem)}[a-z]{0,${SUFFIX_WINDOW}}\\b`);
+  const endings = SIGNAL_INFLECTIONS.map(escapeRegExp).join("|");
+  const word = `\\b${escapeRegExp(folded)}(?:${endings})?\\b`;
+  if (!NOUN_ONLY_SIGNALS.has(folded)) return new RegExp(word);
+  return new RegExp(`\\b(?:${NOUN_DETERMINERS.map(escapeRegExp).join("|")})\\s+${word}`);
 }
 
 /** Compiled once. The lists are module constants, so the cache is bounded by

@@ -165,6 +165,13 @@ export const STUDIO_ONLY: readonly string[] = ["studio/conversion.ts"];
  * else's build. */
 export const HOST_DEPENDENCIES: readonly string[] = ["zod", "fastify", "react", "react-dom/server"];
 
+/** Named separately from `HOST_DEPENDENCIES` because it is a devDependency and
+ * appears only in the three emitted host tests. A host that runs
+ * `tests/subapps/` already has it — that is what those tests are run BY — but
+ * listing it beside the runtime four would overstate what mounting Studio
+ * costs a production install. */
+export const TEST_ONLY_DEPENDENCIES: readonly string[] = ["vitest"];
+
 /** Node builtins the emitted tree may name, and where.
  *
  * TESTS ONLY. A test reading source files is not a route reaching a
@@ -191,7 +198,7 @@ export const REGISTRY_EDIT = {
  * their absence is the whole change: the last version of this document was
  * wrong by omission, not by anything it said. */
 export const INSTALL_STEPS: readonly string[] = [
-  "1. Copy the ten files in EMIT_MANIFEST from this package to their `target` paths in the host checkout. Create `server/subapps/studio/`, `web/src/subapps/studio/` and `tests/subapps/studio/`; nothing outside those three directories is touched.",
+  "1. Copy the 10 files in EMIT_MANIFEST from this package to their `target` paths in the host checkout. Create `server/subapps/studio/`, `web/src/subapps/studio/` and `tests/subapps/studio/`; nothing outside those three directories is touched.",
   "2. Make the REGISTRY_EDIT: add its `importLine` beside the other manifest imports in `server/subapps/registry.ts`, and its `entryLines` inside `SUBAPP_MANIFESTS`. That is the only existing host file this install changes.",
   "3. No vendoring. Nothing from `@spec`, `@codegen` or `@conformance` travels, and nothing under `packages/` is copied. The conversion those packages perform happens in Studio and reaches the host as a JSON bundle.",
   "4. No tsconfig change. The emitted tree uses relative imports with `.js` extensions and names only HOST_DEPENDENCIES, all four of which a Flightdeck host already has. No `paths` entry, no `include` change, no new package.json dependency.",

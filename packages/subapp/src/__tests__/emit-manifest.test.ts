@@ -28,6 +28,7 @@ import {
   STUDIO_ONLY,
   STUDIO_ROUTE_PREFIX,
   STUDIO_SUBAPP_ID,
+  TEST_ONLY_DEPENDENCIES,
 } from "../emit.js";
 import { studioManifest } from "../server/subapps/studio/manifest.js";
 
@@ -45,7 +46,7 @@ function walk(dir: string): string[] {
 }
 
 describe("the emit manifest", () => {
-  it("names ten files, and every one of them is on disk", () => {
+  it("names 10 files, and every one of them is on disk", () => {
     expect(EMIT_MANIFEST).toHaveLength(10);
     for (const file of EMIT_MANIFEST) {
       expect(existsSync(join(PACKAGE_SRC, file.source)), `missing: ${file.source}`).toBe(true);
@@ -133,8 +134,12 @@ describe("the emit manifest", () => {
       expect(/^@(spec|codegen|conformance)/.test(dependency)).toBe(false);
     }
     // A `node:` specifier is admitted for emitted TESTS only; a mounted module
-    // carrying one fails the host's own import-closure fence.
+    // carrying one fails the host's own import-closure fence. `vitest` is
+    // listed apart from the runtime four for the same reason: a devDependency
+    // in the runtime list would overstate what mounting Studio costs.
     expect([...NODE_BUILTINS_IN_TESTS].every((s) => s.startsWith("node:"))).toBe(true);
+    expect([...TEST_ONLY_DEPENDENCIES]).toEqual(["vitest"]);
+    for (const dependency of TEST_ONLY_DEPENDENCIES) expect(HOST_DEPENDENCIES).not.toContain(dependency);
   });
 
   it("names the registry edit as the ONE existing host file the install touches", () => {

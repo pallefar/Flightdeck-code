@@ -267,8 +267,23 @@ export function vaultEntries(vault: Vault): readonly VaultEntry[] {
   return [...stateOf(vault).byOrdinal.values()].sort((a, b) => a.ordinal - b.ordinal);
 }
 
-/** SAFE: tags only. A tag carries nothing about its value (see `tags.ts`), so
- * this is the shape a report or a log line may use. */
+/** Tags only. A tag carries nothing about its value (see `tags.ts`), so this
+ * is a shape a report or a log line may use.
+ *
+ * ⛔ NOT RE-EXPORTED FROM `index.ts` ANY MORE, and that is a fix rather than
+ * tidying. It returns the vault's WHOLE KEY RING, and it sat on the public
+ * surface next to `detokenize`, which trades tags for values:
+ *
+ *     detokenize(vaultTags(vault).join(" "), vault).text   // the whole vault
+ *
+ * A caller who wants tags for a report gets one per entry in
+ * `TokenizeResult.findings`, which is only reachable by the caller who
+ * supplied the source text in the first place. `detokenize` refuses a tag
+ * list on its own as well — see `VaultDumpError` — because removing an export
+ * cannot stop anyone from typing out seven class words and a counter.
+ *
+ * Kept here, module-internal, because `detokenize`'s own tests and this
+ * package's guards need the list. */
 export function vaultTags(vault: Vault): readonly string[] {
   return vaultEntries(vault).map((e) => e.tag);
 }

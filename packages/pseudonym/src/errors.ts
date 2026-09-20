@@ -98,6 +98,43 @@ export class VaultSealedError extends PseudonymError {
   }
 }
 
+/**
+ * `detokenize` was handed A TAG LIST RATHER THAN A REPLY.
+ *
+ * The attack this refuses is two lines long and used to be spelled entirely
+ * out of this package's own public surface:
+ *
+ *     const tags = vaultTags(vault);               // the whole key ring
+ *     detokenize(tags.join(" "), vault).text;      // every plaintext value
+ *
+ * `vaultTags` is no longer exported (see `index.ts`), but no export list can
+ * fix this on its own: a tag is seven ASCII words and a counter, so anyone
+ * holding a bare `Vault` can write the list out by hand. The surface fix and
+ * this refusal are one change in two places.
+ *
+ * ⛔ WHAT IS REFUSED, EXACTLY: an input that restores TWO OR MORE DISTINCT
+ * vault entries while containing nothing of the model's own — no word, no
+ * punctuation, nothing but whitespace, commas and semicolons between the
+ * tags. That is the shape of a key ring joined with a separator, and it is
+ * not the shape of a generated answer. `count` is a number; no tag and no
+ * value goes into the message.
+ *
+ * A caller who genuinely wants a bare list restored says so with
+ * `detokenize(text, vault, { onTagOnlyOutput: "restore" })`. The point is not
+ * that reading a vault is impossible — `vault.ts` has always said it is not —
+ * it is that reading one has to be ASKED FOR rather than fallen into.
+ */
+export class VaultDumpError extends PseudonymError {
+  constructor(readonly count: number) {
+    super(
+      `refused: this is a tag list, not a model reply — restoring it would read ${count} ` +
+        `vault entries out of an input that carries none of the model's own text. ` +
+        `Pass onTagOnlyOutput: "restore" if that is genuinely what you want.`,
+    );
+    this.name = "VaultDumpError";
+  }
+}
+
 /** `detokenize({ onRejected: "throw" })` found a tag it will not restore.
  * `reasons` are codes from a closed vocabulary, never model text. */
 export class TagIntegrityError extends PseudonymError {

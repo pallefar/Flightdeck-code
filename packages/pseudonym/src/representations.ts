@@ -77,6 +77,7 @@ export const TEXT_REPRESENTATIONS_DERIVED: readonly string[] = [
   "escape-decoded", // a backslash-u or backslash-x escape of the @
   "deobfuscated", // anna (at) acme (dot) de
   "base64-decoded", // YW5uYS5tdWVsbGVyQGFjbWUuZGU=
+  "format-folded", // anna<ZWSP>@acme.de, anna @ acme.de, annа@acme.de (Cyrillic а)
   "transliteration-folded", // Mueller when the caller declared Müller
 ];
 
@@ -217,23 +218,63 @@ function escapeDecode(text: string): string {
 /**
  * `anna (at) acme (dot) de` → `anna@acme.de`.
  *
- * Two rules, and the split between them is the false-positive argument:
+ * Three rules, and the split between them is the false-positive argument:
  *
  *   BRACKETED separators are unambiguous. `(at)`, `[at]`, `{at}`, `(dot)`,
  *   `[punkt]` do not occur in prose for any other reason, so they are
  *   rewritten wherever they appear.
  *
- *   BARE `at` and `dot` are ordinary English words, so they are rewritten
- *   only inside a span that already has the SHAPE of an address — a local
- *   part, the separator, and a domain that ends in a real-looking TLD.
- *   "look at me" is not rewritten; "anna at acme dot de" is.
+ *   A SPELLED-OUT `dot` is nearly as unambiguous: `acme dot de` is not a
+ *   sentence in either language this package reads, so `local at domain dot
+ *   tld` is rewritten on sight.
  *
- * ⚠ STATED COST: "write to sales at acme.de" IS rewritten, because that
- * phrasing is an address far more often than it is a sentence. The cost of
- * the false positive is a refusal to reduce a tier (or a loud refusal to
- * tokenize); the cost of the false negative is an address on the wire. Those
- * are not comparable, and this is the side to be wrong on.
+ *   A BARE `at` in front of an already-dotted domain is the dangerous one,
+ *   because `at` is the commonest preposition in English and a dotted domain
+ *   is ordinary prose content. THIS RULE CAUSED A REGRESSION AND IS THE
+ *   REASON THE GATE BELOW EXISTS:
+ *
+ *       tokenize("I looked at github.com and found nothing.")
+ *         → the reading "I@github.com" → `email` → ResidualPiiError THROWN
+ *
+ *   A clean sentence took the caller down. A false positive that WARNS costs
+ *   a tier reduction; a false positive that THROWS costs the request, and the
+ *   two are not the same size — the asymmetry argument that licenses this
+ *   whole file runs the other way once a derived READING can throw on text
+ *   that is clean as written.
+ *
+ * ⚠ SO A BARE `at` NEEDS CORROBORATION, one of exactly two kinds:
+ *     - the local part is SHAPED LIKE A LOCAL PART: it carries a `.`, `_`,
+ *       `%`, `+` or a digit (`anna.mueller at acme.de`), or
+ *     - the span is introduced by a MAIL CUE that is adjacent to it, with
+ *       nothing but a connective between (`E-Mail: sales at acme.de`,
+ *       `write to sales at acme.de`, `erreichbar unter sales at acme.de`).
+ *   `I looked at github.com`, `we met at acme.de yesterday` and
+ *   `redirect at example.com` have neither and are left exactly as written.
+ *
+ * ⚠ STATED COST, AND IT IS A REAL ONE: a bare role mailbox with no cue —
+ * `sales at acme.de` standing alone in a sentence — is no longer read as an
+ * address. That is a miss, and misses are the expensive direction. It is
+ * accepted here because the alternative is a hard refusal fired by the most
+ * common preposition in the language, and because every OTHER reading in this
+ * file is a MECHANICAL DECODING (percent, entity, escape, base64, NFKC,
+ * format characters) whose inverse is a function rather than a guess. Those
+ * keep their refusal; this one heuristic had to earn its.
  */
+
+/** A local part that is shaped like a local part rather than like a word. */
+const ADDRESS_SHAPED_LOCAL = /[._%+]|\d/;
+
+/** A mail cue IMMEDIATELY before the span — cue, then at most a connective
+ * and punctuation, then the local part. Anchored at the end of the text that
+ * precedes the match, so "contact us — I looked at github.com" does not
+ * qualify: there is a clause between the cue and the `at`. */
+const MAIL_CUE_BEFORE =
+  /\b(?:e-?mails?|mail(?:adresse|address)?|kontakt|contact|erreichbar|schreib(?:en|t|e)?|write|reach)\b[\s:.,\u2013-]*(?:to|an|unter|us|me|uns|at|per)?[\s:.,\u2013-]*$/i;
+
+function bareAtIsAnAddress(local: string, before: string): boolean {
+  return ADDRESS_SHAPED_LOCAL.test(local) || MAIL_CUE_BEFORE.test(before);
+}
+
 function deobfuscate(text: string): string {
   return (
     text
@@ -245,10 +286,86 @@ function deobfuscate(text: string): string {
         /\b([A-Za-z0-9._%+-]{1,64})\s+at\s+([A-Za-z0-9-]{1,63})\s+(?:dot|punkt)\s+([A-Za-z]{2,24})\b/gi,
         "$1@$2.$3",
       )
-      // local AT domain.tld
+      // local AT domain.tld — ONLY with corroboration; see the header.
       .replace(
         /\b([A-Za-z0-9._%+-]{1,64})\s+at\s+((?:[A-Za-z0-9-]{1,63}\.)+[A-Za-z]{2,24})\b/gi,
-        "$1@$2",
+        (raw: string, local: string, domain: string, offset: number, whole: string) =>
+          // Only the 64 characters immediately before the span: the cue has to
+          // be adjacent to count, and slicing the whole prefix at every match
+          // would make a long document quadratic.
+          bareAtIsAnAddress(local, whole.slice(Math.max(0, offset - 64), offset))
+            ? `${local}@${domain}`
+            : raw,
+      )
+  );
+}
+
+/**
+ * ⭐ THE INVISIBLE-CHARACTER READING: format characters stripped, whitespace
+ * inside an address collapsed, confusable letters folded to Latin.
+ *
+ * ─────────────────────────────────────────────────────────────────────────
+ * THE DEFECT THIS CLOSES
+ * ─────────────────────────────────────────────────────────────────────────
+ * Every decoder above rewrites a SPELLING of a character. None of them
+ * removes a character that has no spelling at all, and NFKC does not either:
+ * Unicode general category Cf (ZERO WIDTH SPACE, SOFT HYPHEN, ZWJ/ZWNJ, BOM,
+ * the bidi controls) survives normalization by design. Nor did any reading
+ * collapse whitespace, so a line break did the same job:
+ *
+ *     "Kontakt: anna\u200B@acme.de"   → text UNCHANGED, no refusal
+ *     "Kontakt: anna @acme.de"        → text UNCHANGED, no refusal
+ *     "Kontakt: anna\n@acme.de"       → text UNCHANGED, no refusal
+ *     assessTier(any of them)         → tier 2, "no-personal-data-in-payload"
+ *
+ * The same hole swallowed a HOMOGLYPH: `annа@acme.de` with a Cyrillic `а`
+ * before the `@` is not an email to the host's `[A-Za-z0-9._%+-]+@…` pattern,
+ * and nothing folded it. It belongs in this reading and not in its own,
+ * because it is the same defect — a character that LOOKS like part of an
+ * address but is not the byte the scanner is anchored on.
+ *
+ * ⚠ BOUNDED ON PURPOSE. Whitespace is collapsed only where an address is
+ * already in evidence — immediately around an `@`, and inside the dotted
+ * domain that follows one. Collapsing whitespace everywhere would MANUFACTURE
+ * findings out of prose ("Punkt 1. 2. 2024" would become a `date`), and a
+ * reading that invents a finding is the regression this file just had.
+ */
+
+/** Unicode Cf (format) plus the variation selectors and the Mongolian
+ * separators. Every one of them is invisible and none of them is removed by
+ * NFKC. */
+const INVISIBLE_CHARS = /[\p{Cf}\uFE00-\uFE0F\u180B-\u180E]/gu;
+
+/** Cyrillic and Greek letters that are drawn like Latin ones. A closed table,
+ * not a general confusable database: these are the letters an address is
+ * spelled with. */
+const CONFUSABLES: Readonly<Record<string, string>> = {
+  "\u0430": "a", "\u0435": "e", "\u043E": "o", "\u0440": "p", "\u0441": "c",
+  "\u0443": "y", "\u0445": "x", "\u0456": "i", "\u0458": "j", "\u0455": "s",
+  "\u04CF": "l", "\u0501": "d", "\u043A": "k", "\u043C": "m", "\u043D": "h",
+  "\u0442": "t", "\u0432": "b",
+  "\u0410": "A", "\u0415": "E", "\u041E": "O", "\u0420": "P", "\u0421": "C",
+  "\u0423": "Y", "\u0425": "X", "\u0406": "I", "\u0408": "J", "\u0405": "S",
+  "\u041A": "K", "\u041C": "M", "\u041D": "H", "\u0422": "T", "\u0412": "B",
+  "\u03B1": "a", "\u03B5": "e", "\u03BF": "o", "\u03C1": "p", "\u03C5": "u",
+  "\u03B9": "i", "\u03BA": "k", "\u03C4": "t", "\u03C7": "x", "\u03BD": "v",
+  "\u0391": "A", "\u0392": "B", "\u0395": "E", "\u0397": "H", "\u0399": "I",
+  "\u039A": "K", "\u039C": "M", "\u039D": "N", "\u039F": "O", "\u03A1": "P",
+  "\u03A4": "T", "\u03A5": "Y", "\u03A7": "X",
+};
+
+const CONFUSABLE_RE = new RegExp(`[${Object.keys(CONFUSABLES).join("")}]`, "g");
+
+function formatFold(text: string): string {
+  const stripped = text.replace(INVISIBLE_CHARS, "").replace(CONFUSABLE_RE, (ch) => CONFUSABLES[ch] ?? ch);
+  return (
+    stripped
+      // whitespace hugging an `@` — the separator is in evidence, so this is
+      // inside an address and not between two sentences
+      .replace(/[\s]*@[\s]*/g, "@")
+      // …and inside the dotted domain that follows one: `@acme . de`
+      .replace(/@((?:[A-Za-z0-9-]+[ \t]*\.[ \t]*)+[A-Za-z]{2,24})\b/g, (_raw, domain: string) =>
+        `@${domain.replace(/[ \t]+/g, "")}`,
       )
   );
 }
@@ -334,6 +451,7 @@ export function derivedReadings(
     { name: "escape-decoded", run: escapeDecode },
     { name: "deobfuscated", run: deobfuscate },
     { name: "base64-decoded", run: (t) => base64Decode(t, budget) },
+    { name: "format-folded", run: formatFold },
   ];
 
   let frontier: string[] = [text];

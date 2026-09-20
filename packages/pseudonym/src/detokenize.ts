@@ -31,6 +31,26 @@
  *                  unescaped form.
  *   - WHITESPACE:  `< person : 1 >` → dropped.
  *
+ * ─────────────────────────────────────────────────────────────────────────
+ * AND IT IS NOT A VAULT READER
+ * ─────────────────────────────────────────────────────────────────────────
+ * The function restores a REPLY. Fed a list of tags instead, it used to
+ * restore that too — which made it, together with the `vaultTags` that the
+ * package then exported, a two-line reader for every plaintext value in any
+ * `Vault` anyone happened to be holding. `index.ts` claimed one line above
+ * those exports that "the obvious way to use this package is also the safe
+ * one", and that sentence was false while both were on the surface.
+ *
+ * Both halves are fixed: `vaultTags` is gone from `index.ts`, and an input
+ * that restores two or more DISTINCT entries while carrying nothing of the
+ * model's own — nothing but whitespace, commas and semicolons between the
+ * tags — is refused with `VaultDumpError`. `onTagOnlyOutput: "restore"` is
+ * there for the caller who meant it. See `TAG_LIST_CARRIER` for how narrow
+ * the shape is, and why it has to be narrow.
+ *
+ * ─────────────────────────────────────────────────────────────────────────
+ * THE MANGLE POLICY, CONTINUED
+ * ─────────────────────────────────────────────────────────────────────────
  * FAIL LOUDLY, restoring nothing, when undoing it would be a GUESS:
  *   - `<person:007>` — "strip leading zeros" is an assumption about what the
  *     model meant. Wrong, it restores one person's name where another's
@@ -59,7 +79,7 @@
  * tricked into producing.
  */
 
-import { TagIntegrityError } from "./errors";
+import { TagIntegrityError, VaultDumpError } from "./errors";
 import { type TagClass, type TagMangle, findTagCandidates } from "./tags";
 import { Vault, lookupOrdinal, vaultEntries } from "./vault";
 
@@ -123,6 +143,23 @@ export interface DetokenizeOptions {
    *      as a failed generation and retry.
    */
   readonly onRejected?: "leave" | "strip" | "throw" | undefined;
+
+  /**
+   * What to do when the input is A TAG LIST RATHER THAN A REPLY — two or more
+   * distinct vault entries with nothing of the model's own between them.
+   *
+   *   "refuse" (default) — `VaultDumpError`. See `TAG_LIST_CARRIER` below for
+   *      the exact shape, and `errors.ts` for why the default is this way
+   *      round: `detokenize` exists to restore a generated answer, and the
+   *      one thing it must not be is a one-line vault reader for anybody
+   *      holding a bare `Vault`.
+   *   "restore" — restore it anyway. For the caller who really did ask the
+   *      model for a bare list, and for the caller who is deliberately
+   *      reading the vault. Reading a vault is not impossible and never was
+   *      (`vault.ts` says so); this makes it a thing you SAY, not a thing you
+   *      fall into.
+   */
+  readonly onTagOnlyOutput?: "refuse" | "restore" | undefined;
 }
 
 export interface DetokenizeResult {
@@ -130,8 +167,24 @@ export interface DetokenizeResult {
   readonly report: DetokenizeReport;
 }
 
+/**
+ * What is left of the model's output once the tags are taken out of it, in
+ * the case that says "this was a key ring, not an answer": WHITESPACE, COMMAS
+ * AND SEMICOLONS ONLY — the separators `Array.prototype.join` is called with.
+ *
+ * Deliberately narrow. A bullet, a dash, a bracket or a single word is the
+ * model contributing something, and it is enough to make the input a reply:
+ * `<person:2> <<email:1>>` — a tokenized signature block round-tripping
+ * through its own vault — carries `<` and `>` and is not a dump. The guard
+ * has to be narrow in that direction, because refusing a legitimate
+ * restoration silently loses an answer, and this package's own rule is that a
+ * false positive which THROWS is worse than one which warns.
+ */
+const TAG_LIST_CARRIER = /^[\s,;]*$/;
+
 export function detokenize(modelOutput: string, vault: Vault, opts: DetokenizeOptions = {}): DetokenizeResult {
   const onRejected = opts.onRejected ?? "leave";
+  const onTagOnlyOutput = opts.onTagOnlyOutput ?? "refuse";
 
   const restored = new Map<string, { count: number; mangles: Set<TagMangle> }>();
   const rejected = new Map<string, RejectedTag & { count: number }>();
@@ -151,9 +204,15 @@ export function detokenize(modelOutput: string, vault: Vault, opts: DetokenizeOp
   const candidates = findTagCandidates(modelOutput);
   let text = "";
   let last = 0;
+  /** Everything the model wrote that was NOT a tag. Accumulated here rather
+   * than recovered afterwards, because after restoration the gaps and the
+   * values are the same string. */
+  let carrier = "";
 
   for (const { raw, index, verdict } of candidates) {
-    text += modelOutput.slice(last, index);
+    const gap = modelOutput.slice(last, index);
+    text += gap;
+    carrier += gap;
     last = index + raw.length;
 
     if (verdict.kind === "degraded") {
@@ -186,6 +245,13 @@ export function detokenize(modelOutput: string, vault: Vault, opts: DetokenizeOp
     text += entry.value;
   }
   text += modelOutput.slice(last);
+  carrier += modelOutput.slice(last);
+
+  // ⛔ A TAG LIST IS NOT A REPLY. Checked before anything is returned, so a
+  // refusal never hands back the values it refused to hand back.
+  if (onTagOnlyOutput === "refuse" && restored.size >= 2 && TAG_LIST_CARRIER.test(carrier)) {
+    throw new VaultDumpError(restored.size);
+  }
 
   const entries = vaultEntries(vault);
   const dropped = entries.filter((e) => !restored.has(e.tag)).map((e) => e.tag);

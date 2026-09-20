@@ -52,6 +52,7 @@ export {
   STUDIO_ONLY,
   STUDIO_ROUTE_PREFIX,
   STUDIO_SUBAPP_ID,
+  TEST_ONLY_DEPENDENCIES,
   type EmittedFile,
 } from "./emit.js";
 

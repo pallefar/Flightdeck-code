@@ -33,7 +33,14 @@ import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import ts from "typescript";
-import { EMIT_MANIFEST, HOST_DEPENDENCIES, HOST_STANDINS, NODE_BUILTINS_IN_TESTS, STUDIO_ONLY } from "../emit.js";
+import {
+  EMIT_MANIFEST,
+  HOST_DEPENDENCIES,
+  HOST_STANDINS,
+  NODE_BUILTINS_IN_TESTS,
+  STUDIO_ONLY,
+  TEST_ONLY_DEPENDENCIES,
+} from "../emit.js";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const PACKAGE_SRC = resolve(HERE, "..");
@@ -164,9 +171,8 @@ describe("the emitted tree is self-contained", () => {
   });
 
   it("names only packages a Flightdeck host already has", () => {
-    const unexpected = [...closure.bare].filter(
-      (specifier) => !specifier.startsWith("node:") && !HOST_DEPENDENCIES.includes(specifier) && specifier !== "vitest",
-    );
+    const allowed = new Set([...HOST_DEPENDENCIES, ...TEST_ONLY_DEPENDENCIES]);
+    const unexpected = [...closure.bare].filter((specifier) => !specifier.startsWith("node:") && !allowed.has(specifier));
     expect(unexpected, "a host would have to install these before Studio would build").toEqual([]);
   });
 

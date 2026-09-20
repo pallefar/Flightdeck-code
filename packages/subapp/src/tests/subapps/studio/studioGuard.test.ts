@@ -30,7 +30,7 @@ import { describe, expect, it } from "vitest";
 import fastify, { type FastifyInstance } from "fastify";
 import { STUDIO_SUBAPP_ID, StudioDisabledError, requireStudioEnabled } from "../../../server/subapps/studio/guard.js";
 import { registerStudioRoutes } from "../../../server/subapps/studio/routes/index.js";
-import type { RegisterRoutesCtx, SubAppCapabilities } from "../../../server/subapps/types.js";
+import type { RegisterRoutesCtx } from "../../../server/subapps/types.js";
 
 const SUBAPP_DIR = resolve(dirname(fileURLToPath(import.meta.url)), "../../../server/subapps/studio");
 
@@ -70,10 +70,11 @@ function buildApp(): { app: FastifyInstance; adapterRequests: string[] } {
   const adapterRequests: string[] = [];
   const ctx: RegisterRoutesCtx = {
     capabilitiesFor: async (workspaceId: string) => {
+      // Recorded AND fatal. If a handler ever gets this far on a refused
+      // request, the test fails loudly rather than on an assertion later that
+      // somebody might soften.
       adapterRequests.push(workspaceId);
       throw new Error("the adapter must never be resolved for a refused request");
-      // eslint-disable-next-line no-unreachable
-      return undefined as unknown as SubAppCapabilities;
     },
   };
   const app = fastify();

@@ -51,13 +51,39 @@
  *    strictly by vault lookup.
  *
  * ─────────────────────────────────────────────────────────────────────────
- * WHAT IS DELIBERATELY NOT EXPORTED
+ * WHAT IS DELIBERATELY NOT EXPORTED, AND THE CLAIM THAT DEPENDS ON IT
  * ─────────────────────────────────────────────────────────────────────────
  * `vaultEntries`, `lookupOrdinal` and `internValue` read or write the values.
  * `detokenize` and `assessTier` need them and import them directly from
- * `./vault`; they are not part of the package's surface, so the obvious way
- * to use this package is also the safe one. That is a guard rail, not a
- * boundary — see the header of `vault.ts` for exactly what is and is not
+ * `./vault`; they are not part of the package's surface.
+ *
+ * ⚠ `vaultTags` USED TO BE ON THIS SURFACE AND IS NOT ANY MORE. It returned
+ * the vault's whole tag list, and it sat one export below `detokenize`, which
+ * trades tags for values. Together they were a two-line reader for every
+ * plaintext value in any `Vault` a caller happened to be holding:
+ *
+ *     detokenize(vaultTags(vault).join(" "), vault).text   // the whole vault
+ *
+ * The sentence that used to stand here — "the obvious way to use this package
+ * is also the safe one" — was therefore false as written, so the SURFACE was
+ * changed rather than the sentence. A caller who wants tags for a report
+ * already has them: `TokenizeResult.findings` carries one per entry, and
+ * those are available only to the caller who supplied the source text in the
+ * first place. `vaultClasses` stays: a class name is a compiled-in constant
+ * and cannot be traded back for anything.
+ *
+ * Removing an export is not on its own enough, and pretending otherwise would
+ * be the same overclaim again: a tag is a word from a seven-word vocabulary
+ * plus a counter, so anyone holding a bare `Vault` can write the list out by
+ * hand. `detokenize` therefore refuses an input that is a tag list rather
+ * than a reply (`VaultDumpError`), and takes `onTagOnlyOutput: "restore"` from
+ * a caller who means it.
+ *
+ * ⚠ WHAT IS CLAIMED, EXACTLY: the obvious way to use this package is also the
+ * safe one, and reading a vault has to be ASKED FOR rather than fallen into.
+ * NOT that a vault cannot be read — anything in this process can
+ * `import { vaultEntries } from "./vault"`. That is a guard rail, not a
+ * boundary; see the header of `vault.ts` for exactly what is and is not
  * claimed.
  */
 
@@ -67,6 +93,7 @@ export {
   TagCollisionError,
   TagIntegrityError,
   VaultCapacityError,
+  VaultDumpError,
   VaultSealedError,
   VaultSerializationError,
 } from "./errors";
@@ -82,10 +109,11 @@ export {
   mintTag,
 } from "./tags";
 
-/** The handle only. The store, and every function that can read it, stay in
- * `./vault`. `size` and `toString()` are the whole of what a Vault will tell
- * you about itself, and `JSON.stringify` on one throws. */
-export { Vault, vaultClasses, vaultTags } from "./vault";
+/** The handle only. The store, and every function that can read it — INCLUDING
+ * `vaultTags`, which handed out the whole key ring — stay in `./vault`.
+ * `size`, `toString()` and `vaultClasses` are the whole of what a Vault will
+ * tell you about itself, and `JSON.stringify` on one throws. */
+export { Vault, vaultClasses } from "./vault";
 
 export { type TokenizeFinding, type TokenizeOptions, type TokenizeResult, tokenize } from "./tokenize";
 
@@ -137,8 +165,10 @@ export {
 } from "./host-mirror";
 
 /** Named so a caller can see which words a refusal was built from, and
- * `signalStem` so they can see what each entry was actually reduced to
- * rather than trusting that the reduction was sensible. */
+ * `signalStem` so they can see what each entry is actually matched by rather
+ * than trusting that the reduction was sensible — the answer is now "the
+ * whole entry", because a trimmed stem plus an open window read `schwangen`
+ * as `schwanger` and `Psychologe` as `psychisch`. */
 export {
   PERSON_REFERENT_SIGNALS,
   QUASI_IDENTIFIER_SIGNALS,
