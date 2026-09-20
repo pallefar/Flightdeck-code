@@ -105,6 +105,7 @@
  */
 
 import { admitTierClaim } from "./tier-claim";
+import { utf8ByteLength } from "./utf8";
 import {
   AI_TASKS,
   COUNT_LADDER,
@@ -131,7 +132,7 @@ import {
   admitCoverageList,
   provenanceStatementCode,
 } from "./coverage";
-import { DEFAULT_MODEL } from "../../providers/src/config";
+import { DEFAULT_MODEL } from "../../providers/src/models";
 import { PiiRefusalError, SCANNED_CLASSES, assertNoResidualPii, residualPiiFindings } from "./host-scan";
 import {
   ENVELOPE_CLASSES_NOT_CHECKED,
@@ -744,7 +745,7 @@ export function buildEnvelope(input: unknown, opts: BuildOptions = {}): BuildRes
   }
 
   const wire = JSON.stringify({ task, provider, model, facts });
-  const bytes = Buffer.byteLength(wire, "utf8");
+  const bytes = utf8ByteLength(wire);
   // ⚠ EFFECTIVELY UNREACHABLE TODAY, stated rather than hidden. The host keeps
   // this cap because its `facts` is a `Record<string, AiFact>` with no breadth
   // limit — "nothing stops a caller adding 10,000 counts". Here the KEYS are

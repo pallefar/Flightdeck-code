@@ -73,6 +73,88 @@ describe("pure.ts — what a mounted sub-app may import", () => {
     }
   });
 
+  /**
+   * ⭐ THE FENCE ABOVE WALKS IMPORT LINES, AND A GLOBAL HAS NONE.
+   *
+   * `Buffer.byteLength(...)` reaches the `buffer` builtin with no import to
+   * find, and `process.env` reaches nothing at all in a browser — it is
+   * simply undefined. Both were sitting in this closure while every case in
+   * this file was green: `envelope/src/build.ts`, `classify.ts` and
+   * `names.ts` used `Buffer`, and `providers/src/config.ts` — pulled in by
+   * ONE imported constant — had `process.env` as a default parameter.
+   *
+   * The fence was not wrong. It was looking at the only thing it could see.
+   */
+  const NODE_ONLY_GLOBALS = [
+    "Buffer",
+    "process",
+    "__dirname",
+    "__filename",
+    "require",
+    "module",
+    "exports",
+    "global",
+    "setImmediate",
+    "clearImmediate",
+  ];
+
+  /**
+   * Comments and quoted strings come out first, and both removals were
+   * needed: `lists.ts` has the STRING "process" in a denylist of dangerous
+   * identifiers, which is data about a global rather than a use of one, and
+   * several files discuss `Buffer` in prose. Template literals are left in
+   * place deliberately — a `${...}` hole is executable code, and stripping
+   * it would hide exactly the kind of use this case exists to find.
+   */
+  function stripFor(source: string): string {
+    return source
+      .replace(/\/\*[\s\S]*?\*\//g, "")
+      .replace(/\/\/[^\n]*/g, "")
+      .replace(/"(?:[^"\\\n]|\\.)*"/g, '""')
+      .replace(/'(?:[^'\\\n]|\\.)*'/g, "''");
+  }
+
+  const executableSource = (file: string): string => stripFor(fs.readFileSync(path.join(SRC, file), "utf8"));
+
+  it("⭐ reaches no node-only GLOBAL either — the hole the import walk cannot see", () => {
+    const hits: string[] = [];
+    for (const file of closure.files) {
+      const source = executableSource(file);
+      for (const name of NODE_ONLY_GLOBALS) {
+        // `\b` keeps `ArrayBuffer` and `globalThis` out: neither has a word
+        // boundary before `Buffer` / after `global`.
+        if (new RegExp(`\\b${name}\\b`).test(source)) hits.push(`${file}: ${name}`);
+      }
+    }
+    expect(hits).toEqual([]);
+  });
+
+  it("the global scan can actually see one — and knows what is NOT one", () => {
+    // ⚠ A POSITIVE CONTROL, because the case above asserts an EMPTY list and
+    // an empty list is what a scanner that matches nothing also produces.
+    // The first version of this control read `approval.ts` and looked for
+    // `node:` — which the quote-stripping had already turned into `""`. It
+    // failed honestly; a control that had passed for that reason would have
+    // been worse than none.
+    const scan = (src: string): string[] =>
+      NODE_ONLY_GLOBALS.filter((n) => new RegExp(`\\b${n}\\b`).test(stripFor(src)));
+
+    // Real uses — every one of these was in the closure before this commit.
+    expect(scan('const n = Buffer.byteLength(w, "utf8");')).toContain("Buffer");
+    expect(scan("function f(env = process.env) {}")).toContain("process");
+    expect(scan("const p = __dirname;")).toContain("__dirname");
+    expect(scan("const x = require('fs');")).toContain("require");
+
+    // Not uses, and each one is a false positive this scan would otherwise
+    // have: `ArrayBuffer` and `globalThis` share a prefix or suffix with a
+    // banned name, and `lists.ts` legitimately holds "process" as DATA.
+    expect(scan("if (ArrayBuffer.isView(value)) return;")).toEqual([]);
+    expect(scan("const g = globalThis.crypto;")).toEqual([]);
+    expect(scan('const DANGEROUS = ["process", "Buffer"];')).toEqual([]);
+    expect(scan("// Buffer.byteLength is what this replaced\nconst n = 1;")).toEqual([]);
+    expect(scan("/** uses process.env */\nconst n = 1;")).toEqual([]);
+  });
+
   it("⭐ the Node barrel DOES reach crypto, and that is correct", () => {
     // The guarantee is a split, not an absence. If this goes green-by-empty
     // the split has collapsed and `pure.ts` is passing for the wrong reason.

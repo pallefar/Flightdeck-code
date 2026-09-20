@@ -58,7 +58,7 @@
  * own limits: "raising this is a governance change, not a tuning knob".
  */
 
-import { DEFAULT_MODEL } from "../../providers/src/config";
+import { DEFAULT_MODEL } from "../../providers/src/models";
 
 // ─────────────────────────────────────────────────────────────────────────
 // Kinds

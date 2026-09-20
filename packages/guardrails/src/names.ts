@@ -415,7 +415,26 @@ function decodeBase64(s: string): string | null {
   const normalised = compact.replace(/-/g, "+").replace(/_/g, "/");
   if (normalised.replace(/=+$/, "").length % 4 === 1) return null;
   try {
-    const decoded = Buffer.from(normalised, "base64").toString("utf8");
+    // `atob` + `TextDecoder` rather than `Buffer`, for the reason in
+    // `envelope/src/utf8.ts`. `atob` is STRICTER than `Buffer.from(_, "base64")`,
+    // which silently skips characters outside the alphabet — but `BASE64_SHAPE`
+    // has already rejected those, and a throw here is caught below and read as
+    // "not base64", which is the same answer Buffer's leniency would have to
+    // reach the long way round.
+    // ⚠ AND THE PADDING IS REBUILT, which is not cosmetic. `Buffer.from(_,
+    // "base64")` decodes a string whose padding is wrong — "…g2n==" where
+    // the length calls for one "=" — and `atob` throws on it. Measured
+    // against the old path over 13,378 shaped inputs, that was the ONLY
+    // remaining difference, and it ran the wrong way: 24 strings that
+    // `Buffer` decoded to clean text became "not base64", so a name hidden
+    // in sloppily-padded base64 would have stopped being found. A detector
+    // that gets quieter is the one kind of regression a green suite reports
+    // as a pass.
+    const stripped = normalised.replace(/=+$/, "");
+    const binary = atob(stripped + "=".repeat((4 - (stripped.length % 4)) % 4));
+    const octets = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i += 1) octets[i] = binary.charCodeAt(i);
+    const decoded = new TextDecoder("utf-8").decode(octets);
     if (decoded.includes("�")) return null;
     return looksLikeText(decoded) ? decoded : null;
   } catch {

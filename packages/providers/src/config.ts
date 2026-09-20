@@ -7,14 +7,14 @@
  * read unless you call `anthropicConfigFromEnv` by name.
  */
 
+import { DEFAULT_MODEL } from "./models";
 import type { Effort } from "./types";
 import { isEffort } from "./types";
 
-/**
- * ⛔ EXACTLY THIS STRING. No date suffix. `claude-opus-5-20260401` and friends
- * are not real model ids — a date-suffixed variant is a 404, not an alias.
- */
-export const DEFAULT_MODEL = "claude-opus-5";
+// The id itself lives in `models.ts` and is re-exported here so callers of
+// this module are unaffected. See that file for why it is separate: this one
+// reads `process.env`, and `packages/envelope` must not reach it.
+export { DEFAULT_MODEL } from "./models";
 
 /**
  * Anthropic's own default when `effort` is omitted, stated explicitly so the

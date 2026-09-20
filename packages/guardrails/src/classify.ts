@@ -434,7 +434,11 @@ export function classify(input: unknown, options: ClassifyOptions = {}): Classif
       const bytes =
         value instanceof ArrayBuffer ? new Uint8Array(value) : new Uint8Array(value.buffer, value.byteOffset, value.byteLength);
       if (bytes.byteLength > 0 && bytes.byteLength <= 65_536) {
-        visitString(Buffer.from(bytes).toString("utf8").replace(/�/g, " "), rawPath, safePath, 1);
+        // `TextDecoder`, not `Buffer`: a WHATWG global that exists in the
+        // host's browser bundle AND in Node, where `Buffer` only exists in
+        // one of them. Same output — both substitute U+FFFD for invalid
+        // sequences — and the replace below still strips those.
+        visitString(new TextDecoder("utf-8").decode(bytes).replace(/�/g, " "), rawPath, safePath, 1);
       }
       return;
     }
