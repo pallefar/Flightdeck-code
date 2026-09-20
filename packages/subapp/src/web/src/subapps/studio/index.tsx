@@ -162,6 +162,13 @@ interface Proposed {
   note: string;
 }
 
+/** `POST /proposals` answers either arm: the proposal it filed, or the refusal
+ * it would have shown in a preview — because the workflow in the textarea can
+ * have been edited between the two calls. */
+function isProposed(answer: Conversion | Proposed): answer is Proposed {
+  return answer.status === "proposed" || answer.status === "already_proposed";
+}
+
 /* ── The client ─────────────────────────────────────────────────────────── */
 
 class ApiRefusal extends Error {
@@ -430,7 +437,7 @@ function StudioPage() {
     setRefusal(null);
     try {
       const answer = (await call("POST", "/proposals", body())) as Conversion | Proposed;
-      if (answer.status === "proposed" || answer.status === "already_proposed") {
+      if (isProposed(answer)) {
         setFiled(answer);
         await loadProposals();
       } else {

@@ -247,7 +247,7 @@ export function tokenize(text: string, opts: TokenizeOptions = {}): TokenizeResu
   // ── 4. PROOF ──────────────────────────────────────────────────────────
   // 4a. Step 1's invariant, checked rather than believed: nothing tag-shaped
   //     survives that this function did not mint. If this ever fires, the
-  //     masking in 4c would be masking caller data, so it is a hard refusal.
+  //     masking in 4b/4c would be masking caller data, so it is a hard refusal.
   const masked = maskMintedTags(out);
   if (findTagCandidates(masked).length > 0) {
     throw new PseudonymError(
@@ -261,13 +261,12 @@ export function tokenize(text: string, opts: TokenizeOptions = {}): TokenizeResu
   //     carrying CLASS NAMES only.
   assertNoResidualPii(masked, { names });
 
-  // 4c. The strict scan's extra findings are not residue, but they are a
-  //     downstream incompatibility. Report, do not hide.
+  // 4c. The strict scan, on the unmasked bytes. 4b has already proved the
+  //     masked scan clean — it throws otherwise — so ANY `declaredName` here
+  //     is attributable to this package's own tags and nothing else. Not
+  //     residue, but a downstream incompatibility: report it, do not hide it.
   const strict = residualPiiFindings(out, { names });
-  const tagClassNameCollisions =
-    strict.includes("declaredName") && !residualPiiFindings(masked, { names }).includes("declaredName")
-      ? collidingTagClasses(names)
-      : [];
+  const tagClassNameCollisions = strict.includes("declaredName") ? collidingTagClasses(names) : [];
 
   sealVault(vault);
 
@@ -384,7 +383,12 @@ function replaceDeclaredNames(
   return mapOutsideTags(text, (gap) =>
     gap.replace(re, (match) => {
       const form = forms.get(match.toLowerCase());
-      if (form === undefined) return match; // came from this alternation; unreachable
+      // `match` came from this alternation, so the lookup hits — except for a
+      // locale where `toLowerCase()` does not round-trip what the
+      // case-insensitive regex matched. Leaving the match in place is the
+      // FAIL-CLOSED branch, not a silent one: the name then survives into
+      // step 4, and the proof refuses the payload rather than shipping it.
+      if (form === undefined) return match;
       const canonical = aliasing === "unify" ? form.canonical : null;
       const entry =
         canonical === null

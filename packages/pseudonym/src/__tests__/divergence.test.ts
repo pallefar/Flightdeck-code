@@ -184,11 +184,13 @@ describe.skipIf(!available)("the transcription in host-mirror.ts still matches t
   });
 });
 
-it("says so, loudly, when the host checkout is not present", () => {
+it("has a transcription to check, and says so loudly when the host is not there to check it against", () => {
   // A divergence gate that silently passes because it found no file is worse
-  // than no gate. This case exists so the run REPORTS the skip rather than
-  // leaving an empty describe block that looks like coverage.
-  expect(available || !available).toBe(true);
+  // than no gate, so the skip is REPORTED rather than left as an empty
+  // describe block that reads like coverage. The one thing asserted
+  // unconditionally is that the transcription itself is present — if that
+  // file is gone, every test above would vacuously skip.
+  expect(fs.existsSync(MIRROR)).toBe(true);
   if (!available) {
     console.warn(`[pseudonym] divergence gate SKIPPED: ${HOST} is not on disk. The transcription is UNVERIFIED.`);
   }

@@ -28,6 +28,13 @@ export const GRANT_REASONS = [
   "invalid_datasource",
   "invalid_tier",
   "invalid_requester",
+  /** The request named `'*'`. The ceiling is written by an operator, never
+   *  asked for by a caller — a caller that can name its own scope as the
+   *  ceiling has written its own ceiling. */
+  "ceiling_not_requestable",
+  /** The requester's subject id is not in the identity directory, so the
+   *  append-only entry could not name who acted. */
+  "requester_unknown",
 
   // — the ceiling layer ('*') —————————————————————————————————————————
   /** No `'*'` row for this tool at all: the Function never consented. */
@@ -62,6 +69,19 @@ export const GRANT_REASONS = [
   "approval_self_approved",
   /** Recorded at a lower tier than the one being asked for. */
   "approval_tier_insufficient",
+  /** The identity directory has no record of the approver's subject id. */
+  "approval_identity_unknown",
+  /** The account exists and has been retired. The signature stays readable in
+   *  the trail; it stops being usable. */
+  "approval_identity_inactive",
+  /** Four eyes: the subject that asked is the subject that signed. */
+  "approval_requester_is_approver",
+
+  // — the decision was computed against a store that moved under it ————
+  /** A row or an approval changed between the reads this decision is made of.
+   *  Fail-closed: the answer is thrown away rather than served, and the caller
+   *  asks again against the settled state. See `decision.ts`. */
+  "store_changed_during_decision",
 ] as const;
 
 export type GrantReason = (typeof GRANT_REASONS)[number];

@@ -51,7 +51,8 @@ const DATASOURCE_ID_RE = /^[a-z0-9][a-z0-9._-]*$/;
 
 /**
  * A scope may carry capitals (`SharePoint`, straight out of `boot.json`) and
- * `/` (a path root). It may not carry `..`, a leading `/`, or whitespace — a
+ * `/` (a path root). Neither a scope NOR an id may carry `..`, a leading `/`,
+ * or whitespace — a
  * scope is a NAME, and anything that could be read as traversal is refused
  * rather than normalized, because normalizing is where a widening hides.
  */
@@ -73,6 +74,15 @@ export function datasourceDefect(
   if (typeof ref.id !== "string" || ref.id.length > MAX_ID_LENGTH || !DATASOURCE_ID_RE.test(ref.id)) {
     return "id";
   }
+  // ⭐ THE SAME `..` SCREEN ON BOTH FIELDS. It used to sit on `scope` alone,
+  // and `DATASOURCE_ID_RE` admits `.`, so `{kind:"repo-path",
+  // id:"obsidian-vault..contracts"}` validated. It could not traverse TODAY
+  // because the id regex bars `/` — but a guard that lives on one of the two
+  // fields a consumer joins to a filesystem path is a guard anchored on one
+  // representation of the same hazard, which is the defect class this package
+  // was hardened against. A traversal token is refused wherever it appears,
+  // rather than refused where someone remembered to look.
+  if (ref.id.includes("..")) return "id";
   if (ref.scope !== undefined) {
     if (
       typeof ref.scope !== "string" ||

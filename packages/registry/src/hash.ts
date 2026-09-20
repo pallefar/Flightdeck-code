@@ -1,5 +1,13 @@
 /**
- * WHAT EXACTLY WAS APPROVED — the third and last borrowing leaf.
+ * WHAT EXACTLY WAS APPROVED.
+ *
+ * ⚠ THIS IS ONE OF ONLY TWO FILES IN `packages/registry` THAT IMPORT ANOTHER
+ * STUDIO PACKAGE (the other is `artifact.ts`, for the host's two capability
+ * literals). Everything else — the id vocabulary, the actor model, the audit
+ * body — mirrors the HOST directly and names it, so this package's build does
+ * not ride a neighbour's refactor. The digest is the one exception, and the
+ * exception is the whole point of the file: two implementations of "has this
+ * content changed" are two answers to the question an approval turns on.
  *
  * ⛔ THIS PACKAGE DOES NOT INVENT A DIGEST. `packages/guardrails/src/approval.ts`
  * already owns `canonicalJson` + `contentHash` for precisely this purpose

@@ -40,8 +40,7 @@ import { z } from "zod";
 import { toHostHistoryRow, type HistoryEntry, type HostHistoryRow } from "./audit";
 import { isHostInstallable } from "./artifact";
 import { CEILING_PROJECT_ID } from "./identity";
-import { enablementRow, type Ledger } from "./ledger";
-import { currentRegistered } from "./ledger";
+import { currentRegistered, type Ledger } from "./ledger";
 
 /** Host: `SUBAPP_REGISTRY_REL`, relative to the workspace root. */
 export const SUBAPP_REGISTRY_REL = "subapps.json";
@@ -93,7 +92,21 @@ export const emittedRegistryFileSchema = z.object({
   _history: z.array(z.unknown()),
 });
 
-export type HostInstallEntry = z.infer<typeof hostInstallEntrySchema>;
+/**
+ * The row as this package hands it out: structurally
+ * `z.infer<typeof hostInstallEntrySchema>`, but written by hand so the arrays
+ * are `readonly`. A schema-inferred type would hand callers a mutable
+ * `string[]` into a frozen object, which is a lie the type checker would help
+ * them tell.
+ */
+export interface HostInstallEntry {
+  readonly id: string;
+  readonly version: string;
+  readonly enabled: boolean;
+  readonly installedAt: string;
+  readonly installedBy: string;
+  readonly grantedScopes: readonly string[];
+}
 
 export interface SubAppRegistryFile {
   readonly schema: string;
@@ -176,7 +189,7 @@ export function toInstallEntries(ledger: Ledger): readonly HostInstallEntry[] {
           enabled: r.enabled,
           installedAt: r.installedAt,
           installedBy: r.installedBy,
-          grantedScopes: Object.freeze([...r.grantedScopes]) as readonly string[] as string[],
+          grantedScopes: Object.freeze([...r.grantedScopes]) as readonly string[],
         }),
       ),
   );
@@ -224,12 +237,20 @@ export function applyEventsToHostRegistry(
   const current = readHostRegistryFile(existing);
   const touched = new Set(events.filter((e) => isHostInstallable(e.kind)).map((e) => e.subAppId));
 
-  const rebuilt = toInstallEntries(ledger).filter((row) => touched.has(row.id));
-  const kept = current.installs.filter((row) => !touched.has(row.id));
+  // Only rows the LEDGER can currently speak for are replaced. An artifact the
+  // events name but the ledger has no ceiling row for — a proposal, say —
+  // leaves whatever the file already had alone, rather than dropping it: this
+  // function narrows a file, it never prunes one.
+  const rebuilt = new Map(
+    toInstallEntries(ledger)
+      .filter((row) => touched.has(row.id))
+      .map((row) => [row.id, row] as const),
+  );
+  const kept = current.installs.filter((row) => !rebuilt.has(row.id));
 
   return Object.freeze({
     schema: SUBAPP_REGISTRY_SCHEMA,
-    installs: Object.freeze([...kept, ...rebuilt]),
+    installs: Object.freeze([...kept, ...rebuilt.values()]),
     _history: Object.freeze([...current.history, ...toHostHistoryRows(events)]),
   });
 }
@@ -251,5 +272,3 @@ export function serializeSubAppRegistryFile(file: SubAppRegistryFile): string {
 export function validateAgainstHostSchema(value: unknown): z.SafeParseReturnType<unknown, unknown> {
   return hostRegistryFileSchema.safeParse(value);
 }
-
-export { enablementRow };

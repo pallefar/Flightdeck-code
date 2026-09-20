@@ -1,42 +1,75 @@
 /**
- * The id vocabulary this package uses — BORROWED, not re-spelled.
+ * The host's id vocabulary, MIRRORED — not invented, and not borrowed from a
+ * sibling package that is mirroring the same thing.
  *
- * ⚠ THIS IS ONE OF ONLY THREE FILES IN `packages/registry` THAT NAMES ANOTHER
- * STUDIO PACKAGE (the others are `actor.ts` and `hash.ts`). Keeping the
- * dependency in a leaf is the same discipline the host applies to
- * `server/subapps/installRow.ts`: the read has no host edges, so it lives
- * where importing it drags nothing else in.
+ * Source of truth is `project-contract/flightdeck/server/project/types.ts` and
+ * `server/subapps/types.ts`. Studio is a separate repo and cannot import the
+ * host's modules, so these are copies with the host's reasoning attached. If
+ * this file and the host ever disagree, THE HOST WINS and this gets re-derived.
  *
- * `packages/approvals/src/identity.ts` already mirrored the host's
- * `flightdeck/server/project/types.ts` — `PROJECT_SLUG_RE`, the `'*'` ceiling
- * sentinel, `SUBAPP_ID_PATTERN` as a tool id, and what counts as a content
- * hash. Copying those four rules a second time here would be the divergent-
- * second-opinion defect the host names by name in `installRow.ts` ("never a
- * second, divergent eligibility query"), so this file re-exports them and adds
- * only what the registry needs and approvals does not have: a workflow id.
+ * ⚠ TWO SIBLING MIRRORS EXIST, ON PURPOSE. `packages/approvals/src/identity.ts`
+ * and `packages/spec/src/vocabulary.ts` carry copies of the same host literals,
+ * each for its own package's reasons. That is the established shape here: every
+ * package mirrors the HOST and names it, rather than one package importing
+ * another's copy and inheriting its refactors. A chain of copies has one true
+ * source; a chain of imports has a build that breaks when a neighbour is
+ * mid-edit. The rule is not "one copy" — it is "one source, named in every
+ * copy", which is what makes a drift check mechanical.
  *
- * ⭐ WHY `'*'` MATTERS HERE SPECIFICALLY. `CEILING_PROJECT_ID` is the host's
- * `WORKSPACE_SCOPE_PROJECT_ID`: the Function-wide row that a project may narrow
- * and never widen. In this package it is the project id an artifact is enabled
- * AT when it becomes reusable Function-wide, which is precisely the state
- * `subapps.json#installs[].enabled` records. A project that could name itself
- * `*` could write its own ceiling; `PROJECT_SLUG_RE` demands a leading
- * alphanumeric, so it cannot, and that is an invariant rather than a
- * reserved-word list someone has to remember.
+ * ⭐ WHY `"*"` IS SAFE AS A SENTINEL, in the host's own words: it is
+ * "structurally uncollidable with a real project id rather than reserved by
+ * convention — `PROJECT_SLUG_RE` demands an alphanumeric FIRST character, so
+ * `*` can never be created. This matters because it is the difference between
+ * an invariant and a reserved-word list someone has to remember."
+ *
+ * That property is load-bearing HERE: the Function-wide ceiling row lives at
+ * project `"*"`, and a project that could name itself `*` could write its own
+ * ceiling — which is precisely the widening the host forbids.
  */
 
-export {
-  CEILING_PROJECT_ID,
-  CONTENT_HASH_RE,
-  DEFAULT_PROJECT_ID,
-  PROJECT_ID_MAX,
-  PROJECT_SLUG_RE,
-  TOOL_ID_MAX,
-  TOOL_ID_RE,
-  isValidContentHash,
-  isValidProjectId,
-  isValidToolId,
-} from "../../approvals/src/identity";
+/** Host: `WORKSPACE_SCOPE_PROJECT_ID`. The workspace-wide CEILING row. */
+export const CEILING_PROJECT_ID = "*";
+
+/** Host: `DEFAULT_PROJECT_ID`. The synthesized project every workspace has. */
+export const DEFAULT_PROJECT_ID = "general";
+
+/** Host: `PROJECT_SLUG_RE`. Leading alphanumeric is the uncollidability proof. */
+export const PROJECT_SLUG_RE = /^[a-z0-9][a-z0-9-]*$/;
+
+/** Host: `PROJECT_ID_MAX` — a bound on what may be MINTED, chosen against ext4. */
+export const PROJECT_ID_MAX = 64;
+
+/** Host: `SUBAPP_ID_RE` from `server/subapps/types.ts`. A tool id is a sub-app id. */
+export const TOOL_ID_RE = /^[a-z0-9][a-z0-9-]*$/;
+export const TOOL_ID_MAX = 64;
+
+/**
+ * A content hash as this package handles it. `hash.ts` PRODUCES bare lowercase
+ * sha256 hex; this predicate additionally admits a `sha256:<hex>` prefix and
+ * other opaque digests, because a hash that arrives from a caller is compared
+ * and recorded, never parsed.
+ *
+ * ⚠ DELIBERATELY THE SAME ADMITTED SET as `packages/approvals`'
+ * `CONTENT_HASH_RE` (`/^[A-Za-z0-9][A-Za-z0-9:_-]{15,127}$/`), so a hash minted
+ * here can be handed straight to `effectiveGrant()` without a second spelling
+ * of the same digest. What is refused is blank, whitespace-bearing, or short
+ * enough to be a placeholder someone typed.
+ */
+export const CONTENT_HASH_RE = /^[A-Za-z0-9][A-Za-z0-9:_-]{15,127}$/;
+
+export function isValidProjectId(value: unknown): value is string {
+  if (typeof value !== "string") return false;
+  if (value === CEILING_PROJECT_ID) return true;
+  return value.length <= PROJECT_ID_MAX && PROJECT_SLUG_RE.test(value);
+}
+
+export function isValidToolId(value: unknown): value is string {
+  return typeof value === "string" && value.length <= TOOL_ID_MAX && TOOL_ID_RE.test(value);
+}
+
+export function isValidContentHash(value: unknown): value is string {
+  return typeof value === "string" && CONTENT_HASH_RE.test(value);
+}
 
 /**
  * A registered artifact's id. Identical rule to a tool/sub-app id, because for
@@ -45,15 +78,16 @@ export {
  * a script has no reason to spell its name differently from the mini-app
  * standing next to it in the same ledger.
  */
-export { TOOL_ID_RE as ARTIFACT_ID_RE, isValidToolId as isValidArtifactId } from "../../approvals/src/identity";
+export const ARTIFACT_ID_RE = TOOL_ID_RE;
+export const isValidArtifactId = isValidToolId;
 
 /**
  * The workflow an artifact came from. In this codebase a workflow IS a skill
  * file (`packages/spec/src/workflow.ts`: "YAML frontmatter carrying `name` and
  * a long `description`"), and skills are addressed by directory slug —
  * `orchestrate-workflow`, `quality-check`. Same slug shape as everything else
- * here, kept as its own name so a reader of a proposal can see which of the two
- * ids is provenance and which is identity.
+ * here, kept under its own name so a reader of a proposal can see which of the
+ * two ids is provenance and which is identity.
  *
  * Provenance is REQUIRED on a proposal, never optional: "which workflow
  * produced this" is the first question asked of an artifact somebody is being

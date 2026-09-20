@@ -1,45 +1,110 @@
 /**
- * Who proposed, and who signed — the second of this package's three borrowing
- * leaves (see `identity.ts` for why they are leaves).
+ * WHO PROPOSED, AND WHO SIGNED — which must never be the same party.
  *
- * `packages/approvals/src/actor.ts` already encodes `boot.json` guardrail 4 in
- * the only way that survives contact with a type checker: `namedHuman()` is the
- * ONLY producer of a `NamedHuman`, and it returns `null` for a tool, an agent,
- * the system and an anonymous human. Re-deciding "what is a human" here would
- * give this repo two answers to a security question, so this file adds none.
+ * `boot.json` guardrail 4: "Security, access, and connector permissions require
+ * explicit human approval." An approval a tool or an agent can mint is not an
+ * approval, it is a formality, so the type system here refuses to call one an
+ * approver: `namedHuman()` is the ONLY producer of a `NamedHuman`, and
+ * `ApprovalSignature.approver` holds that type — a caller cannot skip a check it
+ * has to perform to get the value it needs.
  *
  * ─────────────────────────────────────────────────────────────────────────
- * WHAT THIS FILE DOES ADD: THE SECOND HALF OF "NOTHING SELF-APPROVES"
+ * ⚠ WHY THIS IS LOCAL AND NOT BORROWED FROM `packages/approvals`
  * ─────────────────────────────────────────────────────────────────────────
- * `isSelfApproval(approver, toolId)` catches the tool signing for itself — an
- * agent whose subject id IS the artifact's. That is the case approvals needed,
- * because a grant is asked for BY a tool.
+ * `packages/approvals/src/actor.ts` answers a NEIGHBOURING question and is, at
+ * the time of writing, being reshaped around a directory-backed identity model
+ * (`DirectoryEntry`, `namedHumanIdentity`, `identityDefect`, `sameSubject`):
+ * there, "is this a named human" is a lookup against an org directory that can
+ * also say `inactive`. That is the right model for a GRANT decision, which
+ * happens at request time with a live directory to hand.
  *
- * A registry proposal has a second party approvals does not model: a PROPOSER.
- * The lifecycle this package exists for is
+ * A registry approval is a different moment. It records what a human signed,
+ * possibly years before anyone reads it back, and the record must stay legible
+ * after that person has left — so the name is CAPTURED INTO the signature
+ * rather than resolved from a directory each time it is displayed. Depending on
+ * a live lookup to render a historical fact would make an old approval
+ * unreadable the day the account is deactivated.
  *
- *     proposed -> approved (BY A NAMED HUMAN) -> registered -> reusable
+ * The two therefore stay separate, and this file states the same rule in the
+ * terms this package needs. When `approvals`' directory surface settles, the
+ * intended convergence is narrow and specific: a caller resolves a
+ * `DirectoryEntry` through `identityDefect()` BEFORE calling `approve()`, and
+ * passes the resulting person in as the `Actor` here. Directory liveness is a
+ * precondition of signing; it is not a property of a signature.
  *
- * and the interesting attack is not a tool with a clever id, it is the same
- * actor occupying both ends of the arrow: the agent that generated the
- * mini-app also recording the approval of it, or a human waving through their
- * own submission. Both are "self-approval" in the sense that matters — one
- * party, not two — and neither is caught by comparing against the ARTIFACT id.
- * So `isSameActor` exists, `approverDefect` uses it, and the refusal has its
- * own reason code rather than being folded into the tool case: an operator
- * reading an audit trail needs to know WHICH of the two happened.
+ * ─────────────────────────────────────────────────────────────────────────
+ * "SELF-APPROVAL" IS TWO DIFFERENT HOLES
+ * ─────────────────────────────────────────────────────────────────────────
+ * `isSelfApproval(approver, artifactId)` catches the approver whose subject id
+ * IS the artifact's — the tool signing for itself, or an account minted to
+ * carry a tool's name past a "must be human" check.
+ *
+ * `isSameActor(approver, proposedBy)` catches the other one, which no
+ * comparison against the artifact id can see: the agent that generated the
+ * artifact also recording the approval of it, or a person waving through their
+ * own submission. One party, not two. Both are refused, with different reason
+ * codes, because an operator reading the trail needs to know which happened.
  */
 
-export { ACTOR_KINDS, isActor, isActorKind, isSelfApproval, namedHuman } from "../../approvals/src/actor";
-export type { Actor, ActorKind, NamedHuman } from "../../approvals/src/actor";
+export const ACTOR_KINDS = ["human", "tool", "agent", "system"] as const;
+export type ActorKind = (typeof ACTOR_KINDS)[number];
 
-import { isActor, type Actor } from "../../approvals/src/actor";
+export interface Actor {
+  readonly kind: ActorKind;
+  /** Stable subject id. For a `tool` actor this is the tool/artifact id. */
+  readonly id: string;
+  /**
+   * Required in practice for `human` — see `namedHuman`. Recorded ALONGSIDE
+   * `id`, never instead of it: `id` is what the system matched, `displayName`
+   * is who the organization thinks that is, and an audit trail six months later
+   * needs both.
+   */
+  readonly displayName?: string | undefined;
+}
+
+export interface NamedHuman {
+  readonly kind: "human";
+  readonly id: string;
+  readonly displayName: string;
+}
+
+const blank = (value: unknown): boolean => typeof value !== "string" || value.trim().length === 0;
+
+export function isActorKind(value: unknown): value is ActorKind {
+  return typeof value === "string" && (ACTOR_KINDS as readonly string[]).includes(value);
+}
+
+/** Well-formed enough to name in an audit entry, whatever kind it is. */
+export function isActor(value: Actor | null | undefined): value is Actor {
+  return !!value && typeof value === "object" && isActorKind(value.kind) && !blank(value.id);
+}
 
 /**
- * Two references to the same party. Compared on `(kind, id)` case-insensitively
- * because an id casing difference is not a second person — the same reasoning
- * `isSelfApproval` gives — and on kind as well because a human account and a
- * service account may legitimately share a name in two different directories.
+ * The ONLY producer of `NamedHuman`. Returns `null` for a tool, an agent, the
+ * system, an anonymous human and an absent actor — every case guardrail 4 means
+ * to exclude, in one place, so no caller can approximate it with
+ * `kind === "human"` and forget the name.
+ */
+export function namedHuman(actor: Actor | null | undefined): NamedHuman | null {
+  if (!isActor(actor)) return null;
+  if (actor.kind !== "human") return null;
+  if (blank(actor.displayName)) return null;
+  return Object.freeze({ kind: "human" as const, id: actor.id, displayName: actor.displayName as string });
+}
+
+/**
+ * The approver's subject id IS the thing being approved. Compared
+ * case-insensitively: an id casing difference is not a second person.
+ */
+export function isSelfApproval(approver: Actor, artifactId: string): boolean {
+  return approver.id.trim().toLowerCase() === artifactId.trim().toLowerCase();
+}
+
+/**
+ * Two references to the same party. Compared on `(kind, id)` — on kind as well,
+ * because a person and a service account may legitimately share a name in two
+ * different directories, and treating those as one party would refuse a
+ * legitimate approval.
  */
 export function isSameActor(a: Actor | null | undefined, b: Actor | null | undefined): boolean {
   if (!isActor(a) || !isActor(b)) return false;

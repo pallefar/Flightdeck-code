@@ -66,11 +66,15 @@ export interface StudioConversionInput {
    * filesystem read, so Studio cannot open a skill file even if it wanted to,
    * and reading the repo from a route would be a capability escape. */
   readonly workflow: string;
-  /** Answers to questions from an earlier `needs_input`, keyed by question id. */
-  readonly answers?: Readonly<Record<string, string>>;
+  /** Answers to questions from an earlier `needs_input`, keyed by question id.
+   * `| undefined` is explicit because the host compiles under
+   * `exactOptionalPropertyTypes`, where a Zod-parsed optional field really is
+   * `T | undefined` and "absent" and "present as undefined" are different
+   * types. Accepting both is what lets a parsed body be passed straight in. */
+  readonly answers?: Readonly<Record<string, string>> | undefined;
   /** Where the workflow came from, e.g. `skills/orchestrate-workflow/SKILL.md`.
    * Rendered verbatim as provenance in the generated files; never opened. */
-  readonly source?: string;
+  readonly source?: string | undefined;
 }
 
 export interface StudioGeneratedFile {
