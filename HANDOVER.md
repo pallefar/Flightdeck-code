@@ -349,7 +349,11 @@ These are load-bearing. Each is a property something else depends on.
   mini-apps work end to end today. Closing this means teaching the planner to
   emit field shapes — a change to the model contract, not a patch.
 - **The workbench has no "export bundle" affordance.** It renders real generated
-  source and a real gate verdict; there is no button to get the files out.
+  source and a real gate verdict, and nothing leaves the browser. There IS a
+  `Save` button in the editor pane (`components/EditorPane.tsx:155`) — do not be
+  misled by it: it commits an in-editor edit to the in-memory draft. It does not
+  write a file. Getting a candidate onto disk goes through the CLI or
+  `npm run mount`.
 
 ---
 
