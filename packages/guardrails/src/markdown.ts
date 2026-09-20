@@ -190,7 +190,23 @@ function scanText(
     }
   }
   if (styles.includes("code")) {
-    const lineAt = (index: number): number => text.slice(0, index).split("\n").length;
+    // Precomputed line starts rather than `text.slice(0, index).split("\n")`
+    // per match: that is O(text) for every hit, so a minified file with
+    // thousands of keys turned a scan into a quadratic one. The scanner in
+    // front of every outbound call cannot have a cost that grows with the
+    // number of things it finds.
+    const lineStarts: number[] = [0];
+    for (let i = 0; i < text.length; i += 1) if (text[i] === "\n") lineStarts.push(i + 1);
+    const lineAt = (index: number): number => {
+      let lo = 0;
+      let hi = lineStarts.length - 1;
+      while (lo < hi) {
+        const mid = (lo + hi + 1) >> 1;
+        if ((lineStarts[mid] ?? 0) <= index) lo = mid;
+        else hi = mid - 1;
+      }
+      return lo + 1;
+    };
     for (const m of text.matchAll(CODE_KEY)) {
       const key = m[1];
       if (!key) continue;

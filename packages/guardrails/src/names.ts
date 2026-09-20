@@ -261,15 +261,64 @@ export function deniedPiiField(path: string): string | null {
  * `m[0]` is never stored, never returned and never interpolated into a
  * message. `m.index` is a number and a number cannot carry a name.
  */
+/**
+ * ⚠ TWO BOUNDS, AND WHY A SCANNER NEEDS THEM.
+ *
+ * The host's `email` pattern is `[A-Za-z0-9._%+-]+@…`. On a long run of word
+ * characters with no `@`, the `+` matches to the end, fails, backtracks one
+ * character at a time, and then the engine advances the start position and
+ * does it again — quadratic. Measured here: a single 200 000-character value
+ * cost 43 SECONDS inside `classify()`. That is not a detection bug, it is a
+ * denial of service on the gate that sits in front of every outbound model
+ * call, and the fix cannot be "edit the regex": `PII_PATTERNS` is compared to
+ * the host entry for entry, regex source included, and a Studio-only rewrite
+ * of it is exactly the divergence `lists.ts` exists to prevent.
+ *
+ * So the pattern is left alone and the WAY IT IS RUN is bounded:
+ *
+ *   1. a cheap precondition — a pattern that cannot match without an `@` or a
+ *      digit is not run on text that has none. Exact, not approximate: it
+ *      skips only runs that provably cannot match.
+ *   2. a sliding window with an overlap longer than any pattern can match, so
+ *      cost is linear in the text and no match is cut in half. A match is
+ *      counted in the window its START falls in, so the overlap does not
+ *      double-count it.
+ *
+ * Neither bound can hide a match, which is the property that matters: this is
+ * a performance fix, not a scope reduction, and a scope reduction dressed as a
+ * performance fix is how the hole at the top of `classify.ts` would grow back.
+ */
+const SCAN_WINDOW = 2048;
+/** Longer than the longest string any pattern here can match (an IBAN is at
+ * most 34 characters; a long email address is well under 256). */
+const SCAN_OVERLAP = 512;
+
+/** Exact, cheap reasons a pattern CANNOT match — never a guess. */
+function cannotMatch(name: string, text: string): boolean {
+  if (name === "email") return !text.includes("@");
+  if (name === "iban") return !/[A-Z]/.test(text);
+  return !/\d/.test(text); // digits, amount, date all require a digit
+}
+
 export function classifyText(text: string, where: string): Finding[] {
   const out: Finding[] = [];
   for (const { name, re } of ALL_VALUE_PATTERNS) {
+    if (cannotMatch(name, text)) continue;
     const rx = new RegExp(re.source, re.flags.includes("g") ? re.flags : `${re.flags}g`);
     let first = -1;
     let count = 0;
-    for (const m of text.matchAll(rx)) {
-      if (first < 0) first = m.index ?? 0;
-      count += 1;
+    for (let start = 0; start < Math.max(text.length, 1); start += SCAN_WINDOW) {
+      const chunk = text.slice(start, start + SCAN_WINDOW + SCAN_OVERLAP);
+      if (cannotMatch(name, chunk)) continue;
+      rx.lastIndex = 0;
+      for (const m of chunk.matchAll(rx)) {
+        const at = m.index ?? 0;
+        // Counted in the window its start falls in, so the overlap is read
+        // twice and reported once.
+        if (at >= SCAN_WINDOW && start + SCAN_WINDOW < text.length) break;
+        if (first < 0) first = start + at;
+        count += 1;
+      }
     }
     if (count > 0) out.push({ class: name, tier: 3, via: "value-pattern", where, offset: first, count });
   }

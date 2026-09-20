@@ -448,6 +448,30 @@ describe("⛔ AND IT STILL DOES NOT FIRE ON EVERYTHING", () => {
     expect(gateWorkflowIntake(workflow, ACTOR).decision).toBe("allow");
   });
 
+  it("⭐ and it scans a large value in bounded time", () => {
+    // Not a micro-benchmark: a guard on the outbound path whose cost is
+    // quadratic in the payload is a denial of service on every model call,
+    // and this one measured 43 SECONDS on a single 200 000-character string
+    // (the host's `email` pattern backtracking over a long run with no `@`).
+    // The bound is deliberately generous — this case is here to catch a
+    // return of the quadratic, not to police milliseconds.
+    const started = Date.now();
+    for (const value of ["x".repeat(200_000), `${"a".repeat(200_000)}@`, "1".repeat(100_000)]) {
+      classify({ blob: value });
+    }
+    expect(Date.now() - started).toBeLessThan(10_000);
+  });
+
+  it("finds a match that straddles the scanner's window boundary", () => {
+    // The windowing that bounds the cost must not cut a value in half. The
+    // overlap is longer than anything a pattern can match, and this case is
+    // what says so.
+    for (const pad of [2040, 2044, 2048, 2052, 4090, 4096]) {
+      const text = `${"p".repeat(pad)}e.musterfrau@example.de tail`;
+      expect(classesOf(classify({ note: text }).findings), `boundary at ${pad}`).toContain("email");
+    }
+  });
+
   it("does not refuse emitted code for containing ordinary English", () => {
     const source = [
       "// Address the review comments before merging.",

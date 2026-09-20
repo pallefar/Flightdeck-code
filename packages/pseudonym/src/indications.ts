@@ -48,7 +48,7 @@
  * same reason.
  */
 
-import { PERSON_REFERENT_SIGNALS, signalHits } from "./signals";
+import { PERSON_REFERENT_SIGNALS, foldForSignals, signalHits } from "./signals";
 import { TAG_CLASSES } from "./tags";
 
 /** The closed vocabulary of things the text can say. Closed so a reported
@@ -121,14 +121,16 @@ const TAG_WORDS: ReadonlySet<string> = new Set<string>(TAG_CLASSES);
  * one more letter. Hyphens and apostrophes are name punctuation. */
 const CAPITALISED = /^[A-ZÄÖÜ][\p{L}]*(?:[-'’][\p{L}]+)*$/u;
 
-/** `C01X00T47`, `AB-123-CD`, `ISO9001`: at least two letters and two digits
- * in one token, long enough not to be a version or a unit. The classes the
- * host's patterns DO cover (an IBAN, a long digit run, a date) are reported
- * by the residual scan instead; overlapping with them here costs nothing,
- * because both routes only ever withhold a reduction. */
-const IDENTIFIER_TOKEN = /(?<![\p{L}\p{N}])(?=[\p{L}\p{N}-]{6,32}(?![\p{L}\p{N}-]))(?:[\p{L}\p{N}-]{6,32})(?![\p{L}\p{N}-])/gu;
+/** `C01X00T47`, `AB-123-CD`, `ISO9001`: one token, at least two letters AND
+ * at least two digits, long enough not to be a version number or a unit.
+ *
+ * The classes the host's patterns DO cover (an IBAN, a long digit run, a
+ * date) are reported by the residual scan instead; overlapping with them here
+ * costs nothing, because both routes only ever withhold a reduction. */
+const IDENTIFIER_SPLIT = /[^\p{L}\p{N}-]+/u;
 
 function looksLikeIdentifier(token: string): boolean {
+  if (token.length < 6 || token.length > 64) return false;
   const letters = (token.match(/\p{L}/gu) ?? []).length;
   const digits = (token.match(/\p{N}/gu) ?? []).length;
   return letters >= 2 && digits >= 2;
@@ -168,13 +170,27 @@ function isOrdinaryWord(token: string): boolean {
 export function textIndications(text: string, signalWords: readonly string[] = []): TextIndication[] {
   const found = new Set<TextIndication>();
 
-  const signalTokens = new Set<string>();
+  // Folded on BOTH sides, so `Geschäftsführer` in the text is recognised as
+  // the entry `geschaftsfuhrer` that already hit. Comparing raw lower case
+  // would have excluded only the signals that happen to have no umlaut.
+  const signalStems = new Set<string>();
   for (const word of signalWords) {
-    for (const part of word.toLowerCase().split(/[^a-zA-ZÄÖÜäöüß0-9]+/)) {
-      if (part.length > 0) signalTokens.add(part);
+    for (const part of foldForSignals(word).split(/[^a-z0-9]+/)) {
+      if (part.length > 0) signalStems.add(part);
     }
   }
-  const excluded = (token: string): boolean => isOrdinaryWord(token) || signalTokens.has(token.toLowerCase());
+  const excluded = (token: string): boolean => {
+    if (isOrdinaryWord(token)) return true;
+    const folded = foldForSignals(token);
+    if (signalStems.has(folded)) return true;
+    // `Werksleiterin` against the entry `werksleiter`: the same bounded
+    // ending `signals.ts` allows, so the exclusion cannot be defeated by
+    // inflecting the role word.
+    for (const stem of signalStems) {
+      if (stem.length >= 5 && folded.startsWith(stem) && folded.length - stem.length <= 5) return true;
+    }
+    return false;
+  };
 
   for (const tokens of tokenSequences(text)) {
     for (let i = 0; i < tokens.length; i += 1) {
@@ -193,8 +209,8 @@ export function textIndications(text: string, signalWords: readonly string[] = [
     }
   }
 
-  for (const match of text.matchAll(IDENTIFIER_TOKEN)) {
-    if (looksLikeIdentifier(match[0])) {
+  for (const token of text.split(IDENTIFIER_SPLIT)) {
+    if (looksLikeIdentifier(token)) {
       found.add("identifier-shaped-token");
       break;
     }
