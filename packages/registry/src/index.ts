@@ -189,3 +189,7 @@ export {
   validateAgainstHostSchema,
 } from "./emit";
 export type { HostInstallEntry, SubAppRegistryFile } from "./emit";
+
+// Durable storage for the ledger above. See `file-ledger.ts` for why the
+// append-only check there compares by value.
+export { LedgerRewriteError, LedgerStoreCorruptError, loadLedger, updateLedger } from "./file-ledger";

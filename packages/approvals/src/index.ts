@@ -90,6 +90,7 @@ export { APPROVAL_AUDIT_EVENTS, AUDIT_BODY_FIELDS, auditEvent } from "./audit";
 export type { ApprovalAuditBody, ApprovalAuditEvent, AuditEventInput } from "./audit";
 
 export { createFileGrantStore, GrantStoreCorruptError } from "./file-store";
+export { FileStoreBusyError, FileStoreConflictError } from "../../store/src/atomic-file";
 export { createMemoryGrantStore } from "./store";
 export type { GrantStore, MemoryGrantStore } from "./store";
 

@@ -15,7 +15,7 @@ import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { effectiveGrant } from "../decision";
-import { GrantStoreBusyError, GrantStoreConflictError, GrantStoreCorruptError, createFileGrantStore } from "../file-store";
+import { FileStoreBusyError, FileStoreConflictError, GrantStoreCorruptError, createFileGrantStore } from "../file-store";
 import { AT, CONTRACTS_INPUT, PROJECT, TOOL, approval, ask, ceiling, row } from "./support";
 
 const made: string[] = [];
@@ -208,7 +208,7 @@ describe("two writers", () => {
     // so the lock IS the creation — there is no check-then-take window.
     fs.writeFileSync(`${file}.lock`, "", { flag: "wx" });
     try {
-      expect(() => store.putApproval(approval())).toThrow(GrantStoreBusyError);
+      expect(() => store.putApproval(approval())).toThrow(FileStoreBusyError);
       // ⭐ AND NOTHING WAS WRITTEN. A refusal that half-applied would be
       // worse than the race it was preventing.
       expect(fs.readFileSync(file, "utf8")).toBe(before);
@@ -266,12 +266,19 @@ describe("two writers", () => {
       const result: unknown = real(target as never, encoding as never);
       if (String(target) !== file) return result;
       reads += 1;
-      // On the store's SECOND read of THIS file, another writer lands.
-      if (reads === 2) fs.writeFileSync(file, JSON.stringify({ version: 1, rows: [], approvals: [] }));
+      // ⚠ ON THE FIRST READ, not the second. The conflict check works by
+      // comparing the bytes it read BEFORE the change with the bytes present
+      // after it, so the other writer has to land between those two reads.
+      // This said `reads === 2`, which was the final comparison read itself
+      // — the side effect fired AFTER that read had already returned, so the
+      // comparison saw the old bytes and no conflict was detected. The case
+      // went green the moment the store's internal read count changed.
+      // Anchoring on the FIRST read is stable however many follow.
+      if (reads === 1) fs.writeFileSync(file, JSON.stringify({ version: 1, rows: [], approvals: [] }));
       return result;
     }) as never);
     try {
-      expect(() => store.putApproval(approval())).toThrow(GrantStoreConflictError);
+      expect(() => store.putApproval(approval())).toThrow(FileStoreConflictError);
       // The side effect must actually have fired, or the case proves nothing.
       expect(reads).toBeGreaterThanOrEqual(2);
     } finally {

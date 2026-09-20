@@ -36,7 +36,12 @@
  * "was this ever allowed, and by whom".
  */
 import fs from "node:fs";
-import path from "node:path";
+
+import { FileStoreBusyError, FileStoreConflictError, updateFile } from "../../store/src/atomic-file";
+
+// Re-exported so a caller catching "the store was busy" does not have to know
+// which package implements the lock.
+export { FileStoreBusyError, FileStoreConflictError };
 
 import type { ApprovalRecord } from "./approval";
 import type { GrantRow } from "./grant";
@@ -62,30 +67,6 @@ export class GrantStoreCorruptError extends Error {
     this.name = "GrantStoreCorruptError";
   }
 }
-
-export class GrantStoreBusyError extends Error {
-  constructor(readonly file: string) {
-    super(
-      `refused: another writer holds the lock on ${file} — no change was made. Retry; if this persists, a previous writer died holding it and the stale lock clears itself after ${Math.round(STALE_LOCK_MS / 1000)}s.`,
-    );
-    this.name = "GrantStoreBusyError";
-  }
-}
-
-export class GrantStoreConflictError extends Error {
-  constructor(readonly file: string) {
-    super(
-      `refused: ${file} changed while this write was being prepared, so the write was abandoned rather than overwriting it`,
-    );
-    this.name = "GrantStoreConflictError";
-  }
-}
-
-/** How long a lock may be held before it is assumed to belong to a dead
- * process. Generous on purpose: taking over a live writer's lock is worse
- * than making a person wait. */
-const STALE_LOCK_MS = 30_000;
-const LOCK_ATTEMPTS = 50;
 
 const rowKey = (projectId: string, toolId: string): string => `${projectId}\u0000${toolId}`;
 
@@ -125,16 +106,16 @@ function admitFile(parsed: unknown, file: string): GrantFile {
   return { version: 1, rows: rows as readonly GrantRow[], approvals: approvals as readonly ApprovalRecord[] };
 }
 
-function readFile(file: string): GrantFile {
-  let raw: string;
-  try {
-    raw = fs.readFileSync(file, "utf8");
-  } catch (error) {
-    // ⭐ ABSENT IS NOT CORRUPT. A store that has never been written is
-    // legitimately empty; anything else is refused.
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") return { version: 1, rows: [], approvals: [] };
-    throw new GrantStoreCorruptError(file, (error as NodeJS.ErrnoException).code ?? "unreadable");
-  }
+/**
+ * Bytes → a grant file, or a refusal.
+ *
+ * ⭐ ABSENT IS NOT CORRUPT. A store that has never been written is
+ * legitimately empty; anything else is refused, for the reason in this
+ * file's header — reading a corrupt file as empty looks fail-safe and
+ * destroys the record on the next write.
+ */
+function admitText(raw: string | null, file: string): GrantFile {
+  if (raw === null) return { version: 1, rows: [], approvals: [] };
   let parsed: unknown;
   try {
     parsed = JSON.parse(raw);
@@ -144,128 +125,15 @@ function readFile(file: string): GrantFile {
   return admitFile(parsed, file);
 }
 
-function writeFile(file: string, contents: GrantFile): void {
-  const dir = path.dirname(file);
-  fs.mkdirSync(dir, { recursive: true });
-  const tmp = path.join(dir, `.grants-${process.pid}-${Date.now()}.tmp`);
-  const bytes = `${JSON.stringify(contents, null, 2)}\n`;
+function readFile(file: string): GrantFile {
+  let raw: string | null;
   try {
-    // ⚠ 0o600. This records who approved what, and approval notes may carry
-    // a name or a salary. Default permissions would make it world-readable
-    // on a shared machine.
-    const fd = fs.openSync(tmp, "wx", 0o600);
-    try {
-      fs.writeSync(fd, bytes);
-      fs.fsyncSync(fd);
-    } finally {
-      fs.closeSync(fd);
-    }
-    fs.renameSync(tmp, file);
+    raw = fs.readFileSync(file, "utf8");
   } catch (error) {
-    try {
-      fs.unlinkSync(tmp);
-    } catch {
-      /* nothing staged */
-    }
-    throw error;
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return { version: 1, rows: [], approvals: [] };
+    throw new GrantStoreCorruptError(file, (error as NodeJS.ErrnoException).code ?? "unreadable");
   }
-  // Durability of the rename. A failure here costs durability, never
-  // correctness — the same position `apply.ts` takes.
-  let dirFd: number | undefined;
-  try {
-    dirFd = fs.openSync(dir, "r");
-    fs.fsyncSync(dirFd);
-  } catch {
-    /* platform does not permit directory fsync */
-  } finally {
-    if (dirFd !== undefined) {
-      try {
-        fs.closeSync(dirFd);
-      } catch {
-        /* already gone */
-      }
-    }
-  }
-}
-
-/**
- * ⭐ SERIALISES READ-MODIFY-WRITE ACROSS PROCESSES.
- *
- * The in-memory store never needed this: one process, one object. A FILE
- * store introduces a failure the interface has never had — two processes
- * each read, each modify, each write, and the second silently erases the
- * first. `redteam-attacks.test.ts` already records the row-level version of
- * this as open ("grant rows are last-write-wins, no version / CAS"); making
- * the store durable without a lock would have widened it from "one operator
- * overwrites another's narrowing" to "one process erases another's entire
- * ledger".
- *
- * `open(..., "wx")` is atomic create-exclusive — the lock IS the creation,
- * so there is no window between checking and taking it.
- *
- * ⚠ AND IT IS NOT A TRANSACTION, said plainly. A stale lock is taken over
- * after `STALE_LOCK_MS`, which is the standard bargain and the standard
- * risk: a writer paused longer than that could still be alive. That is why
- * `writeFile` ALSO verifies the file has not changed since it was read — the
- * lock makes conflicts rare and the check makes a missed one loud. Real
- * serialisation wants a database, and this store does not pretend to be one.
- */
-function withLock<T>(file: string, fn: () => T): T {
-  const lock = `${file}.lock`;
-  fs.mkdirSync(path.dirname(file), { recursive: true });
-  let fd: number | undefined;
-  for (let attempt = 0; attempt < LOCK_ATTEMPTS; attempt += 1) {
-    try {
-      fd = fs.openSync(lock, "wx", 0o600);
-      break;
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
-      let age = 0;
-      try {
-        age = Date.now() - fs.statSync(lock).mtimeMs;
-      } catch {
-        continue; // it vanished between the failure and the stat — try again
-      }
-      if (age > STALE_LOCK_MS) {
-        try {
-          fs.unlinkSync(lock);
-        } catch {
-          /* someone else cleared it first */
-        }
-        continue;
-      }
-      // A short spin. Writes here are rare and brief; a person approving
-      // something is not a hot path.
-      const until = Date.now() + 10;
-      while (Date.now() < until) {
-        /* wait */
-      }
-    }
-  }
-  if (fd === undefined) throw new GrantStoreBusyError(file);
-  try {
-    return fn();
-  } finally {
-    try {
-      fs.closeSync(fd);
-    } catch {
-      /* already closed */
-    }
-    try {
-      fs.unlinkSync(lock);
-    } catch {
-      /* already cleared */
-    }
-  }
-}
-
-/** The bytes as they were when this write was planned, or null if absent. */
-function currentBytes(file: string): string | null {
-  try {
-    return fs.readFileSync(file, "utf8");
-  } catch {
-    return null;
-  }
+  return admitText(raw, file);
 }
 
 /**
@@ -278,15 +146,10 @@ function currentBytes(file: string): string | null {
 export function createFileGrantStore(file: string): MemoryGrantStore {
   const counts = { grantRows: 0, approvals: 0 };
   const mutate = (change: (current: GrantFile) => GrantFile): void => {
-    withLock(file, () => {
-      const before = currentBytes(file);
-      const next = change(readFile(file));
-      // Belt to the lock's braces: if the file moved under us anyway — a
-      // writer that ignored the lock, or a stale lock taken over from a
-      // process that was still alive — abandon rather than overwrite.
-      if (currentBytes(file) !== before) throw new GrantStoreConflictError(file);
-      writeFile(file, next);
-    });
+    // The lock, the conflict check and the atomic write all live in
+    // `packages/store` — see its header. What stays here is the only part
+    // that is about GRANTS: what a valid file contains.
+    updateFile(file, (current) => `${JSON.stringify(change(admitText(current, file)), null, 2)}\n`);
   };
 
   return {
