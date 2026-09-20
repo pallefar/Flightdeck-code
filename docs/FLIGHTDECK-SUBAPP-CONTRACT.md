@@ -85,3 +85,86 @@ partial-grant UI.
 `shell-reference` is two files: `manifest.ts` and `routes.ts`. That is the floor Studio
 generates to. `docusign` (~40 files, `routes/` + `service/` split) is the ceiling it
 should grow toward for anything with real domain logic.
+
+---
+
+# Corrections — verified against the checkout, 2026-09-20
+
+The sections above understated the mount. Everything below was measured in
+`pallefar/project-contract`, not inferred. Where it contradicts anything above,
+**this section wins**.
+
+## 7. Mounting is a THREE-file host edit, not "import + push"
+
+`registry.ts` is necessary and not sufficient. A sub-app that ships any
+user-facing string also requires:
+
+| File | Edit |
+|---|---|
+| `flightdeck/server/subapps/registry.ts` | import + push into `SUBAPP_MANIFESTS` |
+| `flightdeck/web/src/i18n.ts` | a static `import { <id>Dict } from "./subapps/<id>/i18n.js"` **and** a spread into `DICT` |
+| `flightdeck/tests/subapps/i18nSplit.test.ts` | update the frozen key counts |
+
+`import.meta.glob` covers the web *module* but **not** i18n — that is a hand-written
+static import list. Missing it means the dictionary silently falls back to English
+(decision D-07), which is a wrong-output bug, not a crash.
+
+## 8. The i18n fence is exact equality, and it will bite
+
+`tests/subapps/i18nSplit.test.ts:709` freezes the total:
+
+```ts
+const TOTAL_KEYS = 4071;
+expect(Object.keys(DICT).length).toBe(TOTAL_KEYS);
+```
+
+plus per-sub-app exact counts — `ADVANTAGE_KEYS = 480`, `DOCUSIGN_KEYS = 376`,
+`MAPS_AND_ASSISTANT_KEYS = 722`. **Exact**, not `toBeGreaterThan`. So a generated
+sub-app that ships even one i18n key turns a host test red until the counts are
+updated in the same change. The generator must emit that count delta, or emit no
+i18n at all.
+
+The floor is legitimately i18n-free: `shell-reference` is **three files**
+(`server/subapps/shell-reference/{manifest.ts,routes.ts}` and
+`web/src/subapps/shell-reference/index.tsx`) and ships no dictionary.
+
+## 9. CSS goes in the shared theme.css, never a new stylesheet
+
+Measured: `find web/src/subapps -name '*.css'` returns **zero**. Every sub-app's CSS
+lives in the shared `web/src/theme.css` inside a banner-delimited region — e.g.
+`/* ═══ End Phase 28 Plan 04 DocuSign block ═══ */` at line 1373,
+`/* ═══ End APP-F01 stage C Flightdeck Maps block ═══ */` at 3818.
+
+So "the generated app ships its own stylesheet" is wrong for this codebase, and a
+conformance rule written against a generated stylesheet is checking a file that will
+never exist. `tests/keyboardOperability.test.tsx:290` reads **only** `theme.css` and
+cannot see a generated file at all.
+
+## 10. Tests live in the sub-app's own folder
+
+`tests/subapps/subappManifest.test.ts` carries a **G3 layout fence**: a sub-app's tests
+belong in `tests/subapps/<id>/`, never the flat `tests/` root. The vitest glob is
+already recursive, so nothing needs wiring — only placing. For scale: `tests/subapps/advantage/`
+holds 38 files.
+
+## 11. Prior art — read it before writing a generator
+
+`flightdeck/scripts/scaffold-parity.ts` and `scaffold-course.ts` (`npm run scaffold:parity`,
+`scaffold:course`) are **existing deterministic manifest-to-file generators** in this
+codebase. They already encode the house doctrine. Study them before inventing a
+generation strategy.
+
+## 12. The contamination lesson, already learned here
+
+`docs/advantage/gauntlet/` holds a previously built blind-round rig
+(`blind-round.mjs`, `piece-round.mjs`, `fix-round.mjs`, `render.mjs`) and a postmortem,
+`CONTAMINATED-ROUND-1-WHY.md`:
+
+> An opposition that argues your case tests nothing.
+
+Round 1 was voided because the agent building the *opposition* was handed the same
+brief as our own builder, so the "rival" reproduced our slogans and our product name.
+The fix was a separate `barBrief` + `barScope` carrying none of our constraints, with
+the script throwing rather than falling back to the builder's brief.
+
+Any judging harness built here inherits that rule.
