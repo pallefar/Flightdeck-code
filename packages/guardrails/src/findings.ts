@@ -125,7 +125,24 @@ export function sanitizePathSegment(
   raw: string,
   ordinal: number,
   declaredNames: readonly string[] = [],
+  allow?: readonly string[],
 ): string {
+  // ⭐ ALLOWLIST FIRST, AND IT IS THE ONLY BRANCH THAT ENDS IN `raw`.
+  //
+  // Everything below this is a denylist whose fallback was `return raw` —
+  // "I did not recognise it, so it travels". That is the inversion of the rule
+  // the rest of this system runs on, and it was measured: a caller who names a
+  // fact key `notes_ibanDE02120300000000202051` got the complete IBAN written
+  // verbatim into `audit.locations`, up to MAX_LOCATIONS_IN_EVENT of them per
+  // refused request, into an append-only replicated chain. A bare IBAN was
+  // caught and the disguised one was not, which is the wrong way round.
+  //
+  // When a caller knows the closed set of names that may legitimately appear
+  // — `gateModelRequest` does: `FACT_KEY_ALLOWLIST` — it passes it here and a
+  // non-member becomes its ORDINAL, exactly as `packages/envelope` already
+  // refuses an unlisted key positionally so it is never written down.
+  if (allow !== undefined) return allow.includes(raw) ? raw : `<key#${ordinal}>`;
+
   for (const name of declaredNames) {
     const trimmed = name.trim();
     if (trimmed.length < 2) continue; // a one-char "name" would match everything
@@ -134,11 +151,37 @@ export function sanitizePathSegment(
       if (new RegExp(`\\b${escapeRegExpLiteral(part)}\\b`, "i").test(raw)) return initials(part);
     }
   }
-  for (const { name, re } of PII_PATTERNS) {
-    if (new RegExp(re.source, re.flags.replace("g", "")).test(raw)) return `<${name}>`;
+  // ⚠ THE SEGMENT AND ITS PIECES. A path segment is not prose: `notes_iban…`,
+  // `salaryEUR92000` and `x.dob-19850317` glue a label to a value, and the
+  // host's patterns are anchored with `\b`, which a glued-on prefix kills. So
+  // each pattern is tried against the whole segment AND against the segment
+  // split on the separators and case changes that identifiers actually use.
+  // This is still a denylist — see the allowlist branch above for the control
+  // that does not depend on recognising anything.
+  for (const candidate of [raw, ...splitIdentifier(raw)]) {
+    for (const { name, re } of PII_PATTERNS) {
+      if (new RegExp(re.source, re.flags.replace("g", "")).test(candidate)) return `<${name}>`;
+    }
   }
   if (!IDENTIFIER.test(raw)) return `<key#${ordinal}>`;
   return raw;
+}
+
+/**
+ * A segment's pieces, as an identifier is actually written: `notes_ibanDE02…`
+ * yields `notes`, `ibanDE02…` and `DE02…`. Used only to give the PII patterns
+ * something their `\b` anchors can match against.
+ */
+function splitIdentifier(raw: string): string[] {
+  const out = new Set<string>();
+  for (const piece of raw.split(/[^A-Za-z0-9]+/)) {
+    if (piece === "") continue;
+    out.add(piece);
+    // camelCase / letters-then-digits: `ibanDE02…` -> `DE02…`, `salaryEUR92000`
+    for (const m of piece.matchAll(/[A-Z][A-Za-z0-9]*|\d[\dA-Za-z]*/g)) out.add(m[0]);
+  }
+  out.delete(raw);
+  return [...out];
 }
 
 /**
@@ -151,10 +194,14 @@ export function sanitizePathSegment(
  * (`fixtures/e.musterfrau@example.de.seed.json`). A path is data. There is one
  * sanitiser so there is one place to get it right.
  */
-export function sanitizePath(raw: string, declaredNames: readonly string[] = []): string {
+export function sanitizePath(
+  raw: string,
+  declaredNames: readonly string[] = [],
+  allow?: readonly string[],
+): string {
   return raw
     .split("/")
-    .map((seg, i) => sanitizePathSegment(seg, i, declaredNames))
+    .map((seg, i) => sanitizePathSegment(seg, i, declaredNames, allow))
     .join("/");
 }
 

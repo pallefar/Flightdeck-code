@@ -69,6 +69,8 @@ export {
   HOST_VOCABULARIES,
   MAX_COUNT,
   MAX_COUNT_FACTS,
+  MAX_ENUM_FACTS,
+  MAX_FIELD_NAME_FACTS,
   MAX_REQUEST_BYTES,
   MAX_TEXT_CHARS,
   MAX_TEXT_FACTS,
@@ -89,6 +91,7 @@ export type { AiTaskId, FactKeyPolicy, FactKind } from "./allowlists";
 export {
   APPROVAL_REASON_CODES,
   COUNT_CHANNEL_BITS,
+  SELECTION_CHANNEL_BITS,
   DEFAULT_PROVIDER,
   REFUSAL_REASON,
   buildEnvelope,

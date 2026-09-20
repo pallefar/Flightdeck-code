@@ -111,6 +111,8 @@ import {
   FIELD_NAME_ALLOWLIST,
   MAX_COUNT,
   MAX_COUNT_FACTS,
+  MAX_ENUM_FACTS,
+  MAX_FIELD_NAME_FACTS,
   MAX_REQUEST_BYTES,
   MAX_TEXT_CHARS,
   MAX_TEXT_FACTS,
@@ -300,14 +302,20 @@ function assuranceFor(
       `none matched. NOT checked, by anything here: ${notChecked.join(", ")}. ` +
       `This is a record of which checks ran. It is NOT a certificate of absence — a class that was not ` +
       `checked, and a class that was checked and did not match, are both merely unfound. ` +
-      // ⭐ THE RESIDUE, MEASURED AND STATED. An allowlist makes an undeclared
-      // name unexpressible; it does not stop a caller CHOOSING which rungs of
-      // COUNT_LADDER and which vocabulary members to send. The figure is
-      // derived from the tables (see COUNT_CHANNEL_BITS), so it moves when the
-      // tables move, and it is compiled-in words and numbers only.
-      `At most ${MAX_COUNT_FACTS} bounded integer(s) may travel together, each snapped up to a rung of ` +
-      `COUNT_LADDER: a measured residual capacity of about ${COUNT_CHANNEL_BITS} bits per request in the ` +
-      `choice of rungs, which nothing here inspects.`,
+      // ⭐ THE RESIDUE, MEASURED AND STATED — ALL OF IT.
+      //
+      // This sentence used to quote COUNT_CHANNEL_BITS alone, as "a measured
+      // residual capacity", while the enum and fieldName channels rode beside
+      // it uncapped and unmeasured. A number that is true of one channel and
+      // offered as the number for the request is worse than no number: it is
+      // the control certifying. SELECTION_CHANNEL_BITS is the whole selection
+      // residue — rungs, vocabulary members and field names together — and it
+      // is derived from the tables, so it moves when they move.
+      `At most ${MAX_COUNT_FACTS} bounded integer(s), ${MAX_ENUM_FACTS} vocabulary selection(s) and ` +
+      `${MAX_FIELD_NAME_FACTS} field name(s) may travel together, each drawn from a compiled-in set ` +
+      `(a count is snapped UP to a rung of COUNT_LADDER, so it is an upper bound and not the caller's ` +
+      `integer): a measured residual capacity of about ${SELECTION_CHANNEL_BITS} bits per request in the ` +
+      `CHOICE among those sets, which nothing here inspects.`,
   };
 }
 
@@ -403,13 +411,32 @@ export function buildEnvelope(input: unknown, opts: BuildOptions = {}): BuildRes
             break;
           }
           case "enum": {
-            // The declared vocabulary name is caller data and is NOT echoed —
-            // a deliberate tightening of the host, which interpolates it into
-            // an Error that its logger then writes down. `expected` names the
-            // KEY's vocabulary instead, which is compiled-in.
+            // ⭐ THE VOCABULARY IS THE KEY'S, NOT THE CALLER'S.
+            //
+            // This read `vocabulary(vocabName)` — the name the CALLER declared
+            // — while the refusal message already said `the vocabulary named
+            // "${key}"`. The message had been made honest and the check had
+            // not, so `country` accepted `{vocabulary:"lifecycleStage",
+            // value:"progress"}` and the envelope came back `ready`. Each enum
+            // key's alphabet was every member of every vocabulary (49) rather
+            // than its own — `country`'s own has ONE member, so the honest
+            // channel is 0 bits and the open one was ~5.6, thirteen times over,
+            // with no human. Measured and fixed in the same commit as the log
+            // channel below it.
+            //
+            // The declared name is still caller data and still NOT echoed: the
+            // host interpolates it into an Error its logger writes down, and
+            // this package does not.
+            const members = vocabulary(key);
+            if (members === undefined) {
+              // A key whose policy says `enum` with no vocabulary of the same
+              // name is a BUILD error in the allowlist, not a caller error.
+              // Refuse rather than fall through to the caller's name.
+              failures.push({ code: "unknown-vocabulary", at, expected: `the vocabulary named "${key}"` });
+              break;
+            }
             const vocabName = own(fact, "vocabulary");
-            const members = typeof vocabName === "string" ? vocabulary(vocabName) : undefined;
-            if (typeof vocabName !== "string" || members === undefined) {
+            if (vocabName !== undefined && vocabName !== key) {
               failures.push({ code: "unknown-vocabulary", at, expected: `the vocabulary named "${key}"` });
               break;
             }
@@ -418,13 +445,31 @@ export function buildEnvelope(input: unknown, opts: BuildOptions = {}): BuildRes
               failures.push({ code: "value-not-in-vocabulary", at, expected: `a member of ${key}` });
               break;
             }
-            built.set(key, { kind: "enum", vocabulary: vocabName, value });
+            if (enumKindFacts(built) + 1 > MAX_ENUM_FACTS) {
+              // The same argument as MAX_COUNT_FACTS, which existed while this
+              // did not: the per-fact bound is an alphabet, this is the bound
+              // on the REQUEST.
+              failures.push({ code: "too-many-enum-facts", at, expected: String(MAX_ENUM_FACTS) });
+              break;
+            }
+            // `key` on the wire, never `vocabName`: they are now equal or the
+            // request was refused, and writing the compiled-in one means a
+            // future edit cannot reintroduce the caller's string here.
+            built.set(key, { kind: "enum", vocabulary: key, value });
             break;
           }
           case "fieldName": {
             const value = own(fact, "value");
             if (typeof value !== "string" || !FIELD_NAME_ALLOWLIST.includes(value)) {
               failures.push({ code: "field-name-not-allowlisted", at, expected: "a member of FIELD_NAME_ALLOWLIST" });
+              break;
+            }
+            if (fieldNameKindFacts(built) + 1 > MAX_FIELD_NAME_FACTS) {
+              failures.push({
+                code: "too-many-field-name-facts",
+                at,
+                expected: String(MAX_FIELD_NAME_FACTS),
+              });
               break;
             }
             built.set(key, { kind: "fieldName", value });
@@ -687,6 +732,18 @@ function countKindFacts(built: ReadonlyMap<string, EnvelopeFact>): number {
   return n;
 }
 
+function enumKindFacts(built: ReadonlyMap<string, EnvelopeFact>): number {
+  let n = 0;
+  for (const fact of built.values()) if (fact.kind === "enum") n += 1;
+  return n;
+}
+
+function fieldNameKindFacts(built: ReadonlyMap<string, EnvelopeFact>): number {
+  let n = 0;
+  for (const fact of built.values()) if (fact.kind === "fieldName") n += 1;
+  return n;
+}
+
 /**
  * ⭐ THE MEASURED CAPACITY OF THE BOUNDED-INTEGER CHANNEL, in bits per
  * request, COMPUTED FROM THE TABLES rather than asserted in a comment.
@@ -706,6 +763,40 @@ export const COUNT_CHANNEL_BITS: number = (() => {
     .sort((a, b) => b - a);
   const bits = perKey.slice(0, MAX_COUNT_FACTS).reduce((sum, b) => sum + b, 0);
   return Math.round(bits);
+})();
+
+/**
+ * ⭐ THE WHOLE SELECTION RESIDUE, and the reason it exists as a separate
+ * figure from `COUNT_CHANNEL_BITS`.
+ *
+ * The Assurance quoted the count figure as "a measured residual capacity",
+ * which was true of counts and false of the request. Beside it sat thirteen
+ * enum keys with no cap, each of whose alphabet was — because `build.ts`
+ * resolved the CALLER's declared vocabulary rather than the key's — all 49
+ * members of all 13 vocabularies. One `ready` envelope measured ~107 bits
+ * against an advertised 21.
+ *
+ * Both halves are fixed (the vocabulary is pinned to its key, `MAX_ENUM_FACTS`
+ * and `MAX_FIELD_NAME_FACTS` bound the request), and what remains is stated
+ * here as one number covering every channel a caller can choose within:
+ * rungs, vocabulary members, field names.
+ *
+ * ⚠ IT IS STILL A RESIDUE, NOT A ZERO. `information-encoded-in-the-choice-of`
+ * entries in `ENVELOPE_CLASSES_NOT_CHECKED` say so on every envelope. A
+ * control may refuse; it may never certify.
+ */
+export const SELECTION_CHANNEL_BITS: number = (() => {
+  const enumBits = Object.entries(FACT_KEY_POLICY)
+    .filter(([, policy]) => policy.kind === "enum")
+    // Each key's alphabet is now its OWN vocabulary, by name. A key with one
+    // member carries zero bits, which is the point of pinning it.
+    .map(([key]) => Math.log2(Math.max(vocabulary(key)?.length ?? 1, 1)))
+    .sort((a, b) => b - a)
+    .slice(0, MAX_ENUM_FACTS)
+    .reduce((sum, b) => sum + b, 0);
+  const fieldNameBits =
+    Math.log2(Math.max(FIELD_NAME_ALLOWLIST.length, 1)) * MAX_FIELD_NAME_FACTS;
+  return Math.round(COUNT_CHANNEL_BITS + enumBits + fieldNameBits);
 })();
 
 /**

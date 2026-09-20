@@ -148,6 +148,33 @@ export const COUNT_LADDER: readonly number[] = [
  */
 export const MAX_COUNT_FACTS = 4;
 
+/**
+ * ⭐ HOW MANY ENUM SELECTIONS MAY TRAVEL TOGETHER, and why this did not exist.
+ *
+ * `MAX_COUNT_FACTS` was added because "twelve count keys at ~5.5 bits each is
+ * ~66 bits, which is still a salary and a date of birth". The identical
+ * argument applies to the THIRTEEN enum keys, and no cap was put on them:
+ * a `ready` envelope could carry all thirteen selections, plus fieldNames and
+ * counts beside them, with no human anywhere on the path.
+ *
+ * Worse, `build.ts` resolved the vocabulary the CALLER declared rather than
+ * the key's own, so each key's alphabet was all 49 members of all 13
+ * vocabularies instead of its own 1-6. `country` has ONE member: honestly it
+ * carries zero bits, and it was carrying ~5.6.
+ *
+ * ⛔ RAISING THIS WIDENS A SELECTION CHANNEL ON ENVELOPES THAT NEED NO HUMAN.
+ * It is a governance change, in the host's own words about its own limits.
+ */
+export const MAX_ENUM_FACTS = 6;
+
+/**
+ * HOW MANY FIELD NAMES MAY TRAVEL TOGETHER. The same argument once more: a
+ * `fieldName` fact is a selection from `FIELD_NAME_ALLOWLIST`, and a selection
+ * from a compiled-in set of N carries log2(N) bits whatever the set contains.
+ * The Studio's own fixtures use one or two.
+ */
+export const MAX_FIELD_NAME_FACTS = 4;
+
 /** The smallest ladder rung >= `value`, or `null` when the value is past the
  * top of the ladder (which the key's own ceiling has already refused). */
 export function snapCount(value: number): number | null {

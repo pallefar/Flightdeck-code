@@ -210,6 +210,11 @@ export const ENVELOPE_CLASSES_NOT_CHECKED: readonly string[] = [
   // count facts still controls a few bits per request. `buildEnvelope` states
   // the measured figure in its `Assurance`; nothing here looks for it.
   "information-encoded-in-the-choice-of-bounded-integers",
+  // Added with the enum and fieldName caps. Naming only the integer channel
+  // while two others rode beside it uncapped was the list certifying by
+  // omission: a reader takes an absent channel for a closed one.
+  "information-encoded-in-the-choice-of-vocabulary-members",
+  "information-encoded-in-the-choice-of-field-names",
 ];
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -241,6 +246,11 @@ export type RefusalCode =
    * one integer bounds one integer; a ceiling on how many of them travel
    * together is what bounds the request's aggregate capacity. */
   | "too-many-count-facts"
+  /** More `enum` facts in one request than `MAX_ENUM_FACTS`. The bound on the
+   * REQUEST's selection channel, not on one fact's alphabet. */
+  | "too-many-enum-facts"
+  /** More `fieldName` facts in one request than `MAX_FIELD_NAME_FACTS`. */
+  | "too-many-field-name-facts"
   | "text-must-use-the-pseudonymised-channel"
   | "text-channel-not-an-array"
   | "text-entry-malformed"

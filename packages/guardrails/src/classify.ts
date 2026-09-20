@@ -202,6 +202,20 @@ export interface ClassifyOptions {
   readonly rootPath?: string;
   /** See `ClassifyMode`. Default `record`. */
   readonly mode?: ClassifyMode;
+  /**
+   * ⭐ THE CLOSED SET OF KEY NAMES THAT MAY BE WRITTEN DOWN.
+   *
+   * When given, a key that is not a member is reported as its ORDINAL rather
+   * than by name — `facts.#0`, not `facts.salary_of_AnnaMueller_92000`. A
+   * caller that knows the legitimate names should pass them: `gateModelRequest`
+   * passes `FACT_KEY_ALLOWLIST`, because `packages/envelope` already refuses an
+   * unlisted key positionally so that it is never written down, and the audit
+   * body must not undo that one layer up.
+   *
+   * Without it the key falls through a DENYLIST whose fallback is the raw
+   * string. See `sanitizePathSegment`.
+   */
+  readonly keyAllowlist?: readonly string[];
 }
 
 const DEFAULT_MAX_NODES = 50_000;
@@ -291,6 +305,7 @@ function fragmentFindings(entries: readonly [string, unknown][], where: string):
  */
 export function classify(input: unknown, options: ClassifyOptions = {}): Classification {
   const declaredNames = options.declaredNames ?? [];
+  const keyAllowlist = options.keyAllowlist;
   const maxNodes = options.maxNodes ?? DEFAULT_MAX_NODES;
   const mode = options.mode ?? "record";
   const root = options.rootPath ?? "";
@@ -381,7 +396,8 @@ export function classify(input: unknown, options: ClassifyOptions = {}): Classif
       let i = 0;
       for (const [k, v] of value) {
         const keyText = typeof k === "string" ? k : `[${i}]`;
-        const safeKey = typeof k === "string" ? sanitizePathSegment(k, i, declaredNames) : `[${i}]`;
+        const safeKey =
+          typeof k === "string" ? sanitizePathSegment(k, i, declaredNames, keyAllowlist) : `[${i}]`;
         const childRaw = joinPath(rawPath, keyText);
         const childSafe = joinPath(safePath, safeKey);
         if (typeof k === "string") {
@@ -452,7 +468,7 @@ export function classify(input: unknown, options: ClassifyOptions = {}): Classif
     }
 
     entries.forEach(([key, child], ordinal) => {
-      const safeKey = sanitizePathSegment(key, ordinal, declaredNames);
+      const safeKey = sanitizePathSegment(key, ordinal, declaredNames, keyAllowlist);
       const childRaw = joinPath(rawPath, key);
       const childSafe = joinPath(safePath, safeKey);
       const foldedKey = foldToken(key);

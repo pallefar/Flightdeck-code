@@ -61,6 +61,7 @@ import { type Classification, type Finding, type Tier, dedupe, sanitizePath, tie
 import { type Approval, type ApprovalCheck, checkApproval, contentHash } from "./approval";
 import { type GuardrailAuditBody, type GuardrailEventName, auditBody } from "./audit";
 import { buildEnvelope } from "../../envelope/src/build";
+import { FACT_KEY_ALLOWLIST } from "../../envelope/src/allowlists";
 import type { Envelope, ExpressionFailure } from "../../envelope/src/types";
 
 export type GateName = "registration" | "model-request" | "workflow-intake" | "generated-artifacts";
@@ -410,7 +411,21 @@ export function gateModelRequest(
 
   if (!built.ok) {
     // THE DETECTOR, demoted: it annotates this refusal and cannot lift it.
-    const options: ClassifyOptions = ctx.declaredNames ? { declaredNames: ctx.declaredNames } : {};
+    //
+    // ⭐ AND IT MAY NOT NAME A KEY THE ENVELOPE REFUSED TO NAME.
+    //
+    // `buildEnvelope` refuses an unlisted fact key POSITIONALLY (`facts.#0`)
+    // precisely so the caller's string is never written down. This call then
+    // classified the RAW request, and `auditBody` wrote
+    // `locations: ["facts.salary_of_AnnaMueller_92000"]` into the append-only
+    // chain — up to MAX_LOCATIONS_IN_EVENT segments of caller-chosen text per
+    // REFUSED request, and the more sensitive the key name the more likely a
+    // finding puts it there. Fixing `subject` above and leaving this open
+    // closed a 64-char channel and left a 25x larger one beside it.
+    const options: ClassifyOptions = {
+      ...(ctx.declaredNames ? { declaredNames: ctx.declaredNames } : {}),
+      keyAllowlist: FACT_KEY_ALLOWLIST,
+    };
     const detected = classify(request, options);
     const askedToRedact = config.onTier3 === "redact" || config.onTier4 === "redact";
     return modelRequestDecision(

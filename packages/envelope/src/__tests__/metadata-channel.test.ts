@@ -39,8 +39,15 @@
 
 import { describe, expect, it } from "vitest";
 import { buildEnvelope } from "../build";
-import { COUNT_CHANNEL_BITS } from "../build";
-import { COUNT_LADDER, MAX_COUNT_FACTS, MAX_TEXT_CHARS } from "../allowlists";
+import { COUNT_CHANNEL_BITS, SELECTION_CHANNEL_BITS } from "../build";
+import {
+  COUNT_LADDER,
+  FACT_KEY_POLICY,
+  MAX_COUNT_FACTS,
+  MAX_ENUM_FACTS,
+  MAX_TEXT_CHARS,
+  VOCABULARIES,
+} from "../allowlists";
 import {
   COVERAGE_CLASS_VOCABULARY,
   COVERAGE_DETECTOR_VOCABULARY,
@@ -406,10 +413,21 @@ describe("⭐ a count is not a value channel", () => {
     if (!result.ok) return;
     // ⚠ A control may refuse; it may never certify. The choice of rung is
     // still a channel and the assurance says so with a number.
-    expect(result.assurance.statement).toContain(`about ${COUNT_CHANNEL_BITS} bits per request`);
+    //
+    // ⭐ THE NUMBER MUST COVER THE WHOLE REQUEST, NOT ONE CHANNEL. This line
+    // asserted `COUNT_CHANNEL_BITS` while the enum and fieldName channels rode
+    // beside it unmeasured — the statement was quoting 21 while one `ready`
+    // envelope carried ~107. Asserting the RELATIONSHIP rather than a constant
+    // is what makes a future third channel fail this test instead of quietly
+    // widening the gap between what is stated and what is carried.
+    expect(result.assurance.statement).toContain(`about ${SELECTION_CHANNEL_BITS} bits per request`);
+    expect(SELECTION_CHANNEL_BITS).toBeGreaterThanOrEqual(COUNT_CHANNEL_BITS);
     expect(result.assurance.notChecked).toContain("information-encoded-in-the-choice-of-bounded-integers");
+    expect(result.assurance.notChecked).toContain("information-encoded-in-the-choice-of-vocabulary-members");
+    expect(result.assurance.notChecked).toContain("information-encoded-in-the-choice-of-field-names");
     // The figure the red team measured before the ladder was ~146 bits.
     expect(COUNT_CHANNEL_BITS).toBeLessThan(40);
+    expect(SELECTION_CHANNEL_BITS).toBeLessThan(80);
   });
 });
 
@@ -447,5 +465,85 @@ describe("⭐ the audit subject is not a free-text channel one layer up", () => 
     const b = gateModelRequest({ task: "kb.question", facts: { docCount: { kind: "count", value: 2 } } }, ACTOR);
     expect(a.audit.contentHash).toMatch(/^[0-9a-f]{64}$/);
     expect(a.audit.contentHash).not.toBe(b.audit.contentHash);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────
+
+/**
+ * ⭐ THE SELECTION CHANNEL, found by the red team AFTER the count ladder went
+ * in and reproduced here before it was fixed.
+ *
+ * `build.ts` resolved the vocabulary the CALLER declared, not the key's own,
+ * while the refusal message already read `the vocabulary named "${key}"`. The
+ * message had been made honest and the check had not — which is the same shape
+ * as every other finding this session: a control that reads as though it ran.
+ */
+describe("⭐ an enum fact is pinned to ITS key's vocabulary", () => {
+  it("refuses a member of a FOREIGN vocabulary — the reproduction, verbatim", () => {
+    // Measured before the fix: ok=true, disposition "ready", no human.
+    const result = buildEnvelope({
+      task: "studio.spec.draft",
+      facts: { country: { kind: "enum", vocabulary: "lifecycleStage", value: "progress" } },
+    });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.failures.map((f) => f.code)).toContain("unknown-vocabulary");
+    // and the caller's declared name is not echoed back
+    expect(JSON.stringify(result)).not.toContain("lifecycleStage");
+  });
+
+  it("refuses a foreign MEMBER even when the declared name is right", () => {
+    const result = buildEnvelope({
+      task: "studio.spec.draft",
+      facts: { country: { kind: "enum", vocabulary: "country", value: "progress" } },
+    });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.failures.map((f) => f.code)).toContain("value-not-in-vocabulary");
+  });
+
+  it("still builds the honest request, and writes the COMPILED-IN name on the wire", () => {
+    const result = buildEnvelope({
+      task: "studio.spec.draft",
+      facts: { country: { kind: "enum", vocabulary: "country", value: "DE" } },
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const fact = result.facts["country"];
+    expect(fact).toEqual({ kind: "enum", vocabulary: "country", value: "DE" });
+  });
+
+  it("omitting `vocabulary` entirely is fine — the key already says which one", () => {
+    const result = buildEnvelope({
+      task: "studio.spec.draft",
+      facts: { country: { kind: "enum", value: "DE" } },
+    });
+    expect(result.ok).toBe(true);
+  });
+
+  it("⭐ a key whose alphabet has one member carries ZERO bits, which is the point", () => {
+    // `country` has exactly one member. Unpinned it was a choice among 49.
+    expect(VOCABULARIES["country"]).toHaveLength(1);
+    const perKeyBits = Object.entries(FACT_KEY_POLICY)
+      .filter(([, p]) => p.kind === "enum")
+      .map(([k]) => Math.log2(VOCABULARIES[k]?.length ?? 1));
+    // No enum key may carry more than its own vocabulary allows.
+    for (const bits of perKeyBits) expect(bits).toBeLessThanOrEqual(Math.log2(6));
+  });
+
+  it("caps how many selections travel together, as the count channel already did", () => {
+    const enumKeys = Object.entries(FACT_KEY_POLICY)
+      .filter(([, p]) => p.kind === "enum")
+      .map(([k]) => k);
+    expect(enumKeys.length).toBeGreaterThan(MAX_ENUM_FACTS); // else the cap is vacuous
+    const facts: Record<string, unknown> = {};
+    for (const key of enumKeys.slice(0, MAX_ENUM_FACTS + 1)) {
+      facts[key] = { kind: "enum", value: VOCABULARIES[key]![0] };
+    }
+    const result = buildEnvelope({ task: "studio.spec.draft", facts });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.failures.map((f) => f.code)).toContain("too-many-enum-facts");
   });
 });
