@@ -15,6 +15,7 @@
  * a 400. If the guard ran second, one or the other would differ. */
 import { afterEach, describe, expect, it } from "vitest";
 import { standInAuditEntries } from "../server/lib/flightdeckAudit.js";
+import type { StudioBundle } from "../server/subapps/studio/service/bundle.js";
 import { buildHarness, studioBundle, type Harness } from "./support.js";
 
 let harness: Harness | null = null;
@@ -26,10 +27,16 @@ afterEach(async () => {
 
 const BUNDLE = studioBundle();
 
-const ROUTES = [
-  { method: "GET" as const, url: "/api/apps/studio/proposals", payload: undefined },
-  { method: "POST" as const, url: "/api/apps/studio/admit", payload: BUNDLE as unknown },
-  { method: "POST" as const, url: "/api/apps/studio/proposals", payload: BUNDLE as unknown },
+interface RouteCase {
+  readonly method: "GET" | "POST";
+  readonly url: string;
+  readonly payload?: StudioBundle;
+}
+
+const ROUTES: readonly RouteCase[] = [
+  { method: "GET", url: "/api/apps/studio/proposals" },
+  { method: "POST", url: "/api/apps/studio/admit", payload: BUNDLE },
+  { method: "POST", url: "/api/apps/studio/proposals", payload: BUNDLE },
 ];
 
 describe("every handler refuses before it does anything, layer 1 (the kill switch)", () => {

@@ -19,13 +19,15 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import {
   EMIT_MANIFEST,
-  EXCLUDED_FROM_VENDORING,
+  HOST_DEPENDENCIES,
   HOST_STANDINS,
+  INSTALL_STEPS,
+  NODE_BUILTINS_IN_TESTS,
   REGISTRY_EDIT,
   STUDIO_MIN_HOST_VERSION,
+  STUDIO_ONLY,
   STUDIO_ROUTE_PREFIX,
   STUDIO_SUBAPP_ID,
-  VENDORED_PACKAGES,
 } from "../emit.js";
 import { studioManifest } from "../server/subapps/studio/manifest.js";
 
@@ -43,16 +45,32 @@ function walk(dir: string): string[] {
 }
 
 describe("the emit manifest", () => {
-  it("names five files, and every one of them is on disk", () => {
-    expect(EMIT_MANIFEST).toHaveLength(5);
+  it("names ten files, and every one of them is on disk", () => {
+    expect(EMIT_MANIFEST).toHaveLength(10);
     for (const file of EMIT_MANIFEST) {
       expect(existsSync(join(PACKAGE_SRC, file.source)), `missing: ${file.source}`).toBe(true);
     }
   });
 
   it("accounts for every file under studio/, so a new one cannot silently not ship", () => {
-    const onDisk = [...walk(join(PACKAGE_SRC, "server/subapps/studio")), ...walk(join(PACKAGE_SRC, "web/src/subapps/studio"))];
+    const onDisk = [
+      ...walk(join(PACKAGE_SRC, "server/subapps/studio")),
+      ...walk(join(PACKAGE_SRC, "web/src/subapps/studio")),
+      ...walk(join(PACKAGE_SRC, "tests/subapps/studio")),
+    ];
     expect(onDisk.sort()).toEqual([...EMIT_MANIFEST].map((f) => f.source).sort());
+  });
+
+  it("emits three host tests, in the folder the G3 layout fence requires", () => {
+    // `tests/subapps/subappManifest.test.ts` fails a sub-app whose tests sit
+    // in the flat `tests/` root. The vitest glob is already recursive, so
+    // placing them is all the wiring there is.
+    const hostTests = EMIT_MANIFEST.filter((file) => file.role === "host-test");
+    expect(hostTests).toHaveLength(3);
+    for (const test of hostTests) {
+      expect(test.target.startsWith("flightdeck/tests/subapps/studio/")).toBe(true);
+      expect(test.source.startsWith("tests/subapps/studio/")).toBe(true);
+    }
   });
 
   it("never emits a host stand-in", () => {
@@ -66,10 +84,15 @@ describe("the emit manifest", () => {
     for (const standIn of HOST_STANDINS) {
       expect(existsSync(join(PACKAGE_SRC, standIn)), `missing: ${standIn}`).toBe(true);
     }
-    const shipped = new Set([...EMIT_MANIFEST.map((f) => f.source), ...HOST_STANDINS, "emit.ts", "index.ts"]);
-    const unaccounted = [...walk(join(PACKAGE_SRC, "server")), ...walk(join(PACKAGE_SRC, "web")), "emit.ts", "index.ts"].filter(
-      (file) => !shipped.has(file),
-    );
+    const shipped = new Set([...EMIT_MANIFEST.map((f) => f.source), ...HOST_STANDINS, ...STUDIO_ONLY, "emit.ts", "index.ts"]);
+    const unaccounted = [
+      ...walk(join(PACKAGE_SRC, "server")),
+      ...walk(join(PACKAGE_SRC, "web")),
+      ...walk(join(PACKAGE_SRC, "tests")),
+      ...walk(join(PACKAGE_SRC, "studio")),
+      "emit.ts",
+      "index.ts",
+    ].filter((file) => !shipped.has(file));
     expect(unaccounted).toEqual([]);
   });
 
@@ -77,21 +100,55 @@ describe("the emit manifest", () => {
     const targets = EMIT_MANIFEST.map((f) => f.target);
     expect(new Set(targets).size).toBe(targets.length);
     for (const file of EMIT_MANIFEST) {
-      const expected = file.role === "web-module" ? "flightdeck/web/src/subapps/studio/" : "flightdeck/server/subapps/studio/";
+      const expected =
+        file.role === "web-module"
+          ? "flightdeck/web/src/subapps/studio/"
+          : file.role === "host-test"
+            ? "flightdeck/tests/subapps/studio/"
+            : "flightdeck/server/subapps/studio/";
       expect(file.target.startsWith(expected), `${file.target} does not sit under ${expected}`).toBe(true);
-      expect(file.target.endsWith(file.source.replace(/^web\/src\/|^server\//, ""))).toBe(true);
+      expect(file.target).toBe(`flightdeck/${file.source}`);
     }
   });
 
-  it("keeps the CLI half of the engine packages out of what travels with Studio", () => {
-    expect(VENDORED_PACKAGES).toEqual(["@spec", "@codegen/pure", "@conformance/gate"]);
-    // `@codegen/index` re-exports `apply.ts`; `@conformance/index` re-exports
-    // `ship.ts` and `verify/`. All of them open files.
-    expect(EXCLUDED_FROM_VENDORING).toContain("@codegen/index");
-    expect(EXCLUDED_FROM_VENDORING).toContain("@codegen/apply");
-    expect(EXCLUDED_FROM_VENDORING).toContain("@conformance/ship");
-    for (const excluded of EXCLUDED_FROM_VENDORING) {
-      expect(VENDORED_PACKAGES).not.toContain(excluded);
+  it("vendors nothing: the install is the ten files plus one registry edit", () => {
+    // ⭐ THE CLAIM THAT USED TO BE FALSE. The previous mapping said the host
+    // edit was two lines in registry.ts while the emitted tree imported three
+    // of Studio's sibling packages — so following it produced
+    // "Cannot find package '@spec/index'", and the forty-six-file vendoring
+    // that fixed THAT turned the host's own typecheck red.
+    for (const step of INSTALL_STEPS) {
+      expect(step.length).toBeGreaterThan(20);
+    }
+    expect(INSTALL_STEPS.join(" ")).toContain("No vendoring");
+    expect(INSTALL_STEPS.join(" ")).toContain("No tsconfig change");
+    // Named as Studio-only, and genuinely absent from what travels.
+    expect(STUDIO_ONLY).toContain("studio/conversion.ts");
+    expect(EMIT_MANIFEST.map((f) => f.source)).not.toContain("studio/conversion.ts");
+  });
+
+  it("declares only packages a Flightdeck host already has", () => {
+    expect([...HOST_DEPENDENCIES]).toEqual(["zod", "fastify", "react", "react-dom/server"]);
+    for (const dependency of HOST_DEPENDENCIES) {
+      expect(/^@(spec|codegen|conformance)/.test(dependency)).toBe(false);
+    }
+    // A `node:` specifier is admitted for emitted TESTS only; a mounted module
+    // carrying one fails the host's own import-closure fence.
+    expect([...NODE_BUILTINS_IN_TESTS].every((s) => s.startsWith("node:"))).toBe(true);
+  });
+
+  it("names the registry edit as the ONE existing host file the install touches", () => {
+    expect(REGISTRY_EDIT.file).toBe("flightdeck/server/subapps/registry.ts");
+    const targets = EMIT_MANIFEST.map((file) => file.target);
+    expect(targets).not.toContain(REGISTRY_EDIT.file);
+    // Every emitted file lands in one of the sub-app's own three directories,
+    // so nothing else in the host is overwritten by copying them.
+    for (const target of targets) {
+      expect(
+        target.startsWith("flightdeck/server/subapps/studio/") ||
+          target.startsWith("flightdeck/web/src/subapps/studio/") ||
+          target.startsWith("flightdeck/tests/subapps/studio/"),
+      ).toBe(true);
     }
   });
 });
@@ -112,6 +169,14 @@ describe("the emitted files carry no test seam", () => {
       const source = readFileSync(join(PACKAGE_SRC, file.source), "utf8");
       expect(source).not.toMatch(/from\s+["'][^"']+\.css["']/);
       expect(source).not.toMatch(/import\s+["'][^"']+\.css["']/);
+    }
+  });
+
+  it("no emitted file reaches for a Studio engine package or a tsconfig alias", () => {
+    for (const file of EMIT_MANIFEST) {
+      const source = readFileSync(join(PACKAGE_SRC, file.source), "utf8");
+      expect(source, `${file.source} names a Studio engine package`).not.toMatch(/from\s+["']@(spec|codegen|conformance)/);
+      expect(source, `${file.source} imports Studio's generator half`).not.toMatch(/["'][^"']*studio\/conversion/);
     }
   });
 

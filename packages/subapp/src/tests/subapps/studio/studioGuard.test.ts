@@ -38,6 +38,16 @@ function read(relative: string): string {
   return readFileSync(join(SUBAPP_DIR, relative), "utf8");
 }
 
+/** Source with comments removed. Studio's files explain themselves at length,
+ * and a rule like "never reads process.env" has to be checked against the CODE
+ * rather than against a paragraph that names the thing it forbids. Crude but
+ * conservative: it only ever removes text, so nothing real hides behind it. */
+function code(relative: string): string {
+  return read(relative)
+    .replace(/\/\*[\s\S]*?\*\//g, "")
+    .replace(/(^|[^:"'`])\/\/[^\n]*/g, "$1");
+}
+
 /** Every file of Studio's that is MOUNTED — the guard, the routes and the
  * service modules a route reaches. Not the web module: a page is not a
  * handler. */
@@ -161,15 +171,19 @@ describe("the guard call comes before any work, in every handler", () => {
 });
 
 describe("nothing mounted caches a boolean or reaches a disk", () => {
-  it("reads no env var of its own outside the guard's own host leaves", () => {
+  it("reads no env var of its own: the kill switch is the host's to read, per request", () => {
+    // An actual READ — `process.env.X` or `process.env[...]`. The bare string
+    // appears in `service/admit.ts`, which is the thing that REFUSES a bundle
+    // whose proposed source reads one, and a rule that could not tell those
+    // two apart would forbid the check from naming what it checks.
     for (const file of MOUNTED_SERVER_FILES) {
-      expect(read(file).includes("process.env"), `${file} reads process.env`).toBe(false);
+      expect(code(file), `${file} reads an env var`).not.toMatch(/\bprocess\.env\s*[.[]/);
     }
   });
 
   it("imports no node builtin and no database driver", () => {
     for (const file of MOUNTED_SERVER_FILES) {
-      const source = read(file);
+      const source = code(file);
       expect(source, `${file} imports a node builtin`).not.toMatch(/from\s+"node:/);
       expect(source, `${file} imports a database driver`).not.toMatch(/from\s+"(better-sqlite3|pg|mysql2?|knex|drizzle-orm|typeorm)"/);
     }
@@ -177,7 +191,7 @@ describe("nothing mounted caches a boolean or reaches a disk", () => {
 
   it("never reaches the host registry or a sibling sub-app", () => {
     for (const file of MOUNTED_SERVER_FILES) {
-      const source = read(file);
+      const source = code(file);
       expect(source, `${file} imports the registry`).not.toMatch(/from\s+"[^"]*\/registry\.js"/);
       expect(source, `${file} imports installRoutes`).not.toMatch(/from\s+"[^"]*installRoutes\.js"/);
     }
@@ -190,14 +204,17 @@ describe("nothing mounted caches a boolean or reaches a disk", () => {
     // else's source, authored against somebody else's tsconfig, and the host's
     // own `npm run typecheck` went red on the copy.
     for (const file of MOUNTED_SERVER_FILES) {
-      const source = read(file);
+      const source = code(file);
       expect(source, `${file} imports a Studio engine package`).not.toMatch(/from\s+"@(spec|codegen|conformance)/);
     }
   });
 
   it("names only the two packages the host already carries", () => {
     for (const file of MOUNTED_SERVER_FILES) {
-      for (const match of read(file).matchAll(/\bfrom\s+"([^".][^"]*)"/g)) {
+      // Anchored to a whole line, the way the host's own emitted conformance
+      // test does it: a specifier-shaped fragment inside a regex literal or a
+      // template string is not an import.
+      for (const match of read(file).matchAll(/^import\s+(?:type\s+)?[^"';]*from\s+"([^"]+)";$/gm)) {
         const specifier = match[1] ?? "";
         if (specifier.startsWith(".")) continue;
         expect(["zod", "fastify"], `${file} imports ${specifier}`).toContain(specifier);

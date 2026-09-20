@@ -1,4 +1,4 @@
-/** The conversion, tested without HTTP in the way.
+/** The conversion, tested without HTTP in the way — Studio's half of the line.
  *
  * `guard-first.test.ts` and `propose.test.ts` drive the real routes and read
  * the adapter transcript. This file asks the narrower questions those cannot:
@@ -16,11 +16,11 @@
  * the code path `gate_blocked` would take. */
 import { describe, expect, it } from "vitest";
 import {
-  convertWorkflow,
   findFiledProposal,
   proposalFileNameFor,
   proposalPrefixFor,
-} from "../server/subapps/studio/service/pipeline.js";
+} from "../server/subapps/studio/service/proposal.js";
+import { convertWorkflow } from "../studio/conversion.js";
 import { ANSWERS, AUTO_ADVANCING_WORKFLOW, CONVERTIBLE_WORKFLOW } from "./support.js";
 
 const ready = convertWorkflow({ workflow: CONVERTIBLE_WORKFLOW, answers: ANSWERS, source: "skills/wc/SKILL.md" });

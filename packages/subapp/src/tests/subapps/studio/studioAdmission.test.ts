@@ -68,7 +68,7 @@ import { appendFlightdeckAudit } from "../../lib/flightdeckAudit.js";
 import { effectiveSubAppEnabled } from "../installRow.js";
 import { subAppKillSwitchEnabled } from "../killSwitch.js";
 import { DEFAULT_PROJECT_ID } from "../../project/types.js";
-import type { WorkspaceRuntime } from "../../../workspace/types.js";
+import type { WorkspaceRuntime } from "../../workspace/types.js";
 
 export class WcClockDisabledError extends Error {}
 

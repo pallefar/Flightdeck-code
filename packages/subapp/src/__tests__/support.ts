@@ -18,7 +18,7 @@ import type { Db } from "../server/db.js";
 import { CapabilityDeniedError } from "../server/subapps/capabilities.js";
 import { standInResetAudit } from "../server/lib/flightdeckAudit.js";
 import { standInClearInstallRows, standInSetInstallRow } from "../server/subapps/installRow.js";
-import type { ContractFolder, RegisterRoutesCtx, SubAppCapabilities } from "../server/subapps/types.js";
+import type { CapabilityScope, ContractFolder, RegisterRoutesCtx, SubAppCapabilities } from "../server/subapps/types.js";
 import type { WorkspaceRuntime } from "../server/workspace/types.js";
 import { registerStudioRoutes } from "../server/subapps/studio/routes/index.js";
 import type { StudioBundle } from "../server/subapps/studio/service/bundle.js";
@@ -47,12 +47,13 @@ export function fakeCapabilities(seed: readonly string[] = []): FakeCapabilities
   const denied = new Set<string>();
   for (const name of seed) written.set(name, { seeded: true });
 
-  const require_ = (scope: string): void => {
+  const require_ = (scope: CapabilityScope): void => {
     if (denied.has(scope)) {
-      // The host's own adapter throws `CapabilityDeniedError`; using that exact
-      // type rather than a bare Error is what exercises the route's `mapError`
-      // through the branch it will take in production.
-      throw new CapabilityDeniedError(`sub-app "studio" attempted "${scope}" without a granted scope`);
+      // The host's own adapter throws `CapabilityDeniedError` WITH the scope
+      // attached — that is how a route can answer `{ code, scope }` instead of
+      // splicing server prose into a sentence. Dropping it here would let a
+      // route that lost the scope keep passing.
+      throw new CapabilityDeniedError(`sub-app "studio" attempted "${scope}" without a granted scope`, scope);
     }
   };
 
