@@ -93,8 +93,17 @@ export REPO=/Users/you/project-contract                   # scripts/mount-in-hos
 ### 2.4 What the host gate needs that this container lacks
 
 ```bash
-# the Python engine's docx dependency — the run_eval stack's failure here
-python3 -m pip install python-docx
+# ⭐ VERIFIED — these two, and the eval stack goes GREEN.
+#
+# Not guessed from the error message: the host's third-party Python imports
+# were enumerated (`docx` and `openpyxl`; everything else is stdlib or one of
+# the host's own modules). Both were missing here. After installing them:
+#
+#   $ PYTHONUTF8=1 python3 processes/contracts-de/engine/eval/run_eval.py
+#   OVERALL: regressions 120/120 · gates 4/4 · wc-xlsx 21/21 · cases 4 · GREEN
+#   EXIT=0
+#
+python3 -m pip install python-docx openpyxl
 
 # Postgres for the postgres-tier stack
 brew install postgresql@16 && brew services start postgresql@16
@@ -184,6 +193,7 @@ curl -s localhost:8787/api/studio/build \
 | `npm test` | 2207 tests | ✅ |
 | `npm run typecheck` | `tsc --noEmit` | ✅ |
 | `npm run dev` | Vite, the workbench | ✅ |
+| `npm run build` | `tsc -b` + Vite build → `dist/` | ✅ 553 kB bundle, 1.7s |
 | `npm run dev:server` | the composition root | ✅ |
 | `npm run redteam` | plants violations, all must block | ✅ `7/7` |
 | `npm run standalone` | builds and smoke-tests each standalone fixture | ✅ |
