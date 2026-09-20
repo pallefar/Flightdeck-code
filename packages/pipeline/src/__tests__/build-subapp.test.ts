@@ -86,32 +86,56 @@ describe("prompt → proposal, end to end", () => {
     // honest end of this path today, and asserting `generation-refused` rather
     // than skipping keeps it visible.
     const outcome = await buildSubAppFromPrompt({ prompt: PROMPT }, deps(goodModel));
-    expect(outcome.status).toBe("generation-refused");
-    if (outcome.status !== "generation-refused") return;
-    expect(outcome.issues.join(" ")).toMatch(/domains|Unrecognized key/);
+
+    // ⭐ IT NOW REACHES CODE. `translate-spec.ts` bridges @spec's document to
+    // @codegen's, `generateSubApp` emits 25 files — the host half AND the
+    // standalone harness — and the path stops at the OUTPUT gate rather than
+    // at a schema error about `domains`.
+    //
+    // ⛔ AND THE OUTPUT GATE REFUSES, for three findings that are all false
+    // positives on generated TypeScript:
+    //     `name: string;`   in `interface FieldDescriptor`  → class "name"
+    //     `name: string;`   in `interface WorkflowDescriptor`
+    //     `"$1 $2"`         a regex replacement             → class "amount" ×2
+    // The first two are TYPE ANNOTATIONS — a declaration holds no value, so
+    // there is nothing there to disclose. The third is a capture-group
+    // reference that the amount pattern reads as two dollar amounts.
+    //
+    // Asserted rather than skipped, and NOT worked around by renaming the
+    // emitter's fields: "a space is a spelling, not a defence" is this
+    // package's own rule about exactly that move. The fix belongs in the
+    // scanner, which is a PII detector and gets its own change.
+    expect(outcome.status).toBe("artifacts-refused");
+    if (outcome.status !== "artifacts-refused") return;
+    expect(outcome.decision.decision).toBe("refuse");
+    expect(outcome.decision.findings.map((f) => f.class).sort()).toEqual(["amount", "name", "name"]);
   });
 
-  it("⛔ KNOWN GAP: @spec and @codegen are two different spec FORMATS", () => {
-    // Not a dialect difference — different documents that share a type name.
-    //
-    //   @spec emits    specVersion, minHostVersion, purpose, sourcePrompt,
-    //                  derived, routes, widgets, tables, settingsPanel
-    //   @codegen wants domains (REQUIRED), and refuses every key above
-    //
-    // codegen's own header says this is the intended failure mode: "
-    // miniAppSpecSchema is the only door in … if the spec package widens its
-    // output, the widening shows up as a parse failure here — loudly, at the
-    // seam". It is loud. It is also unbridged: nothing translates one into
-    // the other, so PROMPT → APP stops here.
-    //
-    // ⚠ THE TRANSLATOR EXISTS FOR THE OTHER PATH. `packages/subapp/src/studio/
-    // conversion.ts` has `translate()`, which turns a derived WORKFLOW into a
-    // codegen spec. The prompt path needs its equivalent: unwrap @spec's
-    // evidence-bearing fields, group its flat `routes` into codegen's
-    // `domains`, and refuse anything codegen cannot emit rather than coercing
-    // it. That is the next piece of work and it is named here so it cannot be
-    // mistaken for done.
-    expect(true).toBe(true);
+  it("⭐ the two spec FORMATS are bridged — and the bridge refuses rather than guesses", async () => {
+    // This case used to read `expect(true).toBe(true)` under a comment
+    // explaining that nothing translated @spec's document into @codegen's, so
+    // PROMPT → APP stopped at a schema error. `translate-spec.ts` is that
+    // translator. What it will NOT do is as much of the point as what it does:
+    // a @spec route carries `kind` and `capabilities`, and @codegen's propose
+    // operation needs `proposalKind`, `ticketField`, `fields` and
+    // `auditEvent` — which nothing in a @spec document names. So read-only
+    // mini-apps translate today and proposing ones are refused BY NAME.
+    const { translateSpec } = await import("../translate-spec");
+    const outcome = await buildSubAppFromPrompt({ prompt: PROMPT }, deps(goodModel));
+    // It got past @codegen's door, which is the whole claim.
+    expect(outcome.status).not.toBe("generation-refused");
+
+    // And the refusing half is reachable from a real planner spec, not only
+    // from a hand-built fixture.
+    const proposing = translateSpec({
+      specVersion: 1, id: "x", label: "X", version: "0.1.0", minHostVersion: "5.0.0",
+      icon: "📄", navSection: "Overview", purpose: "p", sourcePrompt: "s",
+      capabilities: ["write:inbox-proposal"], visibleToRoles: ["admin"],
+      derived: { routePrefix: "/api/subapps/x", webModuleId: "x", navPath: "/x", enableEnvVar: "SUBAPP_X_ENABLED", tablePrefix: "subapp_x_" },
+      routes: [{ id: "f", method: "POST", path: "/file", summary: "s", kind: "propose", capabilities: ["write:inbox-proposal"] }],
+      tables: [], widgets: [], settingsPanel: null,
+    });
+    expect(proposing.ok).toBe(false);
   });
 
   it("⭐ the guardrails' refusal is the ANSWER, not an exception that escapes", async () => {

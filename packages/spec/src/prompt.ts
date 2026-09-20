@@ -44,16 +44,21 @@ export const EXAMPLE_DRAFT: PlannerDraft = {
         capabilities: ["read:contracts"],
       },
     ],
-    tables: [
-      {
-        name: "gap_snapshot",
-        purpose: "Last computed gap list, so the page loads without re-scanning.",
-        columns: [
-          { name: "contract_id", type: "text", nullable: false, pii: false },
-          { name: "checked_at", type: "timestamptz", nullable: false, pii: false },
-        ],
-      },
-    ],
+    // ⛔ EMPTY, AND THAT IS THE LESSON THIS EXAMPLE TEACHES.
+    //
+    // It used to declare a `gap_snapshot` cache table, and the model copies
+    // what the example does. @codegen's mini-app profile is DATABASE-FREE —
+    // it emits no schema.ts, and `translate-spec.ts` refuses a spec that
+    // declares a table rather than silently generating an app without the
+    // persistence it asked for. So every spec this prompt produced was
+    // untranslatable, for a table the example added as a nicety ("so the
+    // page loads without re-scanning").
+    //
+    // @spec still supports tables — the Cowork-workflow conversion path uses
+    // them and `schema.ts` derives their prefixed names. The PROMPT path is
+    // the one that must stay database-free, so the constraint lives here,
+    // where the model can see it, rather than only in a refusal it cannot.
+    tables: [],
     widgets: [],
     settingsPanel: null,
   },

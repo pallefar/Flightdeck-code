@@ -44,6 +44,7 @@ import {
   type ModelRequestDecision, refuseAtPayloadTierCeiling } from "../../guardrails/src/pure";
 import { withPseudonymisation, type Tier } from "../../pseudonym/src/index";
 import { PayloadTierError } from "../../pseudonym/src/errors";
+import { translateSpec, type TranslationRefusal } from "./translate-spec";
 import type { PlannerLlmLike } from "./gated-planner";
 
 export interface BuildFromPromptInput extends PlanInput {
@@ -96,6 +97,10 @@ export type BuildOutcome =
   /** The model could not produce a valid draft in the attempts allowed. */
   | { readonly status: "invalid_draft"; readonly issues: readonly string[]; readonly attempts: number }
   /** Generation itself refused — a spec that cannot be emitted. */
+  /** The @spec document could not be expressed as a @codegen one. Each
+   * refusal names a path in the SOURCE spec and what @codegen needs that it
+   * does not carry — never a coerced value. See `translate-spec.ts`. */
+  | { readonly status: "translation-refused"; readonly refusals: readonly TranslationRefusal[] }
   | { readonly status: "generation-refused"; readonly issues: readonly string[] }
   /** ⛔ The generated FILES carry cat 3/4. Never approvable: this is a bug in
    * generation, and the decision names where. */
@@ -223,10 +228,17 @@ export async function buildSubAppFromPrompt(
   }
 
   // ── 2. spec → source ──
+  // ⭐ @spec → @codegen. Two documents that share a type name; this is the
+  // only thing that turns one into the other, and it refuses rather than
+  // coerces. Before it existed, every prompt reached `generateSubApp` and
+  // came back as a schema error about `domains`.
+  const translated = translateSpec(outcome.spec);
+  if (!translated.ok) return { status: "translation-refused", refusals: translated.refusals };
+
   let generated: GeneratedSubApp;
   try {
     generated = generateSubApp(
-      outcome.spec,
+      translated.spec,
       input.registrySource === undefined ? {} : { registrySource: input.registrySource },
     );
   } catch (error) {
