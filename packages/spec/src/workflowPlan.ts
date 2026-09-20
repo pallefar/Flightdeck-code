@@ -44,8 +44,7 @@ import { iconSchema, labelSchema, miniAppSpecSchema, formatIssues } from "./sche
 import type { MiniAppSpec, SpecRoute, SpecStep } from "./schema";
 import { draftSchema } from "./draft";
 import type { PlannerDraft } from "./draft";
-import { readConsentAnswers } from "./gates";
-import { DEFAULT_APP_VERSION } from "./gates";
+import { DEFAULT_APP_VERSION, readConsentAnswers } from "./gates";
 import {
   capabilityConsentQuestion,
   idCollisionQuestion,
@@ -58,7 +57,7 @@ import {
 import type { ClarifyingQuestion } from "./questions";
 import type { PlanOutcome, PlanWarning, WarningCode } from "./outcome";
 import { parseWorkflowMarkdown } from "./workflow";
-import type { WorkflowDoc, WorkflowStep } from "./workflow";
+import type { WorkflowStep } from "./workflow";
 
 export interface WorkflowPlanInput {
   /**
@@ -255,7 +254,6 @@ const MAX_DETAIL = 600;
 
 /** Mirrors the prompt path's draft, so a review screen can prefill either outcome the same way. */
 function draftFor(
-  doc: WorkflowDoc,
   understanding: string,
   fields: {
     id: string;
@@ -276,10 +274,9 @@ function draftFor(
       icon: fields.icon === "" ? null : fields.icon,
       navSection: fields.navSection === "" ? null : fields.navSection,
       purpose: fields.purpose === "" ? null : fields.purpose,
-      visibleToRoles:
-        fields.roles.length > 0
-          ? { roles: [...fields.roles], evidence: doc.frontmatter.name }
-          : null,
+      // No evidence quote: in this path the roles are either a person's own answer or the
+      // host literals the document spells out, never a model's claim to be checked.
+      visibleToRoles: fields.roles.length > 0 ? { roles: [...fields.roles], evidence: null } : null,
       capabilities: fields.capabilities.map((entry) => ({
         capability: entry.capability,
         evidence: entry.evidence,
@@ -660,7 +657,7 @@ export function planFromWorkflow(input: WorkflowPlanInput): PlanOutcome {
       questions: orderQuestions(questions),
       understanding,
       warnings,
-      draft: draftFor(doc, understanding, {
+      draft: draftFor(understanding, {
         id: id ?? "",
         label,
         icon,

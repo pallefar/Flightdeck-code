@@ -15,7 +15,8 @@
     "test": "vitest run",
     "lint": "eslint .",
     "redteam": "tsx scripts/redteam-gate.ts",
-    "mount": "bash scripts/mount-in-host.sh"
+    "mount": "bash scripts/mount-in-host.sh",
+    "promote": "bash scripts/promote.sh"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.127.0",

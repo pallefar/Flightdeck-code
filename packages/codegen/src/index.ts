@@ -1,9 +1,18 @@
 /** Flightdeck Studio — codegen.
  *
  * Takes a validated MiniAppSpec and emits the source files of a Flightdeck
- * sub-app: `manifest.ts`, `guard.ts`, `routes/index.ts` plus one file per
- * domain, `schema.ts` when the spec declares tables, the web module's
- * `index.tsx`, and the `registry.ts` edit as a patch.
+ * MINI-APP: the database-free, `shell-reference`-shaped floor —
+ * `manifest.ts` with `initSchema: () => {}`, `guard.ts`, `routes/index.ts`
+ * plus one file per domain, the web module's `index.tsx`, the conformance
+ * test that travels with them, and the `registry.ts` edit as a patch. No
+ * `schema.ts`, no DDL, no migration: a spec that declares tables is refused
+ * by name unless it says `profile: "table-backed"` (see `profile.ts`).
+ *
+ * Nothing here writes to disk. `generateSubApp` returns text, which is what
+ * lets Studio run as a sub-app of the host it generates for: a sub-app
+ * route reaches the world only through the injected capability adapter,
+ * which has no filesystem write. The generated set becomes ONE inbox
+ * proposal that a human applies.
  *
  * `docs/FLIGHTDECK-SUBAPP-CONTRACT.md` is the law this package implements.
  * The rules it cannot let an emitted sub-app break — guard first, no cached
@@ -37,7 +46,17 @@ export {
   type WriteAction,
   type WritePayload,
 } from "./apply";
-export { planSubApp, SpecRejectedError, type SubAppPlan, type PlannedDomain, type PlannedRoute, type PlannedTable } from "./plan";
+export {
+  planSubApp,
+  SpecRejectedError,
+  type PlannedDomain,
+  type PlannedRoute,
+  type PlannedTable,
+  type PlannedWorkflow,
+  type PlannedWorkflowStep,
+  type SubAppPlan,
+} from "./plan";
+export { DEFAULT_PROFILE, MINI_APP_FLOOR, PROFILES, isMiniApp, tableRefusalReason, type Profile } from "./profile";
 export {
   CodegenInvariantError,
   checkEmittedInvariants,
@@ -57,13 +76,20 @@ export { assertManifestWouldBoot, subAppManifestSchema, ManifestRuleError, isVer
 export { readEmittedManifest, ManifestReadError } from "./testing/readEmittedManifest";
 export {
   miniAppSpecSchema,
+  profileOf,
+  workflowSpecSchema,
+  workflowStepSchema,
   CAPABILITY_SCOPES,
   HOST_VERSION,
   MANAGED_COLUMNS,
   NAV_SECTIONS,
   RESERVED_SUBAPP_IDS,
+  WORKFLOW_GATES,
   WORKSPACE_ROLES,
   type MiniAppSpec,
+  type WorkflowGate,
+  type WorkflowSpec,
+  type WorkflowStepSpec,
   type DomainSpec,
   type RouteSpec,
   type Operation,

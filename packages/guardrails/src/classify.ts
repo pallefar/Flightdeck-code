@@ -102,8 +102,14 @@ export interface NameHit {
 export function nameHits(path: string): NameHit[] {
   const hits: NameHit[] = [];
   const whole = normalizeToken(path);
+  // Split on path separators too, not just object-path punctuation. The host's
+  // `deniedPiiField` only ever sees a widget field pointer, so `.` and `[]`
+  // are all it needs; `nameHits` also judges FILE paths for
+  // `gateGeneratedArtifacts`, and without `/` a segment rule could never fire
+  // on `data/person/name.json` — the exact-segment tier would be dead for
+  // every artifact path. Additive: a field pointer never contains a slash.
   const segments = path
-    .split(/[.[\]]+/)
+    .split(/[.[\]/\\]+/)
     .filter(Boolean)
     .map(normalizeToken)
     .filter(Boolean);
@@ -129,8 +135,11 @@ export function nameHits(path: string): NameHit[] {
 /**
  * The host's `deniedPiiField` from `flightdeck/server/widgets/types.ts`,
  * transcribed byte-for-byte in behaviour: the FIRST denied token in `path`, or
- * null. Exported so `__tests__/divergence.test.ts` can check this copy against
- * the host's function on shared inputs, not just the lists against the lists.
+ * null. Kept even though `nameHits` supersedes it, because the divergence test
+ * asserts the HOST's function still consults the two lists in this order —
+ * substrings over the whole path first, then segments. A host that reordered
+ * those tiers would change what "tier 4" means here without changing a single
+ * list entry, and a list-only comparison would not see it.
  */
 export function deniedPiiField(path: string): string | null {
   const whole = normalizeToken(path);
@@ -174,13 +183,31 @@ export function classifyText(text: string, where: string): Finding[] {
 // The walk
 // ─────────────────────────────────────────────────────────────────────────
 
-function findingsForPath(rawPath: string, safePath: string): Finding[] {
-  return nameHits(rawPath).map((h) => ({
-    class: h.token,
-    tier: h.tier,
-    via: h.via,
-    where: safePath,
-  }));
+/**
+ * The name findings introduced AT this node — the hits on the full path minus
+ * the hits its parent already had.
+ *
+ * Without the subtraction, `salary` matches the whole normalized path at every
+ * one of a salary object's descendants, so a record with twelve fields under
+ * `employeeSalary` produces thirteen tier-4 findings that all say the same
+ * thing about the same disclosure. That is not extra safety, it is an audit
+ * event nobody reads.
+ *
+ * The subtraction is by TOKEN, not by node, so the cross-segment catch is
+ * kept: `date.ofBirth` normalizes whole to `dateofbirth`, which the parent
+ * `date` does not match, so it is still reported here — and splitting a denied
+ * token across two keys remains a detected evasion rather than a loophole.
+ */
+function findingsForPath(rawPath: string, safePath: string, parentRawPath: string): Finding[] {
+  const inherited = new Set(parentRawPath === "" ? [] : nameHits(parentRawPath).map((h) => h.token));
+  return nameHits(rawPath)
+    .filter((h) => !inherited.has(h.token))
+    .map((h) => ({
+      class: h.token,
+      tier: h.tier,
+      via: h.via,
+      where: safePath,
+    }));
 }
 
 /**
@@ -226,23 +253,33 @@ export function classify(input: unknown, options: ClassifyOptions = {}): Classif
       const safeKey = sanitizePathSegment(key, ordinal, declaredNames);
       const childRaw = joinPath(rawPath, key);
       const childSafe = joinPath(safePath, safeKey);
-      findings.push(...findingsForPath(childRaw, childSafe === "" ? "<root>" : childSafe));
+      findings.push(...findingsForPath(childRaw, childSafe === "" ? "<root>" : childSafe, rawPath));
       visit(child, childRaw, childSafe);
     });
   };
 
   // The root path itself is classified before the walk: when a caller passes
   // `rootPath` (a file path, a table name), the NAME of the thing is as much
-  // of a disclosure as its contents.
-  if (root !== "") findings.push(...findingsForPath(root, root));
-  visit(input, root, root);
+  // of a disclosure as its contents. It is sanitised segment by segment before
+  // being reported, because a generated FILE NAME can carry a person as
+  // readily as a field can — `fixtures/e.musterfrau@example.de.json` is a
+  // disclosure in the path alone.
+  const safeRoot =
+    root === ""
+      ? ""
+      : root
+          .split("/")
+          .map((seg, i) => sanitizePathSegment(seg, i, declaredNames))
+          .join("/");
+  if (root !== "") findings.push(...findingsForPath(root, safeRoot, ""));
+  visit(input, root, safeRoot);
 
   if (truncated) {
     findings.push({
       class: "scan-truncated",
       tier: 4,
       via: "field-name",
-      where: root === "" ? "<root>" : root,
+      where: safeRoot === "" ? "<root>" : safeRoot,
       count: nodes,
     });
   }

@@ -249,10 +249,17 @@ export const workflowStepSchema = z
     /** The generated route that performs this step, named the way the
      * route declares itself. A step with no action is a checklist line:
      * the page shows it and says, in as many words, that it happens
-     * somewhere else. Most steps of a real workflow are that. */
+     * somewhere else. Most steps of a real workflow are that.
+     *
+     * ⛔ `method` is REQUIRED, not inferred from the path. One domain may
+     * legitimately carry `GET /clocks` and `POST /clocks`, and a binding
+     * that matched on path alone would silently pick whichever came first
+     * — which is how a statutory step ends up pointing at the write route
+     * while the gate check looked at the read one. */
     action: z
       .object({
         domain: z.string().regex(KEBAB_RE),
+        method: z.enum(["GET", "POST", "PATCH", "DELETE"]),
         path: z.string().max(120).regex(ROUTE_PATH_RE),
       })
       .strict()

@@ -10,11 +10,12 @@
 import { describe, expect, it } from "vitest";
 import ts from "typescript";
 import { generateSubApp } from "../generate";
-import { minimalSpec, registryFixture, wcClockSpec } from "../fixtures/specs";
+import { contractRunSpec, minimalSpec, registryFixture, wcClockSpec } from "../fixtures/specs";
 
 const apps = [
-  { name: "wc-clock (ceiling)", app: generateSubApp(wcClockSpec, { registrySource: registryFixture }) },
-  { name: "shift-notes (floor)", app: generateSubApp(minimalSpec) },
+  { name: "contract-run (a converted workflow — the mini-app)", app: generateSubApp(contractRunSpec, { registrySource: registryFixture }) },
+  { name: "wc-clock (the table path, which is not the mini-app path)", app: generateSubApp(wcClockSpec, { registrySource: registryFixture }) },
+  { name: "shift-notes (the smallest thing that generates)", app: generateSubApp(minimalSpec) },
 ];
 
 function syntaxErrors(path: string, source: string): string[] {

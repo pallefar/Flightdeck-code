@@ -196,11 +196,11 @@ describe("a cache miss fails loudly", () => {
   });
 
   it("holds no provider to fall through to — passing one does not compile", () => {
+    // @ts-expect-error playback takes no provider: `provider?: never` is the wall.
     const player = createHarness<TestRequest, TestResponse>({
       mode: "playback",
       fixturesDir: dir,
       env: {},
-      // @ts-expect-error playback takes no provider: `provider?: never` is the wall.
       provider: explodingProvider<TestRequest, TestResponse>(),
     });
     expect(player.mode).toBe("playback");

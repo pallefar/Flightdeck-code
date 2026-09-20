@@ -92,6 +92,14 @@ function writeValue(
 
   seen.add(object);
   try {
+    // `toJSON` first, on any object, exactly as JSON.stringify honours it — a
+    // value that knows how to represent itself is asked before it is judged.
+    const toJson = (value as { toJSON?: unknown }).toJSON;
+    if (typeof toJson === "function") {
+      writeValue((toJson as () => unknown).call(value), path, out, indent, depth, seen);
+      return;
+    }
+
     if (Array.isArray(value)) {
       writeArray(value, path, out, indent, depth, seen);
       return;
@@ -99,12 +107,6 @@ function writeValue(
 
     const proto: unknown = Object.getPrototypeOf(object) as unknown;
     if (proto !== PLAIN_OBJECT_PROTO && proto !== null) {
-      const toJson = (value as { toJSON?: unknown }).toJSON;
-      if (typeof toJson === "function") {
-        // Same escape hatch JSON.stringify offers, but the result is canonicalized too.
-        writeValue((toJson as () => unknown).call(value), path, out, indent, depth, seen);
-        return;
-      }
       throw new CanonicalizeError(
         `${describe(value)} has no JSON representation — give it a toJSON(), or keep it out of the keyed request`,
         path,

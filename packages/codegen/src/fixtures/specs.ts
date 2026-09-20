@@ -1,13 +1,20 @@
-/** Fixture specs. Two of them, on purpose: the contract names a FLOOR
- * (`shell-reference`, two files) and a CEILING (`docusign`, a routes/ split
- * with its own schema), and a generator that only ever ran against one
- * shape would be a generator with an untested branch in it.
+/** Fixture specs. Three of them, and which one is the PRIMARY matters.
  *
- * `minimalSpec` has no tables at all — it must emit no `schema.ts` and a
- * manifest whose `initSchema` is a no-op.
- * `wcClockSpec` exercises every operation kind, every field type, an
- * optional column, a CHECK-constrained enum, an index, a settings panel and
- * both capability scopes. */
+ * `contractRunSpec` is the product: a Cowork workflow converted into a
+ * database-free mini-app. It carries a `## Procedure` as workflow steps,
+ * binds three of them to routes, leaves three as checklist lines, and
+ * reaches the host only through the capability adapter. It is the shape
+ * every other test in this package should be read against.
+ *
+ * `minimalSpec` is the smallest thing that generates at all — one route,
+ * no workflow — which keeps the "floor" path honest when the workflow
+ * branch is not taken.
+ *
+ * `wcClockSpec` is ⛔ NOT the mini-app path. It declares tables and so has
+ * to say `profile: "table-backed"` out loud. It is kept because that path
+ * works and is tested (every operation kind, every field type, a
+ * CHECK-constrained enum, an index, a settings panel, both scopes) — but a
+ * spec that looks like this is not what Studio converts a workflow into. */
 import type { MiniAppSpec } from "../spec-contract";
 
 export const minimalSpec = {
@@ -34,7 +41,157 @@ export const minimalSpec = {
   ],
 } satisfies MiniAppSpec;
 
+/** ⭐ THE PRIMARY FIXTURE — a Cowork workflow, converted.
+ *
+ * Derived from `skills/orchestrate-workflow/SKILL.md`: its frontmatter
+ * `name`/`description` become the workflow header, and its `## Procedure`
+ * becomes the six steps below, with the skill's own gate language kept
+ * (step 3 is the statutory step-graph, which the skill says may never be
+ * skipped or self-approved, so it carries no action at all).
+ *
+ * Three steps bind to routes and three do not, which is the realistic
+ * ratio: most of a workflow happens outside any one app, and a page that
+ * pretended otherwise would be the wrong page. Nothing here declares a
+ * table — the app's entire durable output is the proposals it files. */
+export const contractRunSpec = {
+  id: "contract-run",
+  label: "Contract Run",
+  icon: "🧭",
+  navSection: "Contract pipeline",
+  summary: "Walk a contract folder through the orchestrate-workflow procedure, proposing each hand-off for a human to approve.",
+  capabilities: ["read:contracts", "write:inbox-proposal"],
+  visibleToRoles: ["hr_preparer", "hr_reviewer", "wc_liaison", "legal", "admin"],
+  workflow: {
+    name: "orchestrate-workflow",
+    description:
+      "Drive an employment contract through its country-specific workflow step-graph by reading and updating its on-disk folder and manifest.json; idempotent and resumable across human and RPA hand-offs.",
+    source: "skills/orchestrate-workflow/SKILL.md",
+    steps: [
+      {
+        n: 1,
+        title: "Read state",
+        detail: "Load the folder and see which artifacts exist and which steps are done, audited and approved.",
+        needs: ["contracts/{ticket}_{person}/", "manifest.json"],
+        produces: ["Where things stand"],
+        gate: "auto",
+        action: { domain: "folders", method: "GET", path: "/contracts" },
+      },
+      {
+        n: 2,
+        title: "Validate consistency",
+        detail:
+          "Reconcile the folder against canonical memory and flag divergence — never silently trust the folder.",
+        needs: ["Pinned template version", "Canonical memory"],
+        produces: ["Divergence flag"],
+        gate: "human",
+        action: { domain: "handoffs", method: "POST", path: "/flag" },
+      },
+      {
+        n: 3,
+        title: "Enforce the step-graph as gates",
+        detail:
+          "Follow the pack's stepGraph. Never advance out of order, never self-approve, never skip a statutory step (DE works council; fixed-term wet-ink issuance).",
+        needs: ["Country pack stepGraph"],
+        produces: ["Next allowable step"],
+        gate: "statutory",
+      },
+      {
+        n: 4,
+        title: "Run the next step",
+        detail: "Delegate to the responsible crew agent for the step the graph allows.",
+        needs: ["Next allowable step"],
+        produces: ["Step output"],
+        gate: "human",
+      },
+      {
+        n: 5,
+        title: "Ask for the hand-off",
+        detail: "At every hand-off that needs a human, the ping is drafted rather than sent.",
+        needs: ["Step output"],
+        produces: ["Hand-off proposal"],
+        gate: "human",
+        action: { domain: "handoffs", method: "POST", path: "/handoff" },
+      },
+      {
+        n: 6,
+        title: "Update state",
+        detail:
+          "Write the transition to manifest.json and canonical memory with actor, time and version. Humans are never the agent; agents never appear as approvers.",
+        needs: ["Approval"],
+        produces: ["manifest.json entry", "Audit event"],
+        gate: "human",
+      },
+    ],
+  },
+  domains: [
+    {
+      name: "folders",
+      title: "Contract folders",
+      routes: [
+        {
+          method: "GET",
+          path: "/contracts",
+          summary: "Load the contract folders this app may read",
+          operation: { kind: "list-contracts" },
+        },
+      ],
+    },
+    {
+      name: "ledger",
+      title: "Filed proposals",
+      routes: [
+        {
+          method: "GET",
+          path: "/proposals",
+          summary: "Everything this app has already proposed",
+          operation: { kind: "list-proposals" },
+        },
+      ],
+    },
+    {
+      name: "handoffs",
+      title: "Hand-offs",
+      routes: [
+        {
+          method: "POST",
+          path: "/flag",
+          summary: "Flag a divergence for review",
+          operation: {
+            kind: "propose",
+            proposalKind: "divergence",
+            ticketField: "ticket",
+            auditEvent: "contract-run.divergence-proposed",
+            fields: [
+              { name: "ticket", type: "string" },
+              { name: "note", type: "string", maxLength: 500, optional: true },
+            ],
+          },
+        },
+        {
+          method: "POST",
+          path: "/handoff",
+          summary: "Propose the hand-off ping",
+          operation: {
+            kind: "propose",
+            proposalKind: "handoff",
+            ticketField: "ticket",
+            auditEvent: "contract-run.handoff-proposed",
+            fields: [
+              { name: "ticket", type: "string" },
+              { name: "step", type: "enum", values: ["works-council", "offer-letter", "approval", "finalize"] },
+            ],
+          },
+        },
+      ],
+    },
+  ],
+} satisfies MiniAppSpec;
+
+/** ⛔ NOT a mini-app. Kept as the regression fixture for the table path,
+ * which is why it has to name that profile explicitly — the default
+ * refuses it. */
 export const wcClockSpec = {
+  profile: "table-backed",
   id: "wc-clock",
   label: "Works Council Clock",
   version: "0.1.0",

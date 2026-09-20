@@ -1,15 +1,36 @@
 /** `web/src/subapps/<webModuleId>/index.tsx` — the page, default-exporting
  * a `SubAppModule`.
  *
- * ── WHY THE PAGE IS DATA-DRIVEN ──────────────────────────────────────
- * The obvious emitter unrolls one bespoke component per route and produces
- * a file that grows linearly in ugliness with the spec. This one emits a
- * `PANELS` constant — the spec, as data — plus a fixed renderer that is the
- * same text in every generated app. Two payoffs: the emitted file stays
- * reviewable at any spec size, and the part that could contain a bug is
- * written once here rather than re-synthesised per app.
+ * ── THE FRONT END IS THE POINT OF A CONVERTED WORKFLOW ───────────────
+ * A Cowork workflow is a skill: frontmatter plus a `## Procedure` of
+ * numbered steps that a person holds in their head — step 3 waits on step
+ * 2, step 5 is statutory, this step needs the folder and produces the
+ * draft. Emitting that as a stack of unlabelled forms throws away the only
+ * part that was hard to write down. So the page's primary surface is a
+ * STEP RAIL: the steps in order, each with its gate, its state, what it
+ * needs, what it produced, and — for the steps this app can actually
+ * perform — the control that performs it. Routes no step names fall
+ * through to "Other actions" below, so nothing the spec declared becomes
+ * unreachable.
  *
- * ── TWO DELIBERATE DEPARTURES FROM `shell-reference/index.tsx` ───────
+ * ── WHERE "STATE" COMES FROM WHEN THERE IS NO DATABASE ───────────────
+ * A mini-app stores nothing. Its only durable trace is the files it wrote
+ * under `memory/proposals/`, which `caps.listOwnInboxProposals()` returns
+ * scoped to its own id. So a step is "proposed" when a proposal whose
+ * filename carries that step's `<id>-<proposalKind>-` prefix exists, and
+ * that is the FURTHEST state this page can honestly show: a human resolves
+ * it in the Inbox, and the page says so in as many words rather than
+ * drawing a tick. Contract rule 7 — propose, don't mutate — is not a
+ * limitation being worked around here; it is what the rail renders.
+ *
+ * ⚠ AND THE PAGE NEVER BLOCKS A STEP. A step whose predecessor has no
+ * proposal reads "Waiting on step N" and keeps its control enabled. The
+ * app cannot see work done outside itself (most steps of a real workflow
+ * happen elsewhere), so disabling the control would be the app making a
+ * judgment it has no state for. It reports the order; it does not enforce
+ * it. "Bots write facts, not judgments."
+ *
+ * ── THREE DELIBERATE DEPARTURES FROM `shell-reference/index.tsx` ─────
  * 1. It calls `fetch` through a local helper instead of the host's `api`
  *    client. Adding a method to `web/src/api.ts` is an edit to a HOST file,
  *    and this generator emits exactly two host edits: the sub-app's own
@@ -28,18 +49,39 @@
  *    the documented floor, ships no dictionary either.
  *    ⚠ KNOWN GAP, stated rather than hidden: a generated page is therefore
  *    English-only, and the emitted header says so in the file itself.
- * 3. It ships NO stylesheet. `web/src/subapps` contains zero `.css` files;
- *    every sub-app's CSS lives in a banner-delimited region of the shared
- *    `web/src/theme.css`, and `tests/keyboardOperability.test.tsx` reads
- *    only that file. So this page uses the existing class names
- *    (`page`, `card`, `muted`, `mono`, `errorbox`, `okbox`) and adds none.
+ * 3. It ships NO stylesheet. `find web/src/subapps -name '*.css'` returns
+ *    zero in the host: every sub-app's CSS lives in a banner-delimited
+ *    region of the shared `web/src/theme.css`, and
+ *    `tests/keyboardOperability.test.tsx` reads only that file. So the page
+ *    uses the host's OWN class names (`page`, `pagehead`, `eyebrow`,
+ *    `card`, `chip` + its `.amber`/`.red`/`.blue`/`.green`/`.orange`
+ *    modifiers, `progress`, `mono`, `muted`, `errorbox`, `okbox`) and adds
+ *    none. What no host class covers — the step card's own grid — is an
+ *    inline style whose every colour is `var(--token, <literal>)`: the
+ *    token so the page follows the host's theme toggle, the literal so it
+ *    still reads correctly anywhere the stylesheet is not loaded. The
+ *    literals are the host's dark values (--bg #07090d, --surface #11161f,
+ *    --ink #eef2f7, --muted #8b96a5, --line #1f2733, --te #ff8200,
+ *    --green #2fd472, --amber #ffc24b, --red #ff5b4d).
+ *
+ * ── WHY THE PAGE IS DATA-DRIVEN ──────────────────────────────────────
+ * The obvious emitter unrolls one bespoke component per route and produces
+ * a file that grows linearly in ugliness with the spec. This one emits
+ * `WORKFLOW` and `PANELS` — the spec, as data — plus a fixed renderer that
+ * is the same text in every generated app. Two payoffs: the emitted file
+ * stays reviewable at any spec size, and the part that could contain a bug
+ * is written once here rather than re-synthesised per app. Studio's own
+ * preview (`src/workbench/preview/descriptor.ts`) depends on exactly that:
+ * it PARSES those literals rather than executing model-written text, and
+ * fingerprints the fixed runtime so it refuses instead of showing a stale
+ * mirror.
  *
  * Refusals are routed on STATUS and the body's `code`, never on prose —
  * the discipline `shell-reference/index.tsx` sets, kept here because it is
  * the difference between a page that explains a 403 and one that shows a
  * server sentence to a person who cannot act on it. */
 import { banner, joinLines, str } from "../emit";
-import type { PlannedDomain, PlannedRoute, SubAppPlan } from "../plan";
+import type { PlannedDomain, PlannedRoute, PlannedWorkflowStep, SubAppPlan } from "../plan";
 
 interface FieldDescriptor {
   name: string;
@@ -55,32 +97,109 @@ export function emitWebModule(plan: SubAppPlan): string {
     banner([
       `${plan.label} — GENERATED page. Default-exports a \`SubAppModule\`; the web loader globs this exact path (\`web/src/subapps/${plan.webModuleId}/index.tsx\`) and lazy-mounts \`.Page\`.`,
       "",
-      "Every panel below is derived from the spec. The renderer under it is fixed text, identical in every generated sub-app.",
+      plan.workflow === null
+        ? "This app was not converted from a workflow, so the page renders its routes as panels."
+        : `Converted from the "${plan.workflow.name}" workflow. The step rail below is its \`## Procedure\`: the steps in order, each one's gate, what it needs, what it produced, and the control that performs it where this app can.`,
+      "",
+      "A step's state is read from the proposals this sub-app itself wrote (`listOwnInboxProposals`) — the only durable trace a database-free mini-app has. \"Proposed\" is the furthest state it can show: a human resolves the proposal in the Inbox. Nothing here advances or approves a step (contract rule 7).",
+      "",
+      "The rail never DISABLES a step whose predecessor is unproposed: most steps of a real workflow happen outside this app, so it reports the order rather than enforcing it.",
+      "",
+      "Every panel and step below is derived from the spec. The renderer under them is fixed text, identical in every generated sub-app.",
       "",
       "⚠ English-only, deliberately. A dictionary would need a static import and a spread in `web/src/i18n.ts` AND an update to the EXACT frozen key counts in `tests/subapps/i18nSplit.test.ts` — so shipping one i18n key turns a host test red. Emitting none is what keeps `registry.ts` the only host edit this sub-app asks for.",
-      "No stylesheet ships with this page: sub-app CSS lives in a banner-delimited region of the shared `web/src/theme.css`. The class names below are the existing ones.",
+      "No stylesheet ships with this page: sub-app CSS lives in a banner-delimited region of the shared `web/src/theme.css`, and zero `.css` files exist under `web/src/subapps`. The class names below are the host's existing ones; the inline styles name host CSS variables with the host's own dark values as fallbacks.",
       "",
       "Refusals are routed on the HTTP status and the body's `code` — never on the server's prose, which is developer-facing English and must not land inside a translated sentence later.",
     ]),
-    `import { useCallback, useEffect, useState, type FormEvent } from "react";`,
+    `import { useCallback, useEffect, useState, type CSSProperties, type FormEvent, type ReactNode } from "react";`,
     `import type { SubAppModule } from "../registry";`,
     "",
     `const ROUTE_PREFIX = ${str(plan.routePrefix)};`,
     `const APP_TITLE = ${str(plan.label)};`,
     `const APP_BLURB = ${str(plan.summary ?? `${plan.label} — generated by Flightdeck Studio.`)};`,
+    `const APP_ICON = ${str(plan.manifestData.icon)};`,
     "",
     RUNTIME_TYPES,
+    "",
+    workflowLiteral(plan),
     "",
     "const PANELS: PanelDescriptor[] = [",
     panels.join("\n"),
     "];",
     "",
+    TOKENS,
+    "",
+    STYLES,
+    "",
     RUNTIME,
+    "",
+    STEP_RAIL,
+    "",
+    PANEL_RENDERER,
+    "",
+    PAGE,
     "",
     "const subAppModule: SubAppModule = { Page: GeneratedPage };",
     "export default subAppModule;",
     "",
   ]);
+}
+
+/** `WORKFLOW` — the `## Procedure`, as data. `null` when the spec carried
+ * no workflow, which keeps the renderer's shape identical either way: the
+ * rail component is always mounted and answers `null` itself, so the file
+ * never contains a component nothing references. */
+function workflowLiteral(plan: SubAppPlan): string {
+  const workflow = plan.workflow;
+  if (workflow === null) {
+    return joinLines([
+      "/** This sub-app was not converted from a workflow. The rail below",
+      " * renders nothing and the page is its panels. */",
+      "const WORKFLOW: WorkflowDescriptor | null = null;",
+    ]);
+  }
+  const lines: string[] = [
+    "/** The workflow's `## Procedure`, step for step. `action` binds a step",
+    " * to one of this app's own routes; a step without one happens outside",
+    " * this app and says so on screen. */",
+    "const WORKFLOW: WorkflowDescriptor | null = {",
+    `  name: ${str(workflow.name)},`,
+    `  description: ${workflow.description === null ? "null" : str(workflow.description)},`,
+    `  source: ${workflow.source === null ? "null" : str(workflow.source)},`,
+    `  proposalsPath: ${workflow.proposalsPath === null ? "null" : str(workflow.proposalsPath)},`,
+    "  steps: [",
+  ];
+  for (const step of workflow.steps) lines.push(stepLiteral(step));
+  lines.push("  ],", "};");
+  return lines.join("\n");
+}
+
+function stepLiteral(step: PlannedWorkflowStep): string {
+  const parts: string[] = [
+    "    {",
+    `      n: ${String(step.n)},`,
+    `      title: ${str(step.title)},`,
+    `      detail: ${step.detail === null ? "null" : str(step.detail)},`,
+    `      needs: [${step.needs.map(str).join(", ")}],`,
+    `      produces: [${step.produces.map(str).join(", ")}],`,
+    `      gate: ${str(step.gate)},`,
+  ];
+  if (step.action === null) {
+    parts.push("      action: null,");
+  } else {
+    parts.push(
+      "      action: {",
+      `        formId: ${str(step.action.formId)},`,
+      `        method: ${str(step.action.method)},`,
+      `        path: ${str(step.action.subPath)},`,
+      `        label: ${str(step.action.label)},`,
+      `        proposalPrefix: ${step.action.proposalPrefix === null ? "null" : str(step.action.proposalPrefix)},`,
+      "      },",
+    );
+  }
+  parts.push("    },");
+  return parts.join("\n");
 }
 
 function panelLiteral(plan: SubAppPlan, domain: PlannedDomain): string {
@@ -98,7 +217,7 @@ function panelLiteral(plan: SubAppPlan, domain: PlannedDomain): string {
   for (const form of forms) {
     parts.push(
       "      {",
-      `        id: ${str(`${form.fastifyMethod}-${form.subPath}`)},`,
+      `        id: ${str(form.formId)},`,
       `        method: ${str(form.method)},`,
       `        path: ${str(subPathFor(plan, form))},`,
       `        label: ${str(form.summary ?? `${form.method} ${form.subPath}`)},`,
@@ -159,11 +278,113 @@ interface PanelDescriptor {
   forms: FormDescriptor[];
 }
 
+/** The route a workflow step is performed by. \`proposalPrefix\` is the
+ * exact \`memory/proposals/\` filename prefix that route writes — matching
+ * it against this sub-app's own proposal list is how a step is known to
+ * have been proposed. Null for a step whose action only reads. */
+interface StepAction {
+  formId: string;
+  method: string;
+  path: string;
+  label: string;
+  proposalPrefix: string | null;
+}
+
+interface StepDescriptor {
+  n: number;
+  title: string;
+  detail: string | null;
+  needs: string[];
+  produces: string[];
+  gate: "human" | "statutory" | "auto";
+  action: StepAction | null;
+}
+
+interface WorkflowDescriptor {
+  name: string;
+  description: string | null;
+  source: string | null;
+  /** Sub-path of this app's \`list-proposals\` route, when it has one.
+   * Null means the rail can file proposals but cannot show which steps
+   * already have one. */
+  proposalsPath: string | null;
+  steps: StepDescriptor[];
+}
+
 interface Refusal {
   status: number | null;
   code: string | null;
   scope: string | null;
   detail: string;
+}
+
+type StepState = "proposed" | "ready" | "waiting" | "manual";
+
+interface StepStatus {
+  state: StepState;
+  /** The earlier step whose proposal is missing, when this one is waiting. */
+  blockedBy: number | null;
+  /** What the step produced, once it has: the proposal's path. */
+  proposalPath: string | null;
+}`;
+
+/** Host CSS variables with the host's own dark values as fallbacks. The
+ * variable is what makes the page follow the console's theme toggle
+ * (theme.css defines a light \`:root\` and a dark \`[data-theme="dark"]\`);
+ * the literal is what keeps it legible anywhere the stylesheet is not
+ * loaded, such as Studio's own preview. */
+const TOKENS = `const T = {
+  bg: "var(--bg, #07090d)",
+  surface: "var(--surface, #11161f)",
+  ink: "var(--ink, #eef2f7)",
+  muted: "var(--muted, #8b96a5)",
+  line: "var(--line, #1f2733)",
+  accent: "var(--te, #ff8200)",
+  green: "var(--green, #2fd472)",
+  amber: "var(--amber, #ffc24b)",
+  red: "var(--red, #ff5b4d)",
+} as const;`;
+
+const STYLES = `const railStyle: CSSProperties = { listStyle: "none", margin: "0 0 26px", padding: 0, display: "grid", gap: 10 };
+const stepStyle: CSSProperties = {
+  display: "grid",
+  gridTemplateColumns: "30px minmax(0, 1fr)",
+  gap: 14,
+  alignItems: "start",
+  padding: "14px 16px",
+  borderRadius: 16,
+  border: "1px solid " + T.line,
+  background: T.surface,
+};
+const headRow: CSSProperties = { display: "flex", flexWrap: "wrap", alignItems: "center", gap: 8, justifyContent: "space-between" };
+const titleStyle: CSSProperties = { fontWeight: 600, fontSize: 14, color: T.ink };
+const detailStyle: CSSProperties = { margin: "6px 0 0", fontSize: 13 };
+const metaRow: CSSProperties = { display: "flex", flexWrap: "wrap", alignItems: "center", gap: 6, marginTop: 8 };
+const metaLabel: CSSProperties = { fontSize: 11, letterSpacing: "0.08em", textTransform: "uppercase", minWidth: 62 };
+const actionRow: CSSProperties = { marginTop: 10, paddingTop: 10, borderTop: "1px dashed " + T.line };
+const summaryRow: CSSProperties = { display: "flex", flexWrap: "wrap", alignItems: "center", gap: 12, margin: "0 0 14px" };
+const trackStyle: CSSProperties = { flex: "1 1 180px", minWidth: 120 };
+const fieldRow: CSSProperties = { display: "flex", flexWrap: "wrap", alignItems: "center", gap: 8, margin: "6px 0" };
+const fieldLabel: CSSProperties = { minWidth: 120, fontSize: 12, color: T.muted };
+
+function badgeStyle(state: StepState): CSSProperties {
+  const base: CSSProperties = {
+    width: 30,
+    height: 30,
+    borderRadius: 99,
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+    fontSize: 12,
+    fontWeight: 700,
+    border: "1px solid " + T.line,
+    background: T.bg,
+    color: T.muted,
+  };
+  if (state === "proposed") return { ...base, background: T.amber, borderColor: "transparent", color: "#0b0f16" };
+  if (state === "ready") return { ...base, background: T.accent, borderColor: "transparent", color: "#0b0f16" };
+  if (state === "manual") return { ...base, borderStyle: "dashed" };
+  return base;
 }`;
 
 const RUNTIME = `class ApiRefusal extends Error {
@@ -172,15 +393,21 @@ const RUNTIME = `class ApiRefusal extends Error {
   }
 }
 
+function refusalOf(err: unknown): Refusal {
+  return err instanceof ApiRefusal ? err.refusal : { status: null, code: null, scope: null, detail: String(err) };
+}
+
 async function call(method: string, path: string, body?: unknown): Promise<unknown> {
+  // Built up rather than passed with undefined members: the host compiles
+  // under exactOptionalPropertyTypes, where \`headers: undefined\` is an error.
+  const init: RequestInit = { method, credentials: "same-origin" };
+  if (body !== undefined) {
+    init.headers = { "content-type": "application/json" };
+    init.body = JSON.stringify(body);
+  }
   let res: Response;
   try {
-    res = await fetch(ROUTE_PREFIX + path, {
-      method,
-      credentials: "same-origin",
-      headers: body === undefined ? undefined : { "content-type": "application/json" },
-      body: body === undefined ? undefined : JSON.stringify(body),
-    });
+    res = await fetch(ROUTE_PREFIX + path, init);
   } catch (err) {
     throw new ApiRefusal({ status: null, code: null, scope: null, detail: (err as Error).message });
   }
@@ -192,14 +419,16 @@ async function call(method: string, path: string, body?: unknown): Promise<unkno
     parsed = null;
   }
   if (!res.ok) {
-    const issues = Array.isArray(parsed?.issues)
-      ? (parsed.issues as Array<{ message?: string }>).map((i) => i.message ?? "").filter((m) => m.length > 0).join("; ")
-      : "";
+    const raw = parsed === null || !Array.isArray(parsed.issues) ? [] : (parsed.issues as Array<{ message?: string }>);
+    const issues = raw.map((i) => i.message ?? "").filter((m) => m.length > 0).join("; ");
+    const code = parsed === null ? null : parsed.code;
+    const scope = parsed === null ? null : parsed.scope;
+    const error = parsed === null ? null : parsed.error;
     throw new ApiRefusal({
       status: res.status,
-      code: typeof parsed?.code === "string" ? parsed.code : null,
-      scope: typeof parsed?.scope === "string" ? parsed.scope : null,
-      detail: issues.length > 0 ? issues : typeof parsed?.error === "string" ? parsed.error : text.slice(0, 300),
+      code: typeof code === "string" ? code : null,
+      scope: typeof scope === "string" ? scope : null,
+      detail: issues.length > 0 ? issues : typeof error === "string" ? error : text.slice(0, 300),
     });
   }
   return parsed;
@@ -227,6 +456,10 @@ function RefusalBox({ refusal }: { refusal: Refusal }) {
   );
 }
 
+function Chip({ tone, children }: { tone: string; children: ReactNode }) {
+  return <span className={tone.length > 0 ? "chip " + tone : "chip"}>{children}</span>;
+}
+
 function asRows(payload: unknown): Array<Record<string, unknown>> {
   if (Array.isArray(payload)) return payload as Array<Record<string, unknown>>;
   const rows = (payload as { rows?: unknown } | null)?.rows;
@@ -237,6 +470,18 @@ function cellText(value: unknown): string {
   if (value === null || value === undefined) return "";
   if (typeof value === "object") return JSON.stringify(value);
   return String(value);
+}
+
+/** The filenames this sub-app's own \`list-proposals\` route answered with.
+ * Read off \`fileName\` rather than the full path so the prefix match below
+ * is against the name the propose route actually wrote. */
+function proposalNames(payload: unknown): string[] {
+  const out: string[] = [];
+  for (const row of asRows(payload)) {
+    const name = row.fileName;
+    if (typeof name === "string") out.push(name);
+  }
+  return out;
 }
 
 function RowTable({ rows }: { rows: Array<Record<string, unknown>> }) {
@@ -266,7 +511,7 @@ function RowTable({ rows }: { rows: Array<Record<string, unknown>> }) {
   );
 }
 
-function RouteForm({ form, onDone }: { form: FormDescriptor; onDone: () => void }) {
+function RouteForm({ form, onDone }: { form: FormDescriptor; onDone: (answer: unknown) => void }) {
   const [values, setValues] = useState<Record<string, string | boolean>>({});
   const [busy, setBusy] = useState(false);
   const [refusal, setRefusal] = useState<Refusal | null>(null);
@@ -296,9 +541,9 @@ function RouteForm({ form, onDone }: { form: FormDescriptor; onDone: () => void 
       const answer = await call(form.method, form.path, body);
       setOk(JSON.stringify(answer));
       setValues({});
-      onDone();
+      onDone(answer);
     } catch (err) {
-      setRefusal(err instanceof ApiRefusal ? err.refusal : { status: null, code: null, scope: null, detail: String(err) });
+      setRefusal(refusalOf(err));
     } finally {
       setBusy(false);
     }
@@ -306,10 +551,9 @@ function RouteForm({ form, onDone }: { form: FormDescriptor; onDone: () => void 
 
   return (
     <form onSubmit={submit} data-form={form.id}>
-      <h4>{form.label}</h4>
       {form.fields.map((field) => (
-        <label key={field.name}>
-          <span>
+        <label key={field.name} style={fieldRow}>
+          <span style={fieldLabel}>
             {field.label}
             {field.optional ? " (optional)" : ""}
           </span>
@@ -341,7 +585,7 @@ function RouteForm({ form, onDone }: { form: FormDescriptor; onDone: () => void 
         </label>
       ))}
       <button type="submit" disabled={busy} aria-busy={busy}>
-        {busy ? "Working…" : "Submit"}
+        {busy ? "Working…" : form.label}
       </button>
       {refusal && <RefusalBox refusal={refusal} />}
       {ok && (
@@ -351,12 +595,279 @@ function RouteForm({ form, onDone }: { form: FormDescriptor; onDone: () => void 
       )}
     </form>
   );
+}`;
+
+const STEP_RAIL = `/** \`method + "-" + path\`, the same key codegen gives a route's form id —
+ * so a step's action and a panel's entry for the same route agree without
+ * either side carrying the other's spelling. */
+function routeKey(method: string, path: string): string {
+  return method.toLowerCase() + "-" + path;
 }
 
-function Panel({ panel }: { panel: PanelDescriptor }) {
+function boundRouteKeys(): Set<string> {
+  const out = new Set<string>();
+  for (const step of WORKFLOW === null ? [] : WORKFLOW.steps) {
+    if (step.action !== null) out.add(step.action.formId);
+  }
+  return out;
+}
+
+/** Routes the rail already renders. The panels below it skip these, so a
+ * step's control appears once, in the step. */
+const BOUND_ROUTES = boundRouteKeys();
+
+/** Does this panel still have anything to show once the rail has taken
+ * its routes? Used by the page to decide whether the "Other actions"
+ * heading has anything under it, and by the panel itself. One predicate,
+ * so a heading can never appear above nothing. */
+function panelIsVisible(panel: PanelDescriptor): boolean {
+  const list = panel.list;
+  if (list !== null && !BOUND_ROUTES.has(routeKey("GET", list.path))) return true;
+  return panel.forms.some((form) => !BOUND_ROUTES.has(form.id));
+}
+
+function formFor(formId: string): FormDescriptor | null {
+  for (const panel of PANELS) {
+    for (const form of panel.forms) {
+      if (form.id === formId) return form;
+    }
+  }
+  return null;
+}
+
+/** Where a step stands, from the only evidence this app has: the proposals
+ * it wrote itself, plus anything filed during this session.
+ *
+ * "Proposed" is terminal here on purpose. The proposal sits in the approval
+ * Inbox and a human resolves it; nothing this page can call would advance
+ * it, and drawing a tick would claim otherwise. */
+function statusOf(
+  step: StepDescriptor,
+  steps: StepDescriptor[],
+  proposals: string[],
+  filed: Record<number, string>,
+): StepStatus {
+  const local = filed[step.n];
+  if (step.action === null) {
+    return { state: "manual", blockedBy: null, proposalPath: null };
+  }
+  const prefix = step.action.proposalPrefix;
+  const match = prefix === null ? undefined : proposals.find((name) => name.startsWith(prefix));
+  if (local !== undefined || match !== undefined) {
+    const fromList = match === undefined ? null : "memory/proposals/" + match;
+    const path = local !== undefined && local.length > 0 ? local : fromList;
+    return { state: "proposed", blockedBy: null, proposalPath: path };
+  }
+  for (const earlier of steps) {
+    if (earlier.n >= step.n || earlier.action === null) continue;
+    const earlierPrefix = earlier.action.proposalPrefix;
+    if (earlierPrefix === null) continue;
+    const done = filed[earlier.n] !== undefined || proposals.some((name) => name.startsWith(earlierPrefix));
+    if (!done) return { state: "waiting", blockedBy: earlier.n, proposalPath: null };
+  }
+  return { state: "ready", blockedBy: null, proposalPath: null };
+}
+
+function gateChip(gate: StepDescriptor["gate"]): { tone: string; label: string } {
+  if (gate === "statutory") return { tone: "red", label: "Statutory gate" };
+  if (gate === "auto") return { tone: "green", label: "Auto" };
+  return { tone: "blue", label: "Human review" };
+}
+
+function stateChip(status: StepStatus): { tone: string; label: string } {
+  if (status.state === "proposed") return { tone: "amber", label: "Proposed — with a human" };
+  if (status.state === "ready") return { tone: "orange", label: "Ready" };
+  if (status.state === "waiting") return { tone: "", label: "Waiting on step " + String(status.blockedBy ?? 0) };
+  return { tone: "", label: "Outside this app" };
+}
+
+function MetaLine({ label, items }: { label: string; items: string[] }) {
+  if (items.length === 0) return null;
+  return (
+    <div style={metaRow}>
+      <span className="muted" style={metaLabel}>
+        {label}
+      </span>
+      {items.map((item) => (
+        <Chip key={item} tone="">
+          {item}
+        </Chip>
+      ))}
+    </div>
+  );
+}
+
+/** A step whose action only READS: no body to build, so it gets a button
+ * that loads and a table, not a form. */
+function StepReader({ action }: { action: StepAction }) {
   const [rows, setRows] = useState<Array<Record<string, unknown>> | null>(null);
   const [refusal, setRefusal] = useState<Refusal | null>(null);
-  const listPath = panel.list?.path ?? null;
+  const [busy, setBusy] = useState(false);
+
+  async function load() {
+    if (busy) return;
+    setBusy(true);
+    setRefusal(null);
+    try {
+      setRows(asRows(await call(action.method, action.path)));
+    } catch (err) {
+      setRows(null);
+      setRefusal(refusalOf(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div>
+      <button type="button" className="small" onClick={() => void load()} disabled={busy} aria-busy={busy}>
+        {busy ? "Working…" : action.label}
+      </button>
+      {refusal && <RefusalBox refusal={refusal} />}
+      {rows !== null && <RowTable rows={rows} />}
+    </div>
+  );
+}
+
+function StepCard({
+  step,
+  status,
+  onFiled,
+}: {
+  step: StepDescriptor;
+  status: StepStatus;
+  onFiled: (n: number, proposalPath: string | null) => void;
+}) {
+  const action = step.action;
+  const form = action === null ? null : formFor(action.formId);
+  const gate = gateChip(step.gate);
+  const state = stateChip(status);
+  return (
+    <li style={stepStyle} data-step={step.n} data-state={status.state} data-gate={step.gate}>
+      <span className="mono" style={badgeStyle(status.state)}>
+        {step.n}
+      </span>
+      <div style={{ minWidth: 0 }}>
+        <div style={headRow}>
+          <span style={titleStyle}>{step.title}</span>
+          <span style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+            <Chip tone={gate.tone}>{gate.label}</Chip>
+            <Chip tone={state.tone}>{state.label}</Chip>
+          </span>
+        </div>
+        {step.detail !== null && (
+          <p className="muted" style={detailStyle}>
+            {step.detail}
+          </p>
+        )}
+        <MetaLine label="Needs" items={step.needs} />
+        <MetaLine label="Produces" items={step.produces} />
+        {status.proposalPath !== null && (
+          <div className="okbox" role="status" style={{ marginTop: 8 }}>
+            Filed for approval — <code className="mono">{status.proposalPath}</code>. A person resolves it in the Inbox; this
+            app cannot.
+          </div>
+        )}
+        {action === null ? (
+          <p className="muted" style={detailStyle}>
+            This step happens outside this app.
+          </p>
+        ) : (
+          <div style={actionRow}>
+            {status.state === "waiting" && (
+              <p className="muted" style={{ margin: "0 0 6px", fontSize: 12 }}>
+                Step {status.blockedBy} has no proposal from this app yet. If it was done elsewhere, carry on.
+              </p>
+            )}
+            {form === null ? (
+              <StepReader action={action} />
+            ) : (
+              <RouteForm form={form} onDone={(answer) => onFiled(step.n, proposalPathOf(answer))} />
+            )}
+          </div>
+        )}
+      </div>
+    </li>
+  );
+}
+
+function proposalPathOf(answer: unknown): string | null {
+  const path = (answer as { proposalPath?: unknown } | null)?.proposalPath;
+  return typeof path === "string" ? path : null;
+}
+
+function WorkflowRail({ workflow }: { workflow: WorkflowDescriptor | null }) {
+  const [proposals, setProposals] = useState<string[]>([]);
+  const [filed, setFiled] = useState<Record<number, string>>({});
+  const [refusal, setRefusal] = useState<Refusal | null>(null);
+  const proposalsPath = workflow === null ? null : workflow.proposalsPath;
+
+  const load = useCallback(async () => {
+    if (proposalsPath === null) return;
+    try {
+      setProposals(proposalNames(await call("GET", proposalsPath)));
+      setRefusal(null);
+    } catch (err) {
+      setRefusal(refusalOf(err));
+    }
+  }, [proposalsPath]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  const onFiled = useCallback(
+    (n: number, proposalPath: string | null) => {
+      setFiled((prev) => ({ ...prev, [n]: proposalPath ?? "" }));
+      void load();
+    },
+    [load],
+  );
+
+  if (workflow === null) return null;
+
+  const steps = workflow.steps;
+  const statuses = steps.map((step) => statusOf(step, steps, proposals, filed));
+  const proposable = steps.filter((step) => step.action !== null && step.action.proposalPrefix !== null).length;
+  const proposed = statuses.filter((status) => status.state === "proposed").length;
+  const percent = proposable === 0 ? 0 : Math.round((proposed / proposable) * 100);
+
+  return (
+    <section data-workflow={workflow.name}>
+      <div style={summaryRow}>
+        <span className="chip">
+          <b className="mono">{String(proposed)}</b> of <b className="mono">{String(proposable)}</b> proposable steps filed
+        </span>
+        <span className="progress" style={trackStyle}>
+          <span className="fill" style={{ width: String(percent) + "%" }} />
+        </span>
+        {workflow.source !== null && <span className="muted mono">{workflow.source}</span>}
+      </div>
+      {proposalsPath === null && (
+        <p className="muted" style={{ margin: "0 0 12px", fontSize: 12 }}>
+          This app declares no proposal listing, so step state is only what you file in this session.
+        </p>
+      )}
+      {refusal && <RefusalBox refusal={refusal} />}
+      <ol style={railStyle}>
+        {steps.map((step, index) => (
+          <StepCard
+            key={step.n}
+            step={step}
+            status={statuses[index] ?? { state: "manual", blockedBy: null, proposalPath: null }}
+            onFiled={onFiled}
+          />
+        ))}
+      </ol>
+    </section>
+  );
+}`;
+
+const PANEL_RENDERER = `function Panel({ panel }: { panel: PanelDescriptor }) {
+  const [rows, setRows] = useState<Array<Record<string, unknown>> | null>(null);
+  const [refusal, setRefusal] = useState<Refusal | null>(null);
+  const listPath = panel.list === null || BOUND_ROUTES.has(routeKey("GET", panel.list.path)) ? null : panel.list.path;
+  const forms = panel.forms.filter((form) => !BOUND_ROUTES.has(form.id));
 
   const load = useCallback(async () => {
     if (listPath === null) return;
@@ -365,7 +876,7 @@ function Panel({ panel }: { panel: PanelDescriptor }) {
       setRows(asRows(await call("GET", listPath)));
     } catch (err) {
       setRows(null);
-      setRefusal(err instanceof ApiRefusal ? err.refusal : { status: null, code: null, scope: null, detail: String(err) });
+      setRefusal(refusalOf(err));
     }
   }, [listPath]);
 
@@ -373,25 +884,42 @@ function Panel({ panel }: { panel: PanelDescriptor }) {
     void load();
   }, [load]);
 
+  if (!panelIsVisible(panel)) return null;
+
   return (
     <section className="card" data-panel={panel.id}>
       <h3>{panel.title}</h3>
       {refusal && <RefusalBox refusal={refusal} />}
       {listPath !== null && !refusal && rows === null && <p className="muted">Loading…</p>}
       {rows !== null && <RowTable rows={rows} />}
-      {panel.forms.map((form) => (
-        <RouteForm key={form.id} form={form} onDone={() => void load()} />
+      {forms.map((form) => (
+        <RouteForm key={form.id} form={form} onDone={() => undefined} />
       ))}
     </section>
   );
-}
+}`;
 
-function GeneratedPage() {
+const PAGE = `function GeneratedPage() {
+  const panels = PANELS.filter(panelIsVisible);
   return (
     <div className="page">
-      <h2>{APP_TITLE}</h2>
-      <p className="muted">{APP_BLURB}</p>
-      {PANELS.map((panel) => (
+      <div className="pagehead">
+        <div className="eyebrow">{WORKFLOW === null ? "FLIGHTDECK MINI-APP" : "WORKFLOW"}</div>
+        <h1>
+          <span aria-hidden="true">{APP_ICON}</span> {APP_TITLE}
+        </h1>
+        <p>{WORKFLOW !== null && WORKFLOW.description !== null ? WORKFLOW.description : APP_BLURB}</p>
+      </div>
+      <WorkflowRail workflow={WORKFLOW} />
+      {WORKFLOW !== null && panels.length > 0 && (
+        <div style={{ margin: "0 0 10px" }}>
+          <h3 style={{ margin: 0 }}>Other actions</h3>
+          <p className="muted" style={{ margin: "2px 0 0", fontSize: 12 }}>
+            Routes this app declares that no step above names.
+          </p>
+        </div>
+      )}
+      {panels.map((panel) => (
         <Panel key={panel.id} panel={panel} />
       ))}
     </div>

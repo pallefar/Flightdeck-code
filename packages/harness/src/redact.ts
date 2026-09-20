@@ -51,7 +51,7 @@ const SHAPE_RULES: readonly ShapeRule[] = [
   // `api_key=…`, `"token": "…"`, `x-api-key: …` inline in a larger string.
   {
     pattern:
-      /((?:api[-_]?key|apikey|access[-_]?token|refresh[-_]?token|auth[-_]?token|token|secret|password)["']?\s*[:=]\s*["']?)([^\s"',;)}\]]{8,})/gi,
+      /((?:api[-_]?key|apikey|access[-_]?token|refresh[-_]?token|auth[-_]?token|token|secret|password)["']?\s*[:=]\s*["']?)([^\s"',;&)}\]]{8,})/gi,
     replace: (_match: string, prefix: string) => `${prefix}${REDACTED}`,
   },
 ];

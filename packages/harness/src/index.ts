@@ -90,7 +90,14 @@ export type {
   VariantComparison,
 } from "./compare";
 
-export { plannerLlm, readCompletion, toPlannerCall } from "./planner-adapter";
-export type { PlannerCall, PlannerHarnessOptions } from "./planner-adapter";
+export { completionFromRecord, harnessProvider, toProviderCall } from "./providers-adapter";
+export type {
+  HarnessProvider,
+  HarnessProviderCommon,
+  HarnessProviderConfig,
+  LiveHarnessProviderConfig,
+  PlaybackHarnessProviderConfig,
+  ProviderCall,
+} from "./providers-adapter";
 
 export type { HarnessCaller, ProviderCallShape, ProviderFn } from "./provider-contract";

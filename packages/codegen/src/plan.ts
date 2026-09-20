@@ -657,10 +657,10 @@ function planWorkflow(
           `${where}: action names domain "${bound.domain}", which this spec does not declare (declared: ${domains.map((d) => `"${d.name}"`).join(", ")})`,
         );
       } else {
-        const route = domain.routes.find((r) => r.subPath === bound.path);
+        const route = domain.routes.find((r) => r.method === bound.method && r.subPath === bound.path);
         if (route === undefined) {
           issues.push(
-            `${where}: action names "${bound.path}" in domain "${bound.domain}", which declares ${domain.routes.map((r) => `"${r.subPath}"`).join(", ")}`,
+            `${where}: action names "${bound.method} ${bound.path}" in domain "${bound.domain}", which declares ${domain.routes.map((r) => `"${r.method} ${r.subPath}"`).join(", ")}`,
           );
         } else {
           const gate = step.gate ?? "human";
