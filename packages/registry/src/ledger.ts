@@ -549,6 +549,17 @@ function ceilingWrite(
 ): LedgerResult {
   const stamp = stampDefect(command);
   if (stamp) return refuse(ledger, stamp);
+  // ⭐ WIDENING NEEDS A NAMED HUMAN. `stampDefect` checks only that `by` is AN
+  // actor, so an agent could enable a tool Function-wide — and the event this
+  // produces carries the full `grantedScopes` set, which is D-05's "durable
+  // proof of consent". Granting capabilities is precisely what guardrail 4
+  // reserves for a person: "Security, access, and connector permissions
+  // require explicit human approval."
+  //
+  // ⛔ NOT on the disable path. A kill switch that waits for a person to be
+  // available is not a kill switch, and narrowing consent has never been the
+  // dangerous direction.
+  if (enabled && !namedHuman(command.by)) return refuse(ledger, "enable_actor_not_human");
 
   const registered = currentRegistered(ledger, command.artifactId);
   if (!registered) return refuse(ledger, "no_ceiling_row");
@@ -614,6 +625,9 @@ function projectWrite(
 ): LedgerResult {
   const stamp = stampDefect(command);
   if (stamp) return refuse(ledger, stamp);
+  // Same rule, same direction — see `ceilingWrite`. A project row records
+  // `grantedScopes` too.
+  if (enabled && !namedHuman(command.by)) return refuse(ledger, "enable_actor_not_human");
   const badProject = projectIdDefect(command.projectId);
   if (badProject) return refuse(ledger, badProject);
   if (command.projectId === CEILING_PROJECT_ID) return refuse(ledger, "ceiling_is_not_a_project");

@@ -75,6 +75,23 @@ export const REGISTRY_REASONS = [
   /** The approver is the actor who proposed it. One party, not two. */
   "approval_by_proposer",
 
+  // ── enabling ────────────────────────────────────────────────────────────
+  /**
+   * A tool, an agent or the system tried to WIDEN consent.
+   *
+   * Enabling is not a neutral toggle: the event body carries the full
+   * `grantedScopes` set — D-05's "durable proof of consent (not just
+   * `enabled: true`)" — so turning a tool on for the Function or a project
+   * grants capabilities. `boot.json` guardrail 4 covers exactly that:
+   * "Security, access, and connector permissions require explicit human
+   * approval."
+   *
+   * ⭐ ONLY THE WIDENING DIRECTION. Disabling emits no scopes and is refused
+   * to nobody: a kill switch that waits for a person to be available is not
+   * a kill switch.
+   */
+  "enable_actor_not_human",
+
   // ── registering ─────────────────────────────────────────────────────────
   /** Registration without a signature over THIS revision. */
   "not_approved",
@@ -114,4 +131,6 @@ export const SELF_APPROVAL_REASONS: readonly RegistryReason[] = Object.freeze([
   "approval_actor_missing",
   "approval_self_approved",
   "approval_by_proposer",
+  // Widening consent is a guardrail-4 moment too — see the code's own note.
+  "enable_actor_not_human",
 ]);

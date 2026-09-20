@@ -155,9 +155,13 @@ describe("approverDefect is the one implementation", () => {
   });
 
   it("matches ids case-insensitively — a casing difference is not a second person", () => {
-    expect(approverDefect({ kind: "human", id: "WC-Clock", displayName: "Service" }, "wc-clock", AGENT)).toBe(
-      "approval_self_approved",
-    );
+    // ⚠ A REAL NAME, deliberately. This fixture said `displayName: "Service"`,
+    // which `namedHuman` now refuses outright — so the case would have been
+    // green for the wrong reason, reporting an unnamed approver rather than
+    // the self-approval it exists to detect.
+    expect(
+      approverDefect({ kind: "human", id: "WC-Clock", displayName: "Wiebke Clausen" }, "wc-clock", AGENT),
+    ).toBe("approval_self_approved");
     expect(
       approverDefect({ kind: "human", id: "K.Haldan", displayName: "Karsten Haldan" }, "wc-clock", APPROVER),
     ).toBe("approval_by_proposer");

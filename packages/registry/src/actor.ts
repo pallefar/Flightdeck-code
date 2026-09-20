@@ -1,3 +1,5 @@
+import { isNamedHuman } from "../../guardrails/src/approval-pure";
+
 /**
  * WHO PROPOSED, AND WHO SIGNED — which must never be the same party.
  *
@@ -25,8 +27,21 @@
  * a live lookup to render a historical fact would make an old approval
  * unreadable the day the account is deactivated.
  *
- * The two therefore stay separate, and this file states the same rule in the
- * terms this package needs. When `approvals`' directory surface settles, the
+ * The two therefore stay separate on IDENTITY — this package captures a name
+ * into a signature, `approvals` resolves one through a live directory.
+ *
+ * ⭐ THE NAME RULE ITSELF IS NOT SEPARATE, and used to be. `namedHuman` here
+ * read `blank(actor.displayName)`: any non-blank string was a named human.
+ * Measured against `guardrails`' `isNamedHuman`, 18 of 21 probes disagreed —
+ * "system", "automation", "agent", "admin", "service", "bot", "anonymous",
+ * "the approver" and a bare "x" all passed HERE and were refused THERE. That
+ * was the THIRD copy of this rule in the repository and the weakest of the
+ * three; `approvals` had already replaced its own with an import.
+ *
+ * It is imported now, and `__tests__/one-named-human-rule.test.ts` asserts
+ * both that the two agree and that this file holds no local NON_NAMES list —
+ * a copy that agrees today is a copy that can drift tomorrow. What stays
+ * local is the directory question, not the spelling of a name. When `approvals`' directory surface settles, the
  * intended convergence is narrow and specific: a caller resolves a
  * `DirectoryEntry` through `identityDefect()` BEFORE calling `approve()`, and
  * passes the resulting person in as the `Actor` here. Directory liveness is a
@@ -88,7 +103,24 @@ export function isActor(value: Actor | null | undefined): value is Actor {
 export function namedHuman(actor: Actor | null | undefined): NamedHuman | null {
   if (!isActor(actor)) return null;
   if (actor.kind !== "human") return null;
-  if (blank(actor.displayName)) return null;
+  // ⭐ THE ONE RULE, IMPORTED — this was the THIRD copy in the repository and
+  // the weakest of the three.
+  //
+  // It read `blank(actor.displayName)`: any non-blank string was a named
+  // human. Measured against `isNamedHuman`, 18 of 21 probes disagreed —
+  // "system", "automation", "agent", "admin", "service", "bot", "anonymous",
+  // "the approver" and a bare "x" all passed HERE and are refused THERE.
+  //
+  // That is not cosmetic in this package. The registry is what makes an
+  // approved tool reusable by later projects, so an approval it accepts
+  // travels: "approved by system" would have been a permanent, citable fact
+  // about a tool every future project inherits.
+  //
+  // `packages/approvals` fixed the same divergence by importing this
+  // function and checking BOTH fields; this now does the same, so there is
+  // one NON_NAMES list in the repository and no way to approximate it.
+  if (!isNamedHuman(actor.displayName)) return null;
+  if (!isNamedHuman(actor.id)) return null;
   return Object.freeze({ kind: "human" as const, id: actor.id, displayName: actor.displayName as string });
 }
 
