@@ -82,7 +82,11 @@ interface Label {
   readonly line: number;
 }
 
-const KEY_VALUE = /^\s*(?:[-*+]\s+)?\*{0,2}\s*([A-Za-z][A-Za-z0-9 _/'-]{0,40}?)\s*\*{0,2}\s*[:=](?:\s|$)/;
+/** `Salary: …`, `- **Salary:** …`, `**Date of birth:**  …`, `Salary = …`.
+ * The trailing `\**` is not cosmetic: markdown bolds a label as `**Salary:**`,
+ * so the emphasis markers sit AFTER the colon and a pattern that demanded
+ * whitespace there matched none of the labels in a real pasted workflow. */
+const KEY_VALUE = /^\s*(?:[-*+]\s+)?\*{0,2}\s*([A-Za-z][A-Za-z0-9 _/'-]{0,40}?)\s*\*{0,2}\s*[:=]\**(?:\s|$)/;
 const JSON_KEY = /"([A-Za-z_][A-Za-z0-9_-]{0,40})"\s*:/g;
 
 /** Label-position tokens, with the 1-based line they were found on. */

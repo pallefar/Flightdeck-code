@@ -50,7 +50,7 @@
 
 import { classify, type ClassifyOptions } from "./classify";
 import { classifyMarkdown } from "./markdown";
-import { type Classification, type Finding, type Tier, dedupe, tierOf } from "./findings";
+import { type Classification, type Finding, type Tier, dedupe, sanitizePath, tierOf } from "./findings";
 import { redactTree } from "./scrub";
 import { type Approval, type ApprovalCheck, checkApproval, contentHash } from "./approval";
 import { type GuardrailAuditBody, type GuardrailEventName, auditBody } from "./audit";
@@ -362,12 +362,19 @@ export function gateGeneratedArtifacts(
   files: readonly GeneratedFile[],
   ctx: GateContext,
 ): GateDecision {
+  const names = ctx.declaredNames ?? [];
   const all: Finding[] = [];
   for (const file of files) {
+    // ⚠ The path is reported SANITISED and matched RAW. A generated file can
+    // be named after what it holds, so the raw path is what the denylists must
+    // see and the sanitised one is what a finding may say. Passing the raw
+    // path into `where` here was a real leak, caught by
+    // `__tests__/no-value-leak.test.ts` rather than by review.
+    const safe = sanitizePath(file.path, names);
     // The path, judged as a field name — `nameHits` via classify's rootPath.
-    all.push(...classify(null, { rootPath: file.path }).findings);
+    all.push(...classify(null, { rootPath: file.path, declaredNames: names }).findings);
     // The content, judged as prose.
-    all.push(...classifyMarkdown(file.content, file.path));
+    all.push(...classifyMarkdown(file.content, safe));
   }
   const findings = dedupe(all);
   const classification: Classification = { tier: tierOf(findings), findings };

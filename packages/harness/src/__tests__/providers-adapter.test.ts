@@ -55,7 +55,10 @@ describe("a CompletionRequest in keyed shape", () => {
 
 describe("a harness IS a ModelProvider", () => {
   it("records a completion whole and replays it with the vendor gone", async () => {
-    const inner = fakeProvider({ output: "a drafted spec", tokens_in: 120, tokens_out: 34 });
+    // The wrapper's `model` names what this provider is configured to serve.
+    const inner = new FakeProvider(() => ({ output: "a drafted spec", tokens_in: 120, tokens_out: 34 }), {
+      model: MODEL,
+    });
     const recorder = harnessProvider({ mode: "live", provider: inner, model: MODEL, fixturesDir: dir, env: {} });
 
     expect(recorder.name).toBe("harness(live:fake)");
@@ -92,7 +95,7 @@ describe("a harness IS a ModelProvider", () => {
   });
 
   it("keys a per-call model override separately", async () => {
-    const inner = new FakeProvider((_prompt, model) => ({ output: `served by ${model}` }));
+    const inner = new FakeProvider((_prompt, model) => ({ output: `served by ${model}` }), { model: MODEL });
     const recorder = harnessProvider({ mode: "live", provider: inner, model: MODEL, fixturesDir: dir, env: {} });
 
     await recorder.complete(ask("hello"));
@@ -122,6 +125,27 @@ describe("a harness IS a ModelProvider", () => {
     await expect(player.complete({ ...ask("hello"), signal: AbortSignal.abort() })).resolves.toMatchObject({
       text: "ok",
     });
+  });
+
+  it("records which model actually served the call, so a mislabelled wrapper is visible", async () => {
+    // The harness cannot see a provider's configured model; it is told one. If
+    // the label is wrong, the fixture still carries the truth — the served
+    // model — so the mistake surfaces in a diff instead of being replayed as
+    // an answer from a model that never ran.
+    const inner = new FakeProvider(() => ({ output: "ok" }), { model: "actually-served-9" });
+    const recorder = harnessProvider({
+      mode: "live",
+      provider: inner,
+      model: "claimed-model-1",
+      fixturesDir: dir,
+      env: {},
+    });
+    await recorder.complete(ask("hello"));
+
+    const [stored] = await listFixtures(dir);
+    expect(stored?.record.model).toBe("claimed-model-1");
+    expect(stored?.path).toContain("claimed-model-1");
+    expect((stored?.record.response as { model: string }).model).toBe("actually-served-9");
   });
 
   it("misses loudly rather than reaching for the vendor", async () => {
@@ -169,7 +193,7 @@ describe("composed with @providers' planner bridge", () => {
   });
 
   it("keys the bridge's effort dial, so a cheaper repair is a different recording", async () => {
-    const inner = new FakeProvider((_prompt, model) => ({ output: `served by ${model}` }));
+    const inner = new FakeProvider((_prompt, model) => ({ output: `served by ${model}` }), { model: MODEL });
     const recorder = harnessProvider({ mode: "live", provider: inner, model: MODEL, fixturesDir: dir, env: {} });
 
     await plannerLlm(recorder, { draftEffort: "high" })(draft);

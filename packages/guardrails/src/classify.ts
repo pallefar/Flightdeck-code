@@ -59,6 +59,7 @@ import {
   type Finding,
   dedupe,
   joinPath,
+  sanitizePath,
   sanitizePathSegment,
   tierOf,
 } from "./findings";
@@ -264,13 +265,7 @@ export function classify(input: unknown, options: ClassifyOptions = {}): Classif
   // being reported, because a generated FILE NAME can carry a person as
   // readily as a field can — `fixtures/e.musterfrau@example.de.json` is a
   // disclosure in the path alone.
-  const safeRoot =
-    root === ""
-      ? ""
-      : root
-          .split("/")
-          .map((seg, i) => sanitizePathSegment(seg, i, declaredNames))
-          .join("/");
+  const safeRoot = root === "" ? "" : sanitizePath(root, declaredNames);
   if (root !== "") findings.push(...findingsForPath(root, safeRoot, ""));
   visit(input, root, safeRoot);
 

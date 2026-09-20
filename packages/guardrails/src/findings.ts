@@ -132,6 +132,23 @@ export function sanitizePathSegment(
   return raw;
 }
 
+/**
+ * A whole path — object path or FILE path — reduced segment by segment.
+ *
+ * Exported and used by every caller that puts a path in a `where`, because the
+ * one that forgot was a real leak caught by `__tests__/no-value-leak.test.ts`:
+ * `gateGeneratedArtifacts` passed a generated file's raw path straight into
+ * the finding, and a generated file can be named after the thing it contains
+ * (`fixtures/e.musterfrau@example.de.seed.json`). A path is data. There is one
+ * sanitiser so there is one place to get it right.
+ */
+export function sanitizePath(raw: string, declaredNames: readonly string[] = []): string {
+  return raw
+    .split("/")
+    .map((seg, i) => sanitizePathSegment(seg, i, declaredNames))
+    .join("/");
+}
+
 export function joinPath(parent: string, segment: string): string {
   return parent === "" ? segment : `${parent}.${segment}`;
 }
