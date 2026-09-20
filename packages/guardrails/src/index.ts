@@ -121,6 +121,8 @@ export type {
 } from "./gates";
 
 export {
+  HOST_ABSENCE_ACK_ENV,
+  HOST_ABSENCE_ACK_VALUE,
   HOST_ENVELOPE,
   HOST_ROOT,
   HOST_WIDGET_TYPES,

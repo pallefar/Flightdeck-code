@@ -15,24 +15,32 @@
  * compiled, ran, and was indistinguishable from an answer. The guard was
  * protecting the value nobody consumes and leaving the one everybody does.
  *
- * ─────────────────────────────────────────────────────────────────────────
+ * ────────────────────────────────────────────────────────────────────────────
  * WHY A SYMBOL BRAND ALONE WOULD NOT HAVE FIXED IT — SAID PLAINLY
- * ─────────────────────────────────────────────────────────────────────────
+ * ────────────────────────────────────────────────────────────────────────────
  * Two honest limits of a TypeScript brand, both of which the attack above
  * walks straight through:
  *
  *   1. A brand is a COMPILE-TIME claim. `{} as GrantDecision` erases it, and an
- *      `as` cast costs an attacker one line.
- *   2. Object spread COPIES own enumerable SYMBOL properties. `{...real,
- *      allowed: true}` carries the brand along with the lie, so a brand whose
- *      value is `true` certifies the forgery.
+ *      `as` cast costs an attacker one line. So the check has to exist at
+ *      RUNTIME, and `verifyDecision()` is it.
+ *   2. Object spread copies own ENUMERABLE properties, symbols included. A
+ *      brand whose value is `true` and which travels with a spread would
+ *      certify `{...real, allowed: true}`.
  *
- * So the brand's VALUE is not `true`. It is an HMAC over the decision's own
- * semantic fields, keyed by a secret this module generates at load and does not
- * export. Spreading a real decision copies a seal that no longer describes the
- * fields beside it, so `verifyDecision()` rejects it; writing a fresh object
- * needs a seal the forger cannot compute. The check is at RUNTIME and does not
- * depend on the type system's goodwill.
+ * So the seal is defended twice, and the second defence is the one that matters:
+ *
+ *   - it is NON-ENUMERABLE, so `{...decision}` does not carry it at all and a
+ *     spread-and-edit copy has no seal to present; and
+ *   - its VALUE is an HMAC over the decision's own semantic fields, keyed by a
+ *     secret this module generates at load and does not export — so even a
+ *     copy made deliberately with `Object.getOwnPropertySymbols` and
+ *     `Reflect.get` presents a seal that no longer describes the fields beside
+ *     it, and a fresh object needs a seal the forger cannot compute.
+ *
+ * A consequence worth stating: a FAITHFUL copy does not verify either. That is
+ * correct. `verifyDecision()` answers "did this package mint this object", and
+ * a copy was minted by whoever copied it.
  *
  * ⚠ WHAT THIS IS NOT. It is not a signature anyone else can verify, and it does
  * not survive `JSON.stringify` (symbol keys are dropped — which is also why it

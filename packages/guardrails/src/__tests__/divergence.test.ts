@@ -37,6 +37,8 @@ import {
 } from "../lists";
 import { MAX_TEXT_CHARS } from "../scrub";
 import {
+  HOST_ABSENCE_ACK_ENV,
+  HOST_ABSENCE_ACK_VALUE,
   HOST_ENVELOPE,
   HOST_ROOT,
   HOST_WIDGET_TYPES,
@@ -77,10 +79,59 @@ describe("the host checkout, or a named reason it is absent", () => {
     expect(host.reason).toBeTruthy();
     expect(host.reason.length).toBeGreaterThan(20);
     if (!host.available) {
-      // Loud, in the test output, every run — not a silent green tick.
-      console.warn(`\n⚠ guardrails divergence test SKIPPED: ${host.reason}\n`);
       expect(host.reason).toContain("HOST CHECKOUT NOT READABLE");
       expect(host.reason).toContain("FLIGHTDECK_HOST_ROOT");
+      expect(host.reason).toContain(HOST_ABSENCE_ACK_ENV);
+    }
+  });
+
+  /**
+   * ⭐ THE CASE THAT FAILS INSTEAD OF SKIPPING.
+   *
+   * Everything below this describe block is `describe.skipIf(!host.available)`,
+   * and skipping is the right behaviour for a comparison that has nothing to
+   * compare against — you cannot diff a file that is not there. What is NOT
+   * right is the exit code that came with it. Before this case,
+   *
+   *     FLIGHTDECK_HOST_ROOT=/nonexistent npx vitest run packages/guardrails
+   *
+   * printed "Test Files 5 passed, Tests 90 passed | 8 skipped" and exited 0,
+   * with a console.warn in the middle that no CI system reads. The eight
+   * skipped cases are the entire mechanism that makes two copies of a security
+   * list safe to have; a run in which they did not execute is a run in which
+   * the copies were not checked, and it must not be reported as a pass.
+   *
+   * This case is deliberately NOT skipIf'd. It is the one that turns "could
+   * not verify" into a red suite and a non-zero exit, and it is why
+   * `hostAvailability` has an `acknowledged` field: the only way past it is a
+   * human setting an exact string that then appears in this test's own name.
+   */
+  it(`FAILS when the host lists could not be verified [ack=${host.acknowledged ? HOST_ABSENCE_ACK_VALUE : "not given"}]`, () => {
+    expect(
+      host.available || host.acknowledged,
+      `${host.reason}\n\n` +
+        `Studio's copies of the host security lists were NOT verified against the host on this run.\n` +
+        `A skipped divergence check is not a passing one: the copies in packages/guardrails/src/lists.ts\n` +
+        `could have forked from ${HOST_ROOT} in either direction and nothing here would know.\n` +
+        `Point FLIGHTDECK_HOST_ROOT at a pallefar/project-contract checkout, or set\n` +
+        `${HOST_ABSENCE_ACK_ENV}=${HOST_ABSENCE_ACK_VALUE} to proceed knowingly unverified.`,
+    ).toBe(true);
+  });
+
+  it("only an EXACT acknowledgement counts — `=1` does not", () => {
+    // The point of the acknowledgement is that it cannot be set by reflex to
+    // make red go away. If it could, it would be the console.warn again.
+    expect(HOST_ABSENCE_ACK_VALUE).not.toBe("1");
+    expect(HOST_ABSENCE_ACK_VALUE.length).toBeGreaterThan(8);
+    const saved = process.env[HOST_ABSENCE_ACK_ENV];
+    try {
+      process.env[HOST_ABSENCE_ACK_ENV] = "1";
+      expect(hostAvailability().acknowledged).toBe(false);
+      process.env[HOST_ABSENCE_ACK_ENV] = HOST_ABSENCE_ACK_VALUE;
+      expect(hostAvailability().acknowledged).toBe(true);
+    } finally {
+      if (saved === undefined) delete process.env[HOST_ABSENCE_ACK_ENV];
+      else process.env[HOST_ABSENCE_ACK_ENV] = saved;
     }
   });
 });

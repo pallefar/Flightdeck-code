@@ -208,7 +208,8 @@ const REPORT_PRIORITY: readonly GrantReason[] = [
  * answers a tier-4 question with a tier-3 signature sitting beside it, because
  * both are true statements and neither retracts the other. Narrowing an
  * approval means REVOKING the wide one. That is a store-side supersession rule
- * this package cannot invent for itself, and it is recorded in the README.
+ * this package cannot invent for itself. `A8` in `__tests__/redteam-attacks.
+ * test.ts` asserts it as a STATED RESIDUAL rather than leaving it implied.
  *
  * `approvals` is re-read from the store by the caller on every decision; nothing
  * here retains it.

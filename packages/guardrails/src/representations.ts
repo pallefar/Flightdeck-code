@@ -74,7 +74,7 @@ export interface RepresentationOptions extends ClassifyOptions {
 }
 
 const DEFAULT_DEPTH = 4;
-const DEFAULT_STRING_NODES = 500;
+const DEFAULT_STRING_NODES = 2_000;
 const DEFAULT_TEXT_CHARS = 200_000;
 
 /** A string worth trying to parse: JSON objects and arrays only. A bare number

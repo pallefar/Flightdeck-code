@@ -413,7 +413,13 @@ export function classify(input: unknown, options: ClassifyOptions = {}): Classif
     if (value instanceof Date) {
       // A date of birth held as a Date was invisible to a walker that only
       // scanned strings. Its ISO form is the same disclosure.
-      if (!Number.isNaN(value.getTime())) visitString(value.toISOString(), rawPath, safePath, 0);
+      // `T` is a word character, so `1987-04-12T00:00:00.000Z` does not match
+      // the host's ISO date pattern — the `\b` after the day fails. The same
+      // instant written with a space does. A representation that defeats the
+      // pattern by one character is the theme of this file.
+      if (!Number.isNaN(value.getTime())) {
+        visitString(value.toISOString().replace("T", " "), rawPath, safePath, 0);
+      }
       return;
     }
     if (ArrayBuffer.isView(value) || value instanceof ArrayBuffer) {

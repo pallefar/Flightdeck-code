@@ -211,13 +211,14 @@ export function looksLikePersonName(value: string): boolean {
   if (words.length < 2 || words.length > 4) return false;
   let capitalised = 0;
   for (const word of words) {
+    const isInitial = word.endsWith("."); // the `Q.` of `Jane Q. Doe`
     const w = word.replace(/[.,;:]$/, "");
     if (w.length === 0) return false;
     const lower = w.toLowerCase().replace(/[^a-z]/g, "");
     if (ORG_TOKENS.has(lower)) return false;
     if (NAME_PARTICLES.has(lower)) continue;
-    if (!/^[A-ZÀ-ɏ][A-Za-zÀ-ɏ'’-]*\.?$/u.test(w)) return false;
-    if (w.replace(/[^A-Za-zÀ-ɏ]/g, "").length < 2 && !w.endsWith(".")) return false;
+    if (!/^[A-ZÀ-ɏ][A-Za-zÀ-ɏ'’-]*$/u.test(w)) return false;
+    if (w.replace(/[^A-Za-zÀ-ɏ]/g, "").length < 2 && !isInitial) return false;
     capitalised += 1;
   }
   return capitalised >= 2;
@@ -298,7 +299,9 @@ export function classifyText(text: string, where: string): Finding[] {
  * does not become a finding. Depth is bounded at two, so base64-of-percent
  * works and a decode bomb does not.
  */
-const BASE64_SHAPE = /^[A-Za-z0-9+/_-]{16,}={0,2}$/;
+/** 12 characters is 9 decoded bytes — short enough to carry `a@b.de`, long
+ * enough that ordinary short identifiers are not run through a decoder. */
+const BASE64_SHAPE = /^[A-Za-z0-9+/_-]{12,}={0,2}$/;
 
 /**
  * Is this decoded byte string plausibly TEXT rather than binary?

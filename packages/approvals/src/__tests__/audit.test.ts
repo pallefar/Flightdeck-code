@@ -12,7 +12,7 @@ import { describe, expect, it } from "vitest";
 import { effectiveGrant } from "../decision";
 import { AUDIT_BODY_FIELDS } from "../audit";
 import { GRANT_REASONS } from "../reasons";
-import { CONTRACTS_INPUT, HASH_V1, HASH_V2, PROJECT, TOOL, approval, ask, ceiling, row, store } from "./support";
+import { CONTRACTS_INPUT, HASH_V1, PROJECT, TOOL, TOOL_V2, approval, ask, ceiling, row, store } from "./support";
 
 const NOTE = "Salary 84,000 EUR for Anna Becker, IBAN DE89370400440532013000, DOB 1984-03-02";
 const VALUES = ["84,000", "Anna Becker", "DE89370400440532013000", "1984-03-02", "Salary"];

@@ -21,7 +21,7 @@
  */
 
 import { describe, expect, it } from "vitest";
-import { classify } from "../classify";
+import { FINDING_CLASSES, classify } from "../classify";
 import { classifyMarkdown } from "../markdown";
 import {
   gateGeneratedArtifacts,
@@ -36,6 +36,9 @@ import {
   PII_PATTERN_NAMES,
   SPECIAL_CATEGORY_SEGMENTS,
   SPECIAL_CATEGORY_SUBSTRINGS,
+  STUDIO_PERSONAL_TOKENS,
+  STUDIO_RESTRICTED_SUBSTRINGS,
+  STUDIO_RESTRICTED_TOKENS,
 } from "../lists";
 import { RECORDING_PROVENANCE_TOKENS } from "../markdown";
 
@@ -162,17 +165,36 @@ describe("every gate — decision, reason and audit body", () => {
 });
 
 describe("a finding's `class` is drawn from a compiled-in vocabulary", () => {
+  it("FINDING_CLASSES is the whole vocabulary, not a hand-kept subset of it", () => {
+    // The set used to be assembled here, by hand, from whichever lists this
+    // file happened to import. A vocabulary that grows in `lists.ts` and not
+    // here does not make this test fail — it makes it stop checking, quietly,
+    // which is the shape of every defect in this package's history. So the
+    // package exports ONE vocabulary and this case asserts it covers every
+    // list rather than rebuilding it.
+    const known = new Set(FINDING_CLASSES);
+    for (const [label, list] of [
+      ["PII_PATTERN_NAMES", PII_PATTERN_NAMES],
+      ["PII_DENIED_SEGMENTS", PII_DENIED_SEGMENTS],
+      ["PII_DENIED_SUBSTRINGS", PII_DENIED_SUBSTRINGS],
+      ["SPECIAL_CATEGORY_SEGMENTS", SPECIAL_CATEGORY_SEGMENTS],
+      ["SPECIAL_CATEGORY_SUBSTRINGS", SPECIAL_CATEGORY_SUBSTRINGS],
+      ["BUSINESS_SEGMENTS", BUSINESS_SEGMENTS],
+      ["STUDIO_RESTRICTED_SUBSTRINGS", STUDIO_RESTRICTED_SUBSTRINGS],
+      ["STUDIO_RESTRICTED_TOKENS", STUDIO_RESTRICTED_TOKENS],
+      ["STUDIO_PERSONAL_TOKENS", STUDIO_PERSONAL_TOKENS],
+    ] as const) {
+      for (const token of list) {
+        expect(known.has(token), `${label} entry "${token}" is missing from FINDING_CLASSES`).toBe(true);
+      }
+    }
+    for (const token of RECORDING_PROVENANCE_TOKENS) {
+      expect(known.has(`provenance:${token}`)).toBe(true);
+    }
+  });
+
   it("never invents a class name from the data", () => {
-    const known = new Set<string>([
-      ...PII_PATTERN_NAMES,
-      ...PII_DENIED_SEGMENTS,
-      ...PII_DENIED_SUBSTRINGS,
-      ...SPECIAL_CATEGORY_SEGMENTS,
-      ...SPECIAL_CATEGORY_SUBSTRINGS,
-      ...BUSINESS_SEGMENTS,
-      ...RECORDING_PROVENANCE_TOKENS.map((t) => `provenance:${t}`),
-      "scan-truncated",
-    ]);
+    const known = new Set<string>(FINDING_CLASSES);
     const all = [
       ...classify(PAYLOAD).findings,
       ...classifyMarkdown(MARKDOWN),

@@ -29,7 +29,7 @@
  * "is the caller `m.keller`?". Nothing in this package can tell whether the
  * process that wrote an approval row was really that person; binding a row to a
  * verified session or a signature is the store's job and the host's, and the
- * residual is stated in the package README rather than papered over here. What
+ * residual is stated here rather than papered over. What
  * this port removes is the strictly larger hole underneath it: that the row did
  * not even have to refer to a real human.
  */

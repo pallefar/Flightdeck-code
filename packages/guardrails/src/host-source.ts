@@ -34,25 +34,65 @@ export const HOST_ROOT = process.env["FLIGHTDECK_HOST_ROOT"] ?? "/home/user/proj
 export const HOST_ENVELOPE = path.join(HOST_ROOT, "flightdeck", "server", "services", "ai", "envelope.ts");
 export const HOST_WIDGET_TYPES = path.join(HOST_ROOT, "flightdeck", "server", "widgets", "types.ts");
 
+/**
+ * ⚠ A CONSOLE.WARN IS NOT A FAILURE, AND CI READS EXIT CODES.
+ *
+ * This is the runner-up defect of the same round as the rest of this package's
+ * hardening, and it is the SEC-V5-02 shape wearing its third costume: the
+ * control that reports green because it never ran.
+ *
+ * `HOST_ROOT` defaults to a hardcoded absolute path that nothing in this repo
+ * sets and no CI workflow provides. With the host checkout absent, the
+ * divergence suite skipped, printed a warning, and reported
+ *
+ *     Test Files 5 passed, Tests 90 passed | 8 skipped     exit 0
+ *
+ * Eight skipped cases are the ONLY thing standing between two copies of a
+ * security list and a silent fork, and they were skipping behind a zero exit
+ * code — which is to say the thing that made "the 25 piiGitBoundary tests
+ * passed the whole time" true, re-shipped in this package. A warning is read
+ * by a human who is watching; an exit code is read by the machine that merges.
+ *
+ * So an absent host checkout is a FAILING test, not a skipped one, unless a
+ * human explicitly and specifically says otherwise:
+ *
+ *     FLIGHTDECK_HOST_ROOT=/path/to/project-contract   — verify (the normal way)
+ *     FLIGHTDECK_HOST_ABSENT_ACKNOWLEDGED=unverified-lists-accepted
+ *                                                      — proceed UNVERIFIED
+ *
+ * The acknowledgement is an exact non-obvious string on purpose. `=1` is
+ * something a person sets by reflex to make red go away; this one has to be
+ * copied out of a file that says what it means, and it appears in the test
+ * name so every run that uses it says so out loud.
+ */
+export const HOST_ABSENCE_ACK_ENV = "FLIGHTDECK_HOST_ABSENT_ACKNOWLEDGED";
+export const HOST_ABSENCE_ACK_VALUE = "unverified-lists-accepted";
+
 export interface HostAvailability {
   readonly available: boolean;
   /** A NAMED reason, never a bare false. A divergence test that skips without
    * saying why is indistinguishable from one that passed. */
   readonly reason: string;
+  /** True only when a human set `FLIGHTDECK_HOST_ABSENT_ACKNOWLEDGED` to the
+   * exact value above. Absent host + no acknowledgement = the suite FAILS. */
+  readonly acknowledged: boolean;
 }
 
 export function hostAvailability(): HostAvailability {
+  const acknowledged = process.env[HOST_ABSENCE_ACK_ENV] === HOST_ABSENCE_ACK_VALUE;
   const missing: string[] = [];
   if (!fs.existsSync(HOST_ENVELOPE)) missing.push(HOST_ENVELOPE);
   if (!fs.existsSync(HOST_WIDGET_TYPES)) missing.push(HOST_WIDGET_TYPES);
   if (missing.length === 0) {
-    return { available: true, reason: `host checkout present at ${HOST_ROOT}` };
+    return { available: true, reason: `host checkout present at ${HOST_ROOT}`, acknowledged };
   }
   return {
     available: false,
+    acknowledged,
     reason:
       `HOST CHECKOUT NOT READABLE — cannot verify Studio's copies of the host security lists. ` +
-      `Missing: ${missing.join(", ")}. Set FLIGHTDECK_HOST_ROOT to the pallefar/project-contract checkout.`,
+      `Missing: ${missing.join(", ")}. Set FLIGHTDECK_HOST_ROOT to the pallefar/project-contract checkout, ` +
+      `or, to run KNOWINGLY UNVERIFIED, set ${HOST_ABSENCE_ACK_ENV}=${HOST_ABSENCE_ACK_VALUE}.`,
   };
 }
 

@@ -111,7 +111,7 @@ describe("A3 approver identity", () => {
     return effectiveGrant({ store: s, ...ask({ datasource: CONTRACTS_INPUT, tier: 4 }) });
   };
 
-  it("agent", async () => { const d = await tryApprover({ kind: "agent", id: "crew.contract-auditor", displayName: "Auditor" }); log("A3.agent", d); expect(d.reason).toBe("approval_requester_is_approver"); });
+  it("agent", async () => { const d = await tryApprover({ kind: "agent", id: "crew.contract-auditor", displayName: "Auditor" }); log("A3.agent", d); expect(d.reason).toBe("approval_actor_not_human"); });
   it("system", async () => { const d = await tryApprover({ kind: "system", id: "scheduler", displayName: "System" }); log("A3.system", d); expect(d.reason).toBe("approval_actor_not_human"); });
   it("tool", async () => { const d = await tryApprover({ kind: "tool", id: "some-tool", displayName: "T" }); log("A3.tool", d); expect(d.reason).toBe("approval_identity_unknown"); });
   it("empty id", async () => { const d = await tryApprover({ kind: "human", id: "", displayName: "X" }); log("A3.emptyid", d); expect(d.reason).toBe("approval_actor_missing"); });
@@ -155,8 +155,11 @@ describe("A3 approver identity", () => {
     const d = await effectiveGrant({ store: s, ...ask({ datasource: CONTRACTS_INPUT, tier: 4, requestedBy: { kind: "agent", id: "crew.contract-auditor" } }) });
     log("A3.requester-approves", d);
     expect(d.allowed).toBe(false);
-    // Four eyes: it is not "not a human", it is "not a SECOND party".
-    expect(d.reason).toBe("approval_requester_is_approver");
+    // Two independent reasons, and the more fundamental one is reported: the
+    // directory says `crew.contract-auditor` is an AGENT, whatever the row
+    // claims. Four eyes is demonstrated on a real human below, where "not a
+    // human" cannot be doing the work.
+    expect(d.reason).toBe("approval_actor_not_human");
   });
 
   it("BLOCKED: a human requester signing their own request", async () => {
@@ -292,10 +295,10 @@ describe("A6 revocation vs a decision already in hand", () => {
     const real = await effectiveGrant({ store: store([]), ...ask({ datasource: CONTRACTS_INPUT, tier: 4 }) });
     expect(verifyDecision(real)).toBe(true);
 
-    // Object spread copies own enumerable SYMBOL keys, so the seal comes along
-    // — and that is exactly why the seal's value is not `true`. It is an HMAC
-    // over the fields it was taken from, so it stops describing them the moment
-    // one is edited.
+    // The seal is non-enumerable, so the spread does not carry it; and its
+    // value is an HMAC over the fields it was taken from, so a seal copied on
+    // purpose stops describing them the moment one is edited. Two defences,
+    // because a brand valued `true` would have survived the spread.
     const forged: GrantDecision = { ...real, allowed: true, reason: "allowed", effectiveTiers: [1, 2, 3, 4], approval: { approverId: "nobody", approverName: "Nobody", approvedAt: AT, tier: 4 } };
     console.log("[A6.forged]", forged.allowed, forged.reason, "verifies:", verifyDecision(forged));
     expect(forged.allowed).toBe(true); // the field is still a boolean someone wrote
@@ -303,10 +306,31 @@ describe("A6 revocation vs a decision already in hand", () => {
     expect(decisionIsUsable(forged, SOON)).toEqual({ ok: false, problem: "forged" });
   });
 
-  it("BLOCKED: an unedited spread does verify, and every single-field edit does not", async () => {
-    const s = store([ceiling([[CONTRACTS_INPUT, 2]]), row(PROJECT, [[CONTRACTS_INPUT, 2]])]);
-    const real = await effectiveGrant({ store: s, ...ask({ datasource: CONTRACTS_INPUT, tier: 2 }) });
-    expect(verifyDecision({ ...real })).toBe(true); // a faithful copy is the same answer
+  it("BLOCKED: no copy verifies — not a spread, not a reflected one, not an edited one", async () => {
+    // A REFUSAL is the base, so every edit below is a real change: flipping
+    // `allowed` on a decision that already allows would test nothing.
+    const s = store([]);
+    const real = await effectiveGrant({ store: s, ...ask({ datasource: CONTRACTS_INPUT, tier: 4 }) });
+    expect(real.allowed).toBe(false);
+    expect(real.tier).toBe(4);
+    expect(real.requiresNamedApproval).toBe(true);
+    expect(verifyDecision(real)).toBe(true);
+
+    // Defence 1: the seal is NON-ENUMERABLE, so a spread does not carry it.
+    // Even a faithful copy fails, which is correct — `verifyDecision` answers
+    // "did this package mint this object", and a copy was minted by the copier.
+    expect(verifyDecision({ ...real })).toBe(false);
+
+    // Defence 2: copy it ON PURPOSE, the way an attacker would, and the HMAC
+    // catches the edit because it describes the fields it was taken from.
+    const carried = (source: GrantDecision, edit: Partial<GrantDecision>): GrantDecision => {
+      const copy: Record<PropertyKey, unknown> = { ...source, ...edit };
+      for (const sym of Object.getOwnPropertySymbols(source)) {
+        copy[sym] = Reflect.get(source, sym);
+      }
+      return copy as unknown as GrantDecision;
+    };
+    expect(verifyDecision(carried(real, {}))).toBe(true); // the seal really did travel
     const edits: Array<Partial<GrantDecision>> = [
       { allowed: true }, { reason: "allowed" }, { tier: 1 }, { requiresNamedApproval: false },
       { effectiveTiers: [1, 2, 3, 4] }, { ceilingMaxTier: 4 }, { projectMaxTier: 4 },
@@ -314,8 +338,8 @@ describe("A6 revocation vs a decision already in hand", () => {
       { approval: { approverId: "x", approverName: "X", approvedAt: AT, tier: 4 } },
     ];
     for (const edit of edits) {
-      const tampered = { ...real, ...edit } as GrantDecision;
-      expect(verifyDecision(tampered)).toBe(false);
+      expect(verifyDecision(carried(real, edit))).toBe(false);
+      expect(verifyDecision({ ...real, ...edit } as GrantDecision)).toBe(false);
     }
   });
 

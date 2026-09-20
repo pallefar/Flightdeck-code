@@ -88,8 +88,9 @@
  * demonstrated attack lives. It CANNOT close the window between the
  * confirmation and the caller acting on the answer — no in-process check can,
  * and a decision object is a record of a past answer, never a capability. The
- * caller's obligation is in `README` and in `decisionIsUsable()` below: ask
- * immediately before acting, act once, and never carry the boolean anywhere.
+ * caller's obligation is `decisionIsUsable()` below, and the rule it enforces:
+ * ask immediately before acting, act once, and never carry the boolean
+ * anywhere.
  */
 
 import { admitApproval, type ApprovalRecord } from "./approval";
