@@ -13,8 +13,8 @@ and says why.
 
 ## 1. Why you are moving this to the Mac
 
-One reason only: **the host's compliance gate needs Postgres and some Python
-packages that are not installed here.** Studio itself does not need a database —
+One reason only: **the host's compliance gate cannot pass in this container.**
+Studio itself does not need a database —
 the only mention of Postgres in this repo is a *denylist* of imports a generated
 mini-app may not use (`packages/conformance/src/checks/capability-escape.ts:40`).
 
@@ -25,19 +25,51 @@ without a passing record for that exact spec. So today nothing can be promoted
 from this container — not because the code is wrong, but because the gate cannot
 pass here.
 
-**This was checked, not assumed.** The gate was run twice: once with the
-candidate mounted, once on a clean copy of the host with nothing mounted. Both
-failed identically:
+**What was actually established here — including where my first reading of it
+was too confident.**
+
+The gate was run three times: with the candidate mounted, on a clean host with
+nothing mounted, and again after installing the missing Python packages. The
+current state of a clean host in this container is:
 
 ```
-FAILED STACKS: vitest run_eval
-SKIPPED STACKS: postgres-tier
+PASS: contracts/ PII boundary
+FAIL: flightdeck vitest suite
+SKIP: flightdeck Postgres tier — flightdeck/.env.supabase not found (gitignored)
+PASS: flightdeck typecheck
+PASS: run_eval.py            ← was FAIL; fixed by two pip installs, see §2.4
+FAILED STACKS: vitest
 EXIT=1
 ```
 
-Not one failure named the candidate (`wc-clock`). The root causes visible in the
-logs are `ModuleNotFoundError: No module named 'docx'` and the `postgres-tier`
-stack having no database to talk to.
+Three separate things, and they are not the same kind of problem:
+
+1. **`run_eval` is solved.** It needed `python-docx` and `openpyxl`. Verified,
+   not predicted — it now passes inside the gate as well as standalone.
+
+2. **`postgres-tier` does not need you to install Postgres.** It skips because
+   **`flightdeck/.env.supabase` is missing**, and that file is gitignored. You
+   need the credentials file, not a local database. (I had written "install
+   Postgres" here before reading the skip reason. It is Supabase.)
+
+3. **The `vitest` stack's failures are not yet attributable.** Several are
+   artefacts of how I built the sandbox rather than facts about the host: the
+   copy excluded `.git`, so `piiGitBoundary.test.ts` refuses to run
+   ("requires a real git repository"); `web/dist` was never built, so a test
+   that says "run `npm run build:web` — this test measures the real bundle"
+   fails; `contracts/INDEX.json` is a derived artifact that was not in the
+   copy. The rest point at a missing `soffice` (LibreOffice) and at Supabase.
+
+   So **do not carry my numbers over.** Establish your own baseline on the Mac,
+   in a real checkout, before attributing anything to Studio:
+
+   ```bash
+   cd /Users/you/project-contract && bash scripts/gate.sh
+   ```
+
+   That is the number to compare against. What *is* established is narrower and
+   still useful: in the run with the candidate mounted, not one failure named
+   the candidate (`grep -c wc-clock` over the gate log returned 0).
 
 ---
 
@@ -49,7 +81,8 @@ stack having no database to talk to.
 |---|---|---|
 | Node ≥ 20 | declared in `package.json` `engines` | `node -v` |
 | Python 3.11+ | the host's engine + `run_eval.py` | `python3 --version` |
-| Postgres | the host gate's `postgres-tier` stack | `psql --version` |
+| `flightdeck/.env.supabase` | the host gate's `postgres-tier` stack — it wants CREDENTIALS, not a local install | `ls flightdeck/.env.supabase` |
+| LibreOffice (`soffice`) | some host docx→PDF tests | `soffice --version` |
 | The host repo | guardrails compare against it; promote mounts into it | see §2.3 |
 
 ### 2.2 Studio
@@ -105,8 +138,16 @@ export REPO=/Users/you/project-contract                   # scripts/mount-in-hos
 #
 python3 -m pip install python-docx openpyxl
 
-# Postgres for the postgres-tier stack
-brew install postgresql@16 && brew services start postgresql@16
+# ⚠ NOT a local Postgres install. The postgres-tier stack skips with:
+#
+#   SKIP: flightdeck Postgres tier — flightdeck/.env.supabase not found
+#         (it is gitignored — expected in CI and in a fresh worktree)
+#
+# So what it wants is the CREDENTIALS FILE, which is deliberately not in the
+# repo. Put your `flightdeck/.env.supabase` in place; read gate.sh's
+# postgres-tier block for the variables it expects. This is the one thing in
+# this document that could not be verified here, because there is no such
+# file and no database in this container to verify it against.
 ```
 
 Then read `$FLIGHTDECK_HOST_ROOT/scripts/gate.sh` for the exact connection
@@ -212,7 +253,8 @@ HOST_REPO=/Users/you/project-contract SPEC=fixtures/wc-clock.spec.json \
 cat /tmp/fd-promote/compliance-record.json
 ```
 
-Today, here, it ends:
+Today, here, it ends (this record is from BEFORE the two pip installs; the four
+Studio stacks pass, the host stack does not):
 
 ```json
 { "passed": ["studio-suite","conformance-redteam","generate-and-mount","build-web"],
@@ -273,10 +315,13 @@ These are load-bearing. Each is a property something else depends on.
 
 ## 6. Honest remaining work
 
-- **The host gate has never passed anywhere I could observe it.** Whether it goes
-  green on your Mac with Postgres and `python-docx` installed is the first thing
-  to find out, and it is the only thing standing between this and a promotable
-  build.
+- **The host gate has never gone fully green anywhere I could observe it**, and
+  one of its three problems is now solved (`run_eval`, via two pip installs).
+  What remains is the `vitest` stack and the Supabase credentials file. Getting
+  a clean `bash scripts/gate.sh` on the Mac is the first thing to do and the
+  only thing standing between this and a promotable build — and per §1, start
+  by taking your own baseline, because my sandbox numbers are not a fair
+  comparison.
 - **Grant rows are last-write-wins at the row level.** Two operators, one
   narrowing and one widening, and the narrowing is lost without a trace. Closing
   it needs a version on `GrantRow` and a compare-and-swap on the port; the *file*
