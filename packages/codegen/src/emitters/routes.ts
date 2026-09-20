@@ -326,11 +326,36 @@ function bindExpression(field: PlannedField): string {
   return field.optional === true ? `${access} ?? null` : access;
 }
 
+/** ⭐ PROJECTED ONTO A DECLARED SHAPE, NOT PASSED THROUGH.
+ *
+ * This was `return { rows: caps.readContracts() }`, which puts whatever the
+ * capability adapter hands back onto the wire verbatim — including
+ * `ContractFolder.dir`, an ABSOLUTE PATH ON THE SERVER. In the host that is
+ * the Flightdeck machine's own directory layout, serialised to every browser
+ * with this sub-app open and rendered into the DOM as a table column. It was
+ * also, measurably, the widest column on the page: the thing a reader's eye
+ * landed on first was a filesystem path they can do nothing with.
+ *
+ * ⚠ THIS IS THE SAME RULE THE ENVELOPE APPLIES OUTBOUND, TURNED AROUND. A
+ * caller's bytes do not reach the model unless they are a member of a
+ * compiled-in set; the server's bytes should not reach the browser unless the
+ * route named them. "Return the adapter's object" is an unallowlisted region
+ * in the one direction nobody was checking.
+ *
+ * Nothing loses a capability here. A route cannot read the filesystem
+ * (contract rule 3), so a path in the browser was never actionable — and
+ * `ticket` and `folderName` are what every emitted page actually renders.
+ * Adding a field back is a one-line change a person makes deliberately, which
+ * is the point of naming them.
+ */
 function emitListContracts(): string[] {
   return [
     "    const caps = await ctx.capabilitiesFor(rt.id);",
     "    try {",
-    "      return { rows: caps.readContracts() };",
+    "      const folders = caps.readContracts();",
+    "      return {",
+    "        rows: folders.map((folder) => ({ ticket: folder.ticket, folderName: folder.folderName })),",
+    "      };",
     "    } catch (err) {",
     "      return mapError(reply, err);",
     "    }",

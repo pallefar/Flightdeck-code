@@ -30,6 +30,23 @@ export interface LedgerInput {
    * downgrades a `real` row to `absent`, and the pane says so. */
   readonly scopesScanned: boolean;
   readonly hasCapabilities: boolean;
+  /** ⭐ WHETHER ANY PANEL CAN SUPPLY COLUMNS TO FABRICATE.
+   *
+   * The adapter takes a table's columns from THE FORMS THAT WRITE TO THE SAME
+   * PANEL — deliberately, because that is what makes the preview's headers
+   * real even though its cells are not. A read-only panel has no form, so it
+   * has no columns, so nothing is fabricated and the frame shows "Nothing here
+   * yet."
+   *
+   * Without this flag the ledger printed "Row data: MOCKED — fabricated,
+   * seeded… column names are real" on exactly that screen. A reviewer reading
+   * MOCKED expects invented rows; seeing an empty table they conclude the
+   * ROUTE returns nothing. The one pane whose whole job is to say which parts
+   * of the preview are evidence was itself overclaiming.
+   *
+   * Every other row here is already conditional on its input. This one was the
+   * only hardcoded verdict in the file. */
+  readonly fabricatesRows: boolean;
 }
 
 export function buildLedger(input: LedgerInput): readonly LedgerRow[] {
@@ -68,8 +85,10 @@ export function buildLedger(input: LedgerInput): readonly LedgerRow[] {
     },
     {
       aspect: "Row data",
-      fidelity: "mocked",
-      note: "Fabricated, seeded from the sub-app id so it is identical every time you open it. Column names are real; every cell is invented.",
+      fidelity: input.fabricatesRows ? "mocked" : "absent",
+      note: input.fabricatesRows
+        ? "Fabricated, seeded from the sub-app id so it is identical every time you open it. Column names are real; every cell is invented."
+        : "NOT fabricated here. Sample columns are taken from the forms that write to a panel, and no panel in this app has one — so every table in this preview is empty, and that is a limit of the preview rather than evidence the route returns nothing. Check the route against real data elsewhere.",
     },
     {
       aspect: "Success bodies",

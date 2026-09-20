@@ -159,6 +159,9 @@ export function buildPreview(options: BuildOptions): PreviewState {
     ledger: buildLedger({
       scopesScanned: scopes.size > 0,
       hasCapabilities: candidate.manifest.capabilities.length > 0,
+      // The same condition `MockCapabilityHost.#rows` applies: columns come
+      // from a panel's own forms, so a panel without one fabricates nothing.
+      fabricatesRows: module.panels.some((panel) => panel.forms.length > 0),
     }),
     attributed,
   };

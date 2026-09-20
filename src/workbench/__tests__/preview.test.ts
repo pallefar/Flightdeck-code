@@ -433,7 +433,7 @@ describe("attach", () => {
 
 describe("the fidelity ledger", () => {
   it("names what is absent, not just what works", () => {
-    const rows = buildLedger({ scopesScanned: true, hasCapabilities: true });
+    const rows = buildLedger({ scopesScanned: true, hasCapabilities: true, fabricatesRows: true });
     const absent = rows.filter((r) => r.fidelity === "absent").map((r) => r.aspect);
     // The three a green preview must never be read as evidence of.
     expect(absent).toContain("SQL and initSchema");
@@ -442,8 +442,45 @@ describe("the fidelity ledger", () => {
   });
 
   it("every row says something specific", () => {
-    for (const row of buildLedger({ scopesScanned: false, hasCapabilities: false })) {
+    for (const row of buildLedger({ scopesScanned: false, hasCapabilities: false, fabricatesRows: false })) {
       expect(row.note.length).toBeGreaterThan(40);
     }
+  });
+
+  it("⭐ does not claim MOCKED row data on a panel where nothing is fabricated", () => {
+    // Found by looking at a real preview: wc-clock lists contracts and has no
+    // FORM, and the adapter takes a table's sample columns from the forms that
+    // write to the same panel. No form -> no columns -> no rows. The frame
+    // showed "Nothing here yet." while the ledger beside it read
+    // "Row data: MOCKED — fabricated, seeded… column names are real".
+    //
+    // A reviewer reading MOCKED expects invented rows; seeing an empty table
+    // they conclude the ROUTE returns nothing. The one pane whose whole job is
+    // to say which parts of a preview are evidence was overclaiming — and it
+    // was the only hardcoded verdict in a file where every other row is
+    // conditional on its input.
+    const withForms = buildLedger({ scopesScanned: true, hasCapabilities: true, fabricatesRows: true });
+    const readOnly = buildLedger({ scopesScanned: true, hasCapabilities: true, fabricatesRows: false });
+
+    const rowDataOf = (rows: readonly { aspect: string; fidelity: string; note: string }[]) =>
+      rows.find((r) => r.aspect === "Row data");
+
+    expect(rowDataOf(withForms)?.fidelity).toBe("mocked");
+    expect(rowDataOf(readOnly)?.fidelity).toBe("absent");
+    // And it must say WHY the table is empty, so nobody reads it as a verdict
+    // on the route.
+    expect(rowDataOf(readOnly)?.note).toMatch(/not.*evidence the route returns nothing/i);
+  });
+
+  it("no verdict in the ledger is hardcoded — every one moves with its input", () => {
+    // The guard on the finding above. `Row data` was the only row that read
+    // the same on every candidate; this fails if a new one is added that way.
+    const all = buildLedger({ scopesScanned: true, hasCapabilities: true, fabricatesRows: true });
+    const none = buildLedger({ scopesScanned: false, hasCapabilities: false, fabricatesRows: false });
+    const moved = all.filter((row, i) => row.fidelity !== none[i]?.fidelity).map((r) => r.aspect);
+    // Every input flag must move at least one row, or the flag is decorative.
+    expect(moved).toContain("Capability gating (§9)");
+    expect(moved).toContain("Proposals (§7)");
+    expect(moved).toContain("Row data");
   });
 });
