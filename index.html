@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Flightdeck Studio</title>
+    <style>
+      /* The workbench injects its own stylesheet (theme.ts → WORKBENCH_CSS).
+         All this does is stop the page from sitting on the browser default
+         white and give .fd-wb the whole viewport to lay itself out in. */
+      html, body, #root { height: 100%; }
+      body { margin: 0; background: #07090d; color: #eef2f7; }
+    </style>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
