@@ -199,3 +199,84 @@ describe("prompt → proposal, end to end", () => {
     ).toThrow();
   });
 });
+
+/**
+ * ⭐ THE REFUSALS THAT LEFT NO TRACE.
+ *
+ * Every case above produces a `ModelRequestDecision` — a contentHash, an
+ * audit body, a reason. A tier-4 payload produced none of them: the
+ * pseudonymiser throws at the ceiling BEFORE calling the callback that holds
+ * the gate, so the chain recorded every ordinary refusal and was silent on
+ * the serious ones. `buildSubAppFromPrompt` surfaced it as an exception —
+ * a crash, from a control working exactly as designed.
+ */
+describe("a payload above the tier ceiling is refused WITH a record", () => {
+  // Measured, not assumed — both routes to 4, which are different rules:
+  //   name-shaped span, no names declared → `unverified-name-shaped-content`
+  //   sick leave / union membership       → `special-category-signal`
+  const TIER_4 = [
+    { prompt: "Show contract folders for Anna Sørensen to review.", code: "unverified-name-shaped-content" },
+    { prompt: "Track sick leave and union membership for the team.", code: "special-category-signal" },
+  ] as const;
+
+  for (const { prompt, code } of TIER_4) {
+    it(`refuses "${prompt.slice(0, 32)}…" as an outcome, not an exception (${code})`, async () => {
+      const model = vi.fn(goodModel);
+      const seen: unknown[] = [];
+      const outcome = await buildSubAppFromPrompt(
+        { prompt },
+        { ...deps(model), onModelDecision: (d: unknown) => seen.push(d) },
+      );
+
+      expect(outcome.status).toBe("model-request-refused");
+      if (outcome.status !== "model-request-refused") return;
+      // Nothing was sent. This was already true — it is the part that worked.
+      expect(model).not.toHaveBeenCalled();
+
+      // ⭐ AND NOW IT IS WRITTEN DOWN. Each of these was absent before.
+      expect(outcome.decision.decision).toBe("refuse");
+      expect(outcome.decision.tier).toBe(4);
+      expect(outcome.decision.contentHash).toMatch(/^[0-9a-f]{8,}$/);
+      expect(outcome.decision.audit).toBeDefined();
+      expect(outcome.decision.tierReasonCodes).toContain(code);
+      // The caller's own hook fires for this refusal like any other, so a
+      // host that logs decisions logs this one too.
+      expect(seen).toHaveLength(1);
+      expect(seen[0]).toBe(outcome.decision);
+    });
+  }
+
+  it("⭐ the audit body carries codes and tiers — never the words that caused it", async () => {
+    const prompt = "Show contract folders for Anna Sørensen to review.";
+    const outcome = await buildSubAppFromPrompt({ prompt }, deps(goodModel));
+    expect(outcome.status).toBe("model-request-refused");
+    if (outcome.status !== "model-request-refused") return;
+    // The whole decision, serialised — the shape a host would append to a
+    // chain that is replicated and read by people who were not in the room.
+    const written = JSON.stringify(outcome.decision);
+    expect(written).not.toContain("Anna");
+    expect(written).not.toContain("Sørensen");
+    expect(written).not.toContain("contract folders");
+    // And the hash does not reproduce the payload either: it is over a
+    // compiled-in shape, so the SAME refusal reasons hash the same whatever
+    // the person was called.
+    const other = await buildSubAppFromPrompt(
+      { prompt: "Show contract folders for Bjarne Mortensen to review." },
+      deps(goodModel),
+    );
+    if (other.status !== "model-request-refused") throw new Error("expected a refusal");
+    expect(other.decision.contentHash).toBe(outcome.decision.contentHash);
+  });
+
+  it("only a tier refusal is converted — anything else still propagates", async () => {
+    // The catch that turns a throw into an outcome is the kind of code that
+    // quietly swallows unrelated bugs. A tokeniser fault is not a policy
+    // decision and must not come back wearing one.
+    const exploding = () => {
+      throw new Error("digest exploded");
+    };
+    await expect(
+      buildSubAppFromPrompt({ prompt: PROMPT }, { ...deps(goodModel), digest: exploding }),
+    ).rejects.toThrow("digest exploded");
+  });
+});

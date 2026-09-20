@@ -180,6 +180,8 @@ const REASONS = {
     "refused: this request cannot be expressed in the envelope's allowed shape — see decision.failures, which name keys and codes, never values",
   textNeedsHuman:
     "expressible, but it carries a bounded text fact: pseudonymised prose over a partial class set, which a named human sends deliberately or not at all",
+  payloadAboveCeiling:
+    "refused before the envelope: the pseudonymised payload assesses above the tier ceiling this call allows, so there is nothing a request shape could express — see decision.tierReasonCodes",
   redactionNotARoute:
     "refused: redaction is not a route to the wire — a request must be EXPRESSIBLE in the envelope's allowed shape, and scrubbing an arbitrary payload does not make it so",
 } as const;
@@ -330,6 +332,12 @@ export interface ModelRequestDecision extends GateDecision {
    * sending something this gate no longer vouches for. */
   readonly redactedPayload?: unknown;
   readonly droppedClasses?: readonly string[];
+  /** Present when the payload was refused at the tier ceiling BEFORE an
+   * envelope could be built. Codes only, each one admitted against
+   * `TIER_REASON_CODES` — the pseudonymiser's `evidence` arrays are NOT
+   * carried, because `residual-direct-identifier` evidences itself with the
+   * span it found. */
+  readonly tierReasonCodes?: readonly string[];
 }
 
 /** Build a model-request decision. Separate from `resolve()` because this gate
@@ -583,4 +591,94 @@ export function gateGeneratedArtifacts(
   const findings = dedupe(all);
   const classification: Classification = { tier: tierOf(findings), findings };
   return resolve("generated-artifacts", `<${files.length} files>`, classification, ctx, files);
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// The refusal that happens BEFORE gate 2 — and used not to be recorded
+// ─────────────────────────────────────────────────────────────────────────
+
+/**
+ * TRANSCRIBED from `packages/pseudonym/src/tier.ts` — `TierReasonCode`.
+ *
+ * Kept as a copy for the reason `envelope/coverage.ts` gives for its own:
+ * this package must not be one import away from `assessTier`. Divergence is
+ * caught by `__tests__/tier-ceiling-drift.test.ts`, which reads the union off
+ * disk and fails IN BOTH DIRECTIONS.
+ */
+export const TIER_REASON_CODES: ReadonlySet<string> = new Set<string>([
+  "bounded-scan-coverage",
+  "no-personal-data-in-payload",
+  "pseudonymised-natural-person",
+  "quasi-identifier-signal",
+  "representation-budget-exhausted",
+  "residual-direct-identifier",
+  "residual-direct-identifier-encoded",
+  "residual-name-shaped-content",
+  "special-category-signal",
+  "text-indicates-natural-person",
+  "tier-1-not-claimable",
+  "unverified-name-shaped-content",
+  "vault-is-re-identification-key",
+]);
+
+export interface PayloadTierCeilingRefusal {
+  readonly payloadTier: number;
+  readonly ceiling: number;
+  /** `PayloadTierError.reasons` — the reason CODES above the ceiling. */
+  readonly reasonCodes: readonly string[];
+}
+
+/**
+ * ⭐ THE MOST SENSITIVE REFUSAL WAS THE ONE NOBODY WROTE DOWN.
+ *
+ * `withPseudonymisation` assesses the payload and throws `PayloadTierError`
+ * BEFORE it calls `send` — correctly: `send` is where the request goes out,
+ * and a payload above the ceiling must not reach it. But `gateModelRequest`
+ * lives inside `send`, so the throw pre-empted the gate. The result was
+ * exactly inverted: a tier-2 request produced a decision, a contentHash and
+ * an audit event, while a tier-4 payload — special-category signals, a
+ * residual direct identifier — produced none of the three and surfaced as an
+ * exception. The audit chain recorded every ordinary refusal and was silent
+ * on the serious ones.
+ *
+ * This builds the decision that should always have existed, from what
+ * `PayloadTierError` already carries. It does NOT reopen the frame: the
+ * payload text never leaves `withPseudonymisation`, and nothing here has
+ * seen it. What is hashed is a compiled-in shape holding two clamped
+ * integers and codes admitted against `TIER_REASON_CODES` — so the hash is
+ * stable and correlates repeat refusals, and carries nothing that could
+ * identify the person the refusal was protecting.
+ *
+ * ⚠ The hash therefore does NOT bind to the text, and no approval can be
+ * bound to it. That is correct rather than convenient: tier 4 admits no
+ * approval path — `refusedTier4Intake` takes the same position — so there is
+ * no approval for it to bind to. Stated because a contentHash that looks
+ * like the others invites being used like the others.
+ */
+export function refuseAtPayloadTierCeiling(
+  info: PayloadTierCeilingRefusal,
+  ctx: GateContext,
+): ModelRequestDecision {
+  const clamp = (n: number): Tier => Math.min(4, Math.max(1, Math.trunc(n))) as Tier;
+  const tier = clamp(info.payloadTier);
+  // Admitted, not carried. A caller constructing this by hand — or a future
+  // producer growing a code this package has not learned — gets the code
+  // dropped rather than written into an append-only chain.
+  const reasonCodes = [...new Set(info.reasonCodes)].filter((c) => TIER_REASON_CODES.has(c)).sort();
+  const proposal = {
+    gate: "model-request",
+    refusedAt: "payload-tier-ceiling",
+    payloadTier: tier,
+    ceiling: clamp(info.ceiling),
+    reasonCodes,
+  };
+  const decision = modelRequestDecision(
+    "refuse",
+    MODEL_REQUEST_SUBJECT,
+    { tier, findings: [] },
+    ctx,
+    proposal,
+    REASONS.payloadAboveCeiling,
+  );
+  return { ...decision, tierReasonCodes: reasonCodes };
 }

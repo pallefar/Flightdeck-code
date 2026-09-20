@@ -41,9 +41,9 @@ import {
   type Digest,
   type GateContext,
   type GateDecision,
-  type ModelRequestDecision,
-} from "../../guardrails/src/pure";
+  type ModelRequestDecision, refuseAtPayloadTierCeiling } from "../../guardrails/src/pure";
 import { withPseudonymisation, type Tier } from "../../pseudonym/src/index";
+import { PayloadTierError } from "../../pseudonym/src/errors";
 import type { PlannerLlmLike } from "./gated-planner";
 
 export interface BuildFromPromptInput extends PlanInput {
@@ -139,7 +139,9 @@ export async function buildSubAppFromPrompt(
   let refused: ModelRequestDecision | null = null;
   let planned: PlanOutcome | null = null;
 
-  const { text: restored } = await withPseudonymisation(
+  let restored: string;
+  try {
+    ({ text: restored } = await withPseudonymisation(
     input.prompt,
     {
       names: [...(deps.names ?? [])],
@@ -170,8 +172,30 @@ export async function buildSubAppFromPrompt(
 
       planned = await planFromPrompt({ ...input, prompt: payload.text }, deps.llm);
       return JSON.stringify(planned);
-    },
-  );
+      },
+    ));
+  } catch (error) {
+    // ⭐ THE ONE REFUSAL THAT LEFT NO TRACE.
+    //
+    // `withPseudonymisation` assesses the payload and throws BEFORE calling
+    // the callback — correctly, because the callback is where the request
+    // goes out. But `gateModelRequest` is INSIDE the callback, so the throw
+    // pre-empted it, and the effect was exactly inverted: an ordinary
+    // tier-2 request produced a decision, a contentHash and an audit event,
+    // while a tier-4 payload produced none of the three and came out of
+    // `buildSubApp` as an exception rather than an outcome. The refusals
+    // that most needed a record were the only ones without one.
+    //
+    // Re-raised unchanged if it is anything else: a bug in the tokeniser is
+    // not a policy refusal and must not be dressed as one.
+    if (!(error instanceof PayloadTierError)) throw error;
+    const decision = refuseAtPayloadTierCeiling(
+      { payloadTier: error.payloadTier, ceiling: error.maxPayloadTier, reasonCodes: error.reasons },
+      { ...deps.ctx, digest: deps.digest },
+    );
+    deps.onModelDecision?.(decision);
+    return { status: "model-request-refused", decision };
+  }
 
   if (refused !== null) return { status: "model-request-refused", decision: refused };
   if (planned === null) return { status: "invalid_draft", issues: ["the planner produced nothing"], attempts: 0 };

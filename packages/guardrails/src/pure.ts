@@ -33,9 +33,11 @@ export {
   gateModelRequest,
   gateRegistration,
   gateWorkflowIntake,
+  refuseAtPayloadTierCeiling,
 } from "./gates";
 export type {
   GateContext,
+  PayloadTierCeilingRefusal,
   GateDecision,
   GateDecisionKind,
   GateName,
