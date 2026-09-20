@@ -50,6 +50,15 @@ fences() {
   grep -E "Test Files|Tests " "$log" | tail -2
 }
 
+# Three standalone tests assert against the REAL built bundle and say so in
+# their own failure message ("run `npm run build:web` — this test measures the
+# real bundle"). Without web/dist they fail for a reason that has nothing to do
+# with a generated sub-app, and a baseline carrying avoidable failures makes the
+# comparison harder to read. It takes ~3s.
+echo "==> building the web bundle (3 standalone tests measure the real one)"
+( cd "$SANDBOX" && npm run build:web >"$ROOT/build.log" 2>&1 ) || {
+  echo "build:web FAILED — see $ROOT/build.log" >&2; exit 1; }
+
 echo "==> baseline: the host's sub-app suite, before we touch anything"
 BEFORE="$(fences "$ROOT/before.log")"; echo "$BEFORE"
 
@@ -68,3 +77,8 @@ echo "    before: $(echo "$BEFORE" | grep -oE 'Tests .*' || true)"
 echo "    after:  $(echo "$AFTER"  | grep -oE 'Tests .*' || true)"
 echo
 echo "    full logs: $ROOT/before.log  $ROOT/after.log"
+echo
+echo "    Known environmental failure in this container, present in BOTH runs:"
+echo "    tests/subapps/docusign/docusignLibreoffice.test.ts — a real docx->PDF"
+echo "    conversion. /usr/bin/soffice exists but the conversion does not"
+echo "    succeed here, so the test runs instead of self-skipping. Not ours."
