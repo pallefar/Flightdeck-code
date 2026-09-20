@@ -493,6 +493,15 @@ describe("A8 concurrent / conflicting writes", () => {
     expect(v.ok).toBe(true);
   });
 
+  // ⚠ STILL OPEN AT THE ROW LEVEL, and narrowed at the FILE level.
+  //
+  // `createFileGrantStore` now serialises read-modify-write across processes
+  // with a lock and abandons a write whose file moved underneath it, so one
+  // process can no longer erase another's whole ledger. That is a different
+  // failure from this one: two sequential `putGrantRow` calls still overwrite
+  // by primary key, because the row carries no version to compare. Closing
+  // THIS needs a version on `GrantRow` and a compare-and-swap on the port,
+  // which every store would have to implement.
   it("STILL OPEN: grant rows are last-write-wins, no version / CAS", async () => {
     const s = store([ceiling([[CONTRACTS_INPUT, 2]])]);
     s.putGrantRow(row(PROJECT, [[CONTRACTS_INPUT, 1]])); // operator A narrows

@@ -12,10 +12,10 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { effectiveGrant } from "../decision";
-import { GrantStoreCorruptError, createFileGrantStore } from "../file-store";
+import { GrantStoreBusyError, GrantStoreConflictError, GrantStoreCorruptError, createFileGrantStore } from "../file-store";
 import { AT, CONTRACTS_INPUT, PROJECT, TOOL, approval, ask, ceiling, row } from "./support";
 
 const made: string[] = [];
@@ -182,5 +182,103 @@ describe("how it writes", () => {
     const parsed = JSON.parse(fs.readFileSync(file, "utf8")) as { rows: unknown[] };
     expect(parsed.rows).toHaveLength(1);
     expect((await store.readGrantRow(PROJECT, TOOL))?.datasources[0]?.maxTier).toBe(4);
+  });
+});
+
+
+/**
+ * ⭐ THE FAILURE A FILE STORE INTRODUCES THAT AN IN-MEMORY ONE CANNOT HAVE.
+ *
+ * One process with one object cannot lose a write to itself. Two processes
+ * each reading, modifying and writing the same file can, and the second
+ * silently erases the first. `redteam-attacks.test.ts` records the row-level
+ * version of this as open ("grant rows are last-write-wins, no version /
+ * CAS"); making the store durable without a lock would have widened it from
+ * "one operator overwrites another's narrowing" to "one process erases
+ * another's entire ledger".
+ */
+describe("two writers", () => {
+  it("⭐ a held lock refuses the write rather than racing it", () => {
+    const file = tempFile();
+    const store = createFileGrantStore(file);
+    store.putGrantRow(row(PROJECT, [[CONTRACTS_INPUT, 2]]));
+    const before = fs.readFileSync(file, "utf8");
+
+    // Another writer holds it. `open(..., "wx")` is atomic create-exclusive,
+    // so the lock IS the creation — there is no check-then-take window.
+    fs.writeFileSync(`${file}.lock`, "", { flag: "wx" });
+    try {
+      expect(() => store.putApproval(approval())).toThrow(GrantStoreBusyError);
+      // ⭐ AND NOTHING WAS WRITTEN. A refusal that half-applied would be
+      // worse than the race it was preventing.
+      expect(fs.readFileSync(file, "utf8")).toBe(before);
+    } finally {
+      fs.unlinkSync(`${file}.lock`);
+    }
+  });
+
+  it("a lock older than the stale window is taken over — a dead writer cannot brick the store", () => {
+    const file = tempFile();
+    const store = createFileGrantStore(file);
+    const lock = `${file}.lock`;
+    fs.writeFileSync(lock, "");
+    const longAgo = new Date(Date.now() - 120_000);
+    fs.utimesSync(lock, longAgo, longAgo);
+
+    expect(() => store.putGrantRow(row(PROJECT, [[CONTRACTS_INPUT, 2]]))).not.toThrow();
+    expect(fs.existsSync(lock)).toBe(false);
+  });
+
+  it("⭐ the lock is released even when the write throws", () => {
+    // A store that keeps its lock after an error is a store that is now
+    // permanently busy — the corrupt-file refusal would brick it.
+    const file = tempFile();
+    fs.writeFileSync(file, "{ not json");
+    const store = createFileGrantStore(file);
+    expect(() => store.putApproval(approval())).toThrow(GrantStoreCorruptError);
+    expect(fs.existsSync(`${file}.lock`)).toBe(false);
+  });
+
+  it("releases the lock after a successful write", () => {
+    const file = tempFile();
+    createFileGrantStore(file).putGrantRow(row(PROJECT, [[CONTRACTS_INPUT, 2]]));
+    expect(fs.existsSync(`${file}.lock`)).toBe(false);
+  });
+
+  it("⭐ a file that moved under the write is abandoned, not overwritten", () => {
+    // The belt to the lock's braces: a writer that ignored the lock, or a
+    // stale lock taken over from a process that was still alive. Simulated
+    // deterministically by changing the file DURING the read-modify-write.
+    const file = tempFile();
+    const store = createFileGrantStore(file);
+    store.putGrantRow(row(PROJECT, [[CONTRACTS_INPUT, 2]]));
+
+    // ⚠ THE COUNTER ONLY COUNTS READS OF THIS FILE.
+    //
+    // The first version incremented on EVERY `readFileSync` in the process —
+    // vitest's own source-map and module reads included — so which call
+    // carried the side effect depended on unrelated I/O. It passed alone and
+    // failed once in a full-suite run: a flaky test I had just written, and
+    // the same "counts the wrong thing" mistake this session keeps finding.
+    const real = fs.readFileSync.bind(fs);
+    let reads = 0;
+    const spy = vi.spyOn(fs, "readFileSync").mockImplementation(((target: unknown, encoding: unknown) => {
+      const result: unknown = real(target as never, encoding as never);
+      if (String(target) !== file) return result;
+      reads += 1;
+      // On the store's SECOND read of THIS file, another writer lands.
+      if (reads === 2) fs.writeFileSync(file, JSON.stringify({ version: 1, rows: [], approvals: [] }));
+      return result;
+    }) as never);
+    try {
+      expect(() => store.putApproval(approval())).toThrow(GrantStoreConflictError);
+      // The side effect must actually have fired, or the case proves nothing.
+      expect(reads).toBeGreaterThanOrEqual(2);
+    } finally {
+      spy.mockRestore();
+    }
+    // The other writer's content stands. Ours was abandoned.
+    const parsed = JSON.parse(fs.readFileSync(file, "utf8")) as { approvals: unknown[] };
+    expect(parsed.approvals).toEqual([]);
   });
 });

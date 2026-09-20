@@ -82,9 +82,6 @@ describe("prompt → proposal, end to end", () => {
     // prompt, the model is called, the draft parses, and @spec's evidence
     // gates accept it because every claim IS quotable from the prompt.
     //
-    // It then stops at @codegen's door — see the KNOWN GAP below. That is the
-    // honest end of this path today, and asserting `generation-refused` rather
-    // than skipping keeps it visible.
     const outcome = await buildSubAppFromPrompt({ prompt: PROMPT }, deps(goodModel));
 
     // ⭐ PROMPT → PROPOSAL, END TO END. Guardrails, model, draft, @spec's
@@ -182,7 +179,7 @@ describe("prompt → proposal, end to end", () => {
     expect(outcome.status).toBe("invalid_draft");
   });
 
-  it.skip("⭐ the OUTPUT is gated too — unskip when the translator lands", async () => {
+  it("⭐ the OUTPUT is gated too — the translator landed, so this runs", async () => {
     // gateGeneratedArtifacts is the strictest row in GATE_POLICY: tier 3/4 are
     // never approvable, because personal data in emitted files is a bug in
     // generation and the remedy for a bug is to fix it.
