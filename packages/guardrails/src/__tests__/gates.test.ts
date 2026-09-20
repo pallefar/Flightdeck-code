@@ -115,17 +115,59 @@ describe("gate 1 — registration", () => {
 // ─────────────────────────────────────────────────────────────────────────
 
 describe("gate 2 — outbound model request", () => {
+  // ⚠ THIS BLOCK WAS REWRITTEN WHEN THE GATE WAS REWIRED ONTO
+  // `packages/envelope`. Every assertion below is the same intent as before
+  // and a STRICTER outcome: what used to be allowed after a clean scan is now
+  // refused unless it can be BUILT from compiled-in lists. No assertion was
+  // loosened; the three that asserted the old redaction path now assert that
+  // the path is closed.
   const CLEAN_REQUEST = { task: "summarise", facts: { openCount: 12, entity: "bensheim" } };
+  const EXPRESSIBLE_REQUEST = {
+    task: "studio.spec.draft",
+    facts: {
+      field: { kind: "fieldName", value: "startDate" },
+      fieldCount: { kind: "count", value: 12 },
+      confidence: { kind: "enum", vocabulary: "confidence", value: "high" },
+    },
+  };
   const DIRTY_REQUEST = {
     task: "draft",
     facts: { applicant: { email: "e.musterfrau@example.de" }, offer: { salaryEur: 82000 } },
     notes: "confirm with e.musterfrau@example.de before Friday",
   };
 
-  it("allows a clean request", () => {
-    const d = gateModelRequest(CLEAN_REQUEST, ACTOR);
+  it("allows a request that can be EXPRESSED in the envelope's allowed shape", () => {
+    const d = gateModelRequest(EXPRESSIBLE_REQUEST, ACTOR);
     expect(d.decision).toBe("allow");
     expect(d.audit.event).toBe("guardrails.model-request-allowed");
+    expect(d.envelope?.disposition).toBe("ready");
+    // Never tier 1. "Public" is a human decision about consequences.
+    expect(d.tier).toBe(2);
+  });
+
+  it("⭐ refuses the OLD clean request — 'a scan found nothing' is not a reason to send", () => {
+    // This is the fixture this suite used to assert was ALLOWED. Nothing about
+    // it is dirty; nothing about it is enumerated either. `entity` is an
+    // allowlisted field NAME and `"bensheim"` is a VALUE under it, which is
+    // the precise thing `kind:"fieldName"` exists to keep off the wire:
+    // "tell the model WHICH field to look at without telling it what is in
+    // the field".
+    const d = gateModelRequest(CLEAN_REQUEST, ACTOR);
+    expect(d.decision).toBe("refuse");
+    expect(d.failures?.map((f) => f.code)).toContain("unknown-task");
+    expect(d.envelope).toBeUndefined();
+  });
+
+  it("⭐ a refusal names keys and codes, never values or unlisted keys", () => {
+    const d = gateModelRequest(DIRTY_REQUEST, ACTOR);
+    const serialised = JSON.stringify(d.failures);
+    expect(serialised).not.toContain("musterfrau");
+    expect(serialised).not.toContain("82000");
+    // `applicant`, `offer` and `notes` are caller-authored keys — a refusal
+    // that quoted them would put them in the log.
+    expect(serialised).not.toContain("applicant");
+    expect(serialised).not.toContain("notes");
+    expect(serialised).toContain("#");
   });
 
   it("refuses a cat 3/4 request by default — fail-closed", () => {
@@ -149,29 +191,35 @@ describe("gate 2 — outbound model request", () => {
     expect(GATE_POLICY["model-request"]).toEqual({ tier3: "refuse", tier4: "refuse" });
   });
 
-  it("redacts with the host recipe when configured to, and re-scans the result", () => {
+  it("⭐ REDACTION IS NO LONGER A ROUTE TO THE WIRE, and the refusal says so", () => {
+    // What this case used to assert: the same payload came back ALLOW with a
+    // scrubbed copy to send. That rested on re-scanning the scrubbed payload
+    // with the SAME scanner that had just been shown to miss things, and
+    // `representation.test.ts` records what it cost. The dial is still on the
+    // signature so a caller who relied on it is TOLD rather than silently
+    // ignored.
     const d = gateModelRequest(DIRTY_REQUEST, ACTOR, { onTier3: "redact", onTier4: "redact" });
-    expect(d.decision).toBe("allow");
-    expect(d.audit.event).toBe("guardrails.model-request-redacted");
-    // A field whose NAME is the disclosure is dropped key-and-value: blanking
-    // the value would leave `{ salaryEur: null }`, which still says this record
-    // has a salary.
-    expect(d.droppedClasses).toEqual(expect.arrayContaining(["salary", "email"]));
-    const sent = JSON.stringify(d.redactedPayload);
+    expect(d.decision).toBe("refuse");
+    expect(d.reason).toContain("redaction is not a route to the wire");
+    expect(d.redactedPayload).toBeUndefined();
+    expect(d.droppedClasses).toBeUndefined();
+    // The non-leak property this case always had, kept.
+    const sent = JSON.stringify(d);
     expect(sent).not.toContain("musterfrau");
     expect(sent).not.toContain("82000");
-    expect(sent).not.toContain("salaryEur");
-    // A free-text field survives, scrubbed with the host's own placeholder.
-    expect(sent).toContain("<email>");
   });
 
-  it("⭐ refuses rather than send a payload that survived redaction", () => {
+  it("⭐ refuses a partially-scrubbable payload rather than shipping a residue", () => {
     // A cat-3 field name is not fixable by scrubbing a value, so a config that
-    // redacts only tier 4 must not quietly ship a tier-3 residue.
+    // redacts only tier 4 must not quietly ship a tier-3 residue. The answer
+    // is now stronger than it was: the payload is not sent in ANY scrubbed
+    // form, and the detector's classes still reach the audit body so a human
+    // knows what was in there.
     const d = gateModelRequest(DIRTY_REQUEST, ACTOR, { onTier3: "refuse", onTier4: "redact" });
     expect(d.decision).toBe("refuse");
-    expect(d.reason).toContain("survived redaction");
+    expect(d.reason).toContain("redaction is not a route to the wire");
     expect(d.redactedPayload).toBeUndefined();
+    expect(d.audit.classes).toEqual(expect.arrayContaining(["email", "salary"]));
   });
 });
 

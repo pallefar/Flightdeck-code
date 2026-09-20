@@ -54,9 +54,21 @@
  *     classifyMarkdown(JSON.stringify(r)) → tier 4, three findings
  *     classifyCode(JSON.stringify(r))     → tier 4, three findings
  *
- * Same bytes, same person, three scanners, two verdicts — and `classify()` is
- * the only scanner behind `gateRegistration` and `gateModelRequest`, the
- * outbound gate. That is SEC-V5-02 exactly: an identical copy of the data,
+ * Same bytes, same person, three scanners, two verdicts — and `classify()`
+ * was, when this was written, the only scanner behind `gateRegistration` AND
+ * `gateModelRequest`, the outbound gate.
+ *
+ * ⚠ THAT IS NO LONGER TRUE OF THE OUTBOUND GATE, AND THE CHANGE MATTERS MORE
+ * THAN ANY WIDENING BELOW. `gateModelRequest` now delegates to
+ * `packages/envelope`, which does not scan a payload at all: it BUILDS a
+ * request from compiled-in allowlists and refuses whatever cannot be
+ * expressed in that shape. `classify()` runs there only to ANNOTATE a
+ * refusal, so a human reading it learns what was in the payload. It is a
+ * DETECTOR THAT ESCALATES, never an authority that certifies clean — a tier-1
+ * verdict from it means "this detector recognised nothing", which is worth
+ * exactly that much. `gateRegistration`, `gateWorkflowIntake` and
+ * `gateGeneratedArtifacts` still rest on it, because their input genuinely IS
+ * arbitrary; everything below is therefore still load-bearing there. That is SEC-V5-02 exactly: an identical copy of the data,
  * reachable by a second route the guard's scope never looked at, with the
  * suite green throughout. The second route was not a directory. It was
  * `JSON.stringify`.

@@ -1,0 +1,281 @@
+/**
+ * THE SHAPES — and the one rule that governs every one of them.
+ *
+ * ─────────────────────────────────────────────────────────────────────────
+ * ⭐ A CONTROL MAY REFUSE. IT MAY NEVER CERTIFY.
+ * ─────────────────────────────────────────────────────────────────────────
+ * Every failure in this project came from a control saying "no personal data"
+ * when what had actually happened was that it failed to find any. `classify()`
+ * returned tier 1 for a record behind five `JSON.stringify` calls; `assessTier`
+ * returned "no-personal-data-in-payload" for a paragraph naming a person's job,
+ * site and sole-officer status. Neither was lying about what it had done. Both
+ * were lying about what that meant.
+ *
+ * So there is no field anywhere in this file called `clean`, `safe`, `ok` (in
+ * the sense of the data), `piiFree` or `verified`. The positive output of this
+ * package is an `Envelope`, and an `Envelope` does not assert that the payload
+ * contains no personal data. It asserts something narrower and checkable:
+ *
+ *     EVERY VALUE IN IT WAS DRAWN FROM A COMPILED-IN LIST, OR IS A BOUNDED
+ *     INTEGER, OR IS A TEXT FACT THAT CAME WITH ITS OWN COVERAGE REPORT AND
+ *     IS THEREFORE NOT SENDABLE WITHOUT A HUMAN.
+ *
+ * And it carries an `Assurance` that names, every time, which classes were
+ * looked at and which were not. `Assurance.notChecked` is never empty. A
+ * caller that wants a green light will not find one here.
+ */
+
+import type { FactKind } from "./allowlists";
+
+// ─────────────────────────────────────────────────────────────────────────
+// Facts
+// ─────────────────────────────────────────────────────────────────────────
+
+/**
+ * The closed union. Transcribed in shape from the host's `AiFact`, with one
+ * deliberate difference: the host's `text` fact carries a `Redacted` branded
+ * string produced by its own one-way `redact()`. Studio's carries a string
+ * that came out of `packages/pseudonym` TOGETHER WITH the coverage report
+ * that says what that proves and what it does not. A brand asserts a fact
+ * about history that a cast can forge (`as Redacted` — the host says so
+ * itself); a coverage report carries its own limits and cannot be
+ * misunderstood as a certificate.
+ */
+export type EnvelopeFact =
+  | { readonly kind: "enum"; readonly vocabulary: string; readonly value: string }
+  | { readonly kind: "count"; readonly value: number }
+  | { readonly kind: "fieldName"; readonly value: string }
+  | { readonly kind: "text"; readonly value: string; readonly provenance: TextProvenance };
+
+/**
+ * WHAT IS KNOWN ABOUT A TEXT FACT'S HISTORY. Copied out of the caller's
+ * pseudonymiser report — never the vault, never a value, never a tag list.
+ *
+ * `basis` says in one word which kind of fact this is, because the honest
+ * distinction between the two halves of this package is the thing most likely
+ * to be lost in a summary:
+ *
+ *   "allowlisted"   a value that could only ever have been one of N
+ *                   compiled-in strings. Structurally incapable of carrying
+ *                   caller data.
+ *   "pseudonymised" arbitrary text with the direct identifiers replaced, over
+ *                   a PARTIAL set of classes. Bounded, reported, and not
+ *                   sendable without a human.
+ */
+export interface TextProvenance {
+  readonly basis: "pseudonymised";
+  /** The package that produced the text and the report. */
+  readonly by: "packages/pseudonym";
+  /** What the pseudonymiser said the TRANSMITTED text may be treated as. */
+  readonly payloadTier: number;
+  /** What it said the vault is. Always 4, and the vault is not here. */
+  readonly vaultTier: number;
+  /** Detectors that ran. */
+  readonly checked: readonly string[];
+  /** Classes of personal data that scan CANNOT see. Never empty. */
+  readonly unchecked: readonly string[];
+  /** Which spellings of the payload the residual proof covered. */
+  readonly representations: readonly string[];
+  /** The pseudonymiser's own one-line statement, carried verbatim. */
+  readonly statement: string;
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// The coverage report a text fact must arrive with
+// ─────────────────────────────────────────────────────────────────────────
+
+/**
+ * The shape `packages/pseudonym`'s `TierAssessment` already has.
+ *
+ * ⚠ DECLARED STRUCTURALLY RATHER THAN IMPORTED AS A VALUE, on purpose, and
+ * the reason is worth keeping: this package must not depend on the
+ * pseudonymiser's RUNTIME. If it imported `assessTier` it could call it
+ * itself, and then a caller could hand `buildEnvelope` raw text and get back
+ * an envelope — which would make this package the thing that decides text is
+ * safe, which is precisely the job it exists to refuse. The report is
+ * EVIDENCE THE CALLER BRINGS. The envelope checks the evidence is present and
+ * well-formed, re-proves what it can independently, and then still refuses to
+ * mark the result sendable.
+ *
+ * `__tests__/free-text.test.ts` holds a compile-time assertion that
+ * `TierAssessment` is assignable to this, so the two cannot drift apart
+ * without a red build.
+ */
+export interface CoverageReportLike {
+  readonly payloadTier: number;
+  readonly vaultTier: number;
+  readonly reduced: boolean;
+  readonly coverage: {
+    readonly checked: readonly string[];
+    readonly unchecked: readonly string[];
+    readonly representations: readonly string[];
+  };
+  readonly statement: string;
+}
+
+/** One bounded text fact, offered for the envelope's free-text channel. */
+export interface PseudonymisedText {
+  /** Must be a key whose policy kind is `text`. */
+  readonly key: string;
+  /** The output of `tokenize()` — NOT the source. */
+  readonly text: string;
+  /** The output of `assessTier()` for that exact text. */
+  readonly assessment: CoverageReportLike;
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Assurance
+// ─────────────────────────────────────────────────────────────────────────
+
+/**
+ * WHAT WAS CHECKED, AND WHAT WAS NOT. Attached to every envelope AND every
+ * refusal, because the limits of a control are not a detail of its successes.
+ *
+ * Modelled directly on `TierCoverage` in `packages/pseudonym/src/tier.ts`,
+ * which learned it the hard way: "the honest place to record the limits of a
+ * detector is in its output rather than in a comment the caller never reads".
+ */
+export interface Assurance {
+  /** The compiled-in tables every admitted value was drawn from. This — not
+   * the scan — is the actual control. */
+  readonly constructedFrom: readonly string[];
+  /** PII classes the residual scan ran for, over the serialised facts. */
+  readonly scanned: readonly string[];
+  /** Classes of personal data NOTHING here looked at. NEVER EMPTY. */
+  readonly notChecked: readonly string[];
+  /** One line, safe to log: compiled-in words and counts only. It says what
+   * ran and what did not, and it never says the payload is clean. */
+  readonly statement: string;
+}
+
+/**
+ * The classes this package cannot see, whatever the payload says.
+ *
+ * The first entry is the load-bearing one: the envelope's allowlist makes an
+ * undeclared personal name UNEXPRESSIBLE as an enum, a field name or a count,
+ * which is a real structural answer — but it says nothing at all about what is
+ * inside a bounded text fact. The rest are the host's five regexes' blind
+ * spots, named the same way `packages/pseudonym`'s `PII_CLASSES_NOT_CHECKED`
+ * names them so the two lists read as one vocabulary.
+ */
+export const ENVELOPE_CLASSES_NOT_CHECKED: readonly string[] = [
+  "undeclared-personal-name",
+  "postal-address",
+  "phone-number-without-a-long-digit-run",
+  "passport-or-id-document-number",
+  "tax-or-social-insurance-number",
+  "vehicle-registration",
+  "online-identifier-or-device-id",
+  "biometric-or-photo-reference",
+  "free-text-detail-that-identifies-by-context",
+  "an-encoding-the-serialised-form-does-not-reveal",
+];
+
+// ─────────────────────────────────────────────────────────────────────────
+// Refusal
+// ─────────────────────────────────────────────────────────────────────────
+
+/**
+ * Why something could not be expressed. Every code is a compiled-in constant,
+ * so the whole of a refusal is loggable — the host's rule, applied to the
+ * thing that reports the refusal rather than only to the thing that finds it.
+ */
+export type RefusalCode =
+  | "not-an-object"
+  | "unknown-top-level-field"
+  | "unknown-task"
+  | "provider-not-selectable"
+  | "model-not-known"
+  | "facts-not-an-object"
+  | "fact-not-a-tagged-fact"
+  | "key-not-in-policy"
+  | "kind-mismatch"
+  | "unknown-vocabulary"
+  | "value-not-in-vocabulary"
+  | "field-name-not-allowlisted"
+  | "count-not-a-safe-integer"
+  | "count-negative"
+  | "count-over-ceiling"
+  | "text-must-use-the-pseudonymised-channel"
+  | "text-channel-not-an-array"
+  | "text-entry-malformed"
+  | "text-key-is-not-a-text-key"
+  | "text-missing-coverage-report"
+  | "text-coverage-report-malformed"
+  | "text-payload-tier-restricted"
+  | "text-over-max-chars"
+  | "too-many-text-facts"
+  | "text-residual-pii"
+  | "duplicate-fact-key"
+  | "residual-pii-in-serialised-form"
+  | "over-byte-cap";
+
+/**
+ * ONE THING THAT COULD NOT BE EXPRESSED.
+ *
+ * ⚠ `at` IS NAMED BY KEY ONLY WHEN THE KEY IS A COMPILED-IN CONSTANT. An
+ * allowlisted key came out of `FACT_KEY_POLICY`, so naming it discloses
+ * nothing. A key that is NOT in the policy is caller free text — the host's
+ * whole reason for having a key policy at all — so it is named POSITIONALLY,
+ * `facts.#3`. The host refuses "by POSITIONAL INDEX rather than by echoing the
+ * key", because "a refusal that quotes the offending key would itself put it
+ * in the log".
+ *
+ * `expected` is likewise compiled-in: a kind name, a vocabulary name, a
+ * ceiling, a class name. The offending VALUE never appears, because the value
+ * may BE the personal data.
+ */
+export interface ExpressionFailure {
+  readonly code: RefusalCode;
+  readonly at: string;
+  readonly expected?: string;
+}
+
+export interface Refusal {
+  readonly ok: false;
+  readonly failures: readonly ExpressionFailure[];
+  /** A constant phrase. Nothing scanned is interpolated. */
+  readonly reason: string;
+  /** A refusal states its own limits too. A thing this package refused is not
+   * thereby the only thing wrong with the input. */
+  readonly assurance: Assurance;
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Envelope
+// ─────────────────────────────────────────────────────────────────────────
+
+/**
+ * `ready`                     every fact was drawn from a compiled-in list or
+ *                             is a bounded integer. No text facts.
+ * `requires-human-approval`   the envelope carries a bounded text fact. A
+ *                             named human decides; this package does not, and
+ *                             no option makes it.
+ */
+export type Disposition = "ready" | "requires-human-approval";
+
+export interface Envelope {
+  readonly ok: true;
+  readonly task: string;
+  readonly provider: string;
+  readonly model: string;
+  /** Sorted by key, so the wire form is deterministic and hashable. */
+  readonly facts: Readonly<Record<string, EnvelopeFact>>;
+  readonly disposition: Disposition;
+  /** Compiled-in codes saying why a human is needed. Empty when `ready`. */
+  readonly approvalReasons: readonly string[];
+  readonly assurance: Assurance;
+  /** The exact bytes that would leave the machine, already scanned. */
+  readonly wire: string;
+  readonly bytes: number;
+}
+
+export type BuildResult = Envelope | Refusal;
+
+export function isEnvelope(result: BuildResult): result is Envelope {
+  return result.ok;
+}
+
+export function isRefusal(result: BuildResult): result is Refusal {
+  return !result.ok;
+}

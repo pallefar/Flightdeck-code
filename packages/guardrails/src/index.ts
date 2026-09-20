@@ -19,9 +19,24 @@
  * guardrail 5, "proposed, never auto-applied, and audited".
  *
  *   registry / subapp   gateRegistration(spec, { actor, approval })
- *   providers           gateModelRequest(request, { actor }, { onTier3, onTier4 })
+ *   providers           gateModelRequest(request, { actor })
  *   spec / intake       gateWorkflowIntake(markdown, { actor }, { intakeId })
  *   codegen / harness   gateGeneratedArtifacts(files, { actor })
+ *
+ * ⭐ `gateModelRequest` IS NOT A SCANNER ANY MORE. It delegates to
+ * `packages/envelope`: the question is "can this be expressed in the allowed
+ * shape?", not "does a scan find something?". A caller passes a request built
+ * from that package's allowlists and gets back `decision.envelope` (with its
+ * own `assurance`) or `decision.failures` naming what could not be expressed.
+ * Its `{ onTier3, onTier4 }` redaction dials are DEPRECATED and no longer a
+ * route to the wire; setting one changes only the wording of the refusal.
+ *
+ * The other three gates still classify, because their input genuinely is
+ * arbitrary — a pasted workflow, a spec, a generated file. In those,
+ * `classify()` is a DETECTOR THAT ESCALATES TO A HUMAN. It is not an
+ * authority that certifies a payload clean, and nothing in this package will
+ * tell you that a payload has no personal data in it: a tier ≤ 2 means the
+ * compiled-in classes did not match, which is not the same claim.
  *
  * Each returns a `GateDecision` carrying `decision`, `tier`, `findings`, a
  * constant `reason`, a `contentHash` a human can approve, and an `audit` body.

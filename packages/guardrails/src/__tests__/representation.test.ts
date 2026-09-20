@@ -13,7 +13,11 @@
  *
  * Same bytes. Same person. Three scanners, two verdicts, and the blind one was
  * the only scanner behind `gateRegistration` and `gateModelRequest` — the
- * outbound gate. The suite was green throughout, which is the part of
+ * outbound gate. (`gateModelRequest` has since been rewired onto
+ * `packages/envelope` and no longer rests on a scanner at all; the cases in
+ * this file that used to assert its redaction path now assert that the path
+ * is closed. The equivalence assertions below still govern the three gates
+ * whose input is genuinely arbitrary.) The suite was green throughout, which is the part of
  * SEC-V5-02 that matters: passing tests were the evidence that persuaded
  * everyone the boundary was closed.
  *
@@ -329,10 +333,24 @@ describe("⭐ the redaction channel closes", () => {
     // IBAN is <iban>"} — because "redaction is verified, not assumed"
     // verified with the one scanner that could see neither an Art. 9 word nor
     // a person in a value.
+    //
+    // ⭐ THE ANSWER IS NOW STRUCTURAL, not a better scanner. `gateModelRequest`
+    // delegates to `packages/envelope`, so this payload is refused because it
+    // cannot be BUILT from compiled-in lists — which does not depend on
+    // anything recognising `schwerbehindert` at all.
     const d = gateModelRequest(PAYLOAD, ACTOR, { onTier3: "redact", onTier4: "redact" });
     expect(d.decision).toBe("refuse");
-    expect(d.reason).toContain("survived redaction");
+    expect(d.reason).toContain("redaction is not a route to the wire");
     expect(d.redactedPayload).toBeUndefined();
+    expect(d.envelope).toBeUndefined();
+    expect(JSON.stringify(d)).not.toContain("Musterfrau");
+    // ⚠ NOTE what IS in there: the class name `schwerbehindert`, from the
+    // detector's compiled-in vocabulary. That is the host's rule working as
+    // intended — "findings are reported by NAME only, never the matched
+    // text" — and it is the difference between naming a class and quoting a
+    // person's disability.
+    expect(JSON.stringify(d.audit.classes)).toContain("schwerbehindert");
+    expect(JSON.stringify(d)).not.toContain("DE89370400440532013000");
   });
 
   it("the re-scan is the same scanner the first scan used", () => {
@@ -342,15 +360,27 @@ describe("⭐ the redaction channel closes", () => {
     expect(classify(scrubbedLooking).tier).toBe(4);
   });
 
-  it("still redacts and allows when what is left really is clean", () => {
-    // Redaction must remain a usable mode, or it becomes a slower refusal.
-    const d = gateModelRequest(
-      { task: "draft", facts: { openCount: 3 }, notes: "confirm with e.musterfrau@example.de before Friday" },
+  it("⭐ and the way through is now the ENVELOPE, not a cleaner scrub", () => {
+    // This case used to assert that redaction "must remain a usable mode, or
+    // it becomes a slower refusal". That is still the right worry — a gate
+    // that refuses everything gets switched off — and the answer is no longer
+    // scrubbing. A caller gets through by expressing the request in the
+    // allowed shape, which is decidable by looking at a list.
+    const scrubbable = {
+      task: "draft",
+      facts: { openCount: 3 },
+      notes: "confirm with e.musterfrau@example.de before Friday",
+    };
+    const refused = gateModelRequest(scrubbable, ACTOR, { onTier3: "redact", onTier4: "redact" });
+    expect(refused.decision).toBe("refuse");
+    expect(refused.redactedPayload).toBeUndefined();
+
+    const expressed = gateModelRequest(
+      { task: "intake.fieldmap", facts: { field: { kind: "fieldName", value: "startDate" }, fieldCount: { kind: "count", value: 3 } } },
       ACTOR,
-      { onTier3: "redact", onTier4: "redact" },
     );
-    expect(d.decision).toBe("allow");
-    expect(JSON.stringify(d.redactedPayload)).toContain("<email>");
+    expect(expressed.decision).toBe("allow");
+    expect(expressed.envelope?.disposition).toBe("ready");
   });
 });
 
@@ -427,7 +457,21 @@ describe("⛔ AND IT STILL DOES NOT FIRE ON EVERYTHING", () => {
   });
 
   it("lets an ordinary outbound request through", () => {
-    expect(gateModelRequest({ task: "summarise", facts: ORDINARY }, ACTOR).decision).toBe("allow");
+    // ⚠ REWRITTEN with the gate. "Ordinary" for an outbound request no longer
+    // means "a record nothing objected to" — it means a request built from the
+    // allowlist. `ORDINARY` itself is still asserted tier ≤ 2 by the case at
+    // the top of this file, which is what this one was really checking.
+    const d = gateModelRequest(
+      {
+        task: "studio.widget.suggest",
+        facts: {
+          widgetCount: { kind: "count", value: 6 },
+          studioPhase: { kind: "enum", vocabulary: "studioPhase", value: "spec" },
+        },
+      },
+      ACTOR,
+    );
+    expect(d.decision).toBe("allow");
   });
 
   it("lets an ordinary pasted workflow through", () => {

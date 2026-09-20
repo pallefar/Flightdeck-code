@@ -25,13 +25,20 @@
  *                       data is a legitimate thing to want; what it needs is a
  *                       named human bound to THIS version of the spec.
  *
- *   model-request       3,4 NEVER approvable. Refuse, or redact per config.
- *                       This gate exists so Studio cannot become a side
- *                       channel around the AI gateway's 422, and an approval
- *                       flag is precisely such a side channel: it would let a
- *                       caller carry data out of the building that the gateway
- *                       itself would have rejected on arrival. The gateway
- *                       does not take an approval header; neither does this.
+ *   model-request       3,4 NEVER approvable. This gate exists so Studio cannot
+ *                       become a side channel around the AI gateway's 422, and
+ *                       an approval flag is precisely such a side channel: it
+ *                       would let a caller carry data out of the building that
+ *                       the gateway itself would have rejected on arrival. The
+ *                       gateway does not take an approval header; neither does
+ *                       this.
+ *
+ *                       ⭐ AND THIS ROW NOW BARELY RUNS. `gateModelRequest`
+ *                       delegates to `packages/envelope`: the question is "can
+ *                       this be expressed in the allowed shape?", not "does a
+ *                       scan find something?". A tier only ever ANNOTATES that
+ *                       gate's refusals now. The row stays because the policy
+ *                       it states is still true and still asserted.
  *
  *   workflow-intake     3 approvable, 4 never. A recording-derived workflow
  *                       that mentions a start date is a judgement call a human
@@ -51,9 +58,10 @@
 import { classify, type ClassifyOptions } from "./classify";
 import { classifyProseAndCode } from "./markdown";
 import { type Classification, type Finding, type Tier, dedupe, sanitizePath, tierOf } from "./findings";
-import { redactTree } from "./scrub";
 import { type Approval, type ApprovalCheck, checkApproval, contentHash } from "./approval";
 import { type GuardrailAuditBody, type GuardrailEventName, auditBody } from "./audit";
+import { buildEnvelope } from "../../envelope/src/build";
+import type { Envelope, ExpressionFailure } from "../../envelope/src/types";
 
 export type GateName = "registration" | "model-request" | "workflow-intake" | "generated-artifacts";
 export type GateDecisionKind = "allow" | "refuse" | "approval-required";
@@ -129,8 +137,17 @@ const REASONS = {
   needsApproval: "tier 3-4 present: an explicit named-human approval bound to this content hash is required",
   refusedByPolicy: "tier 3-4 present and this gate admits no approval path",
   refusedTier4Intake: "tier 4 present: restricted data cannot be approved into generated examples — clean the source",
-  redacted: "tier 3-4 present: payload redacted with the host recipe and re-scanned clean",
-  redactionInsufficient: "tier 3-4 present and survived redaction: refused rather than sent partially scrubbed",
+  // ── model-request, after the envelope rewire. The three below are the whole
+  // vocabulary of that gate now, and not one of them is a statement about what
+  // a scan failed to find.
+  expressible:
+    "every value in this request was drawn from a compiled-in list or is a bounded integer — see decision.envelope.assurance for what was and was not checked",
+  notExpressible:
+    "refused: this request cannot be expressed in the envelope's allowed shape — see decision.failures, which name keys and codes, never values",
+  textNeedsHuman:
+    "expressible, but it carries a bounded text fact: pseudonymised prose over a partial class set, which a named human sends deliberately or not at all",
+  redactionNotARoute:
+    "refused: redaction is not a route to the wire — a request must be EXPRESSIBLE in the envelope's allowed shape, and scrubbing an arbitrary payload does not make it so",
 } as const;
 
 function resolve(
@@ -228,91 +245,176 @@ export function gateRegistration(spec: unknown, ctx: GateContext): GateDecision 
 // Gate 2 — outbound model request
 // ─────────────────────────────────────────────────────────────────────────
 
+/**
+ * ⚠ RETAINED, AND NO LONGER A ROUTE TO THE WIRE.
+ *
+ * @deprecated Both dials used to be able to turn a tier 3/4 refusal into an
+ * `allow` by scrubbing the payload and re-scanning it. That path is gone, and
+ * the reason is the whole reason this gate was rewired: re-scanning proves
+ * only that the SAME scanner that failed to see the data the first time also
+ * failed to see it the second. `packages/guardrails/src/__tests__/
+ * representation.test.ts` records what that cost — a payload of a named person
+ * plus an Art. 9 disclosure came back ALLOW, redacted, because the one
+ * scanner behind it could see neither a person in a value nor a German
+ * disability term.
+ *
+ * Setting either dial to `"redact"` now changes exactly one thing: the
+ * refusal says so (`REASONS.redactionNotARoute`), so a caller who was relying
+ * on it learns why rather than wondering where their payload went. It is kept
+ * on the signature deliberately — silently ignoring a security option is how
+ * a caller keeps believing in it.
+ */
 export interface ModelRequestConfig {
-  /** What to do with a tier-3 hit. Default `refuse` — fail-closed, the same
-   * direction `.pii-boundary` fails when the switch file is missing. */
   readonly onTier3?: "refuse" | "redact";
   readonly onTier4?: "refuse" | "redact";
 }
 
 export interface ModelRequestDecision extends GateDecision {
-  /** Present only when the decision is `allow` under `redact`. This is what
-   * the caller may send — and it is what was RE-SCANNED, not what redaction
-   * was assumed to have produced. */
+  /** Present when the request WAS expressible. This is what may be sent —
+   * `envelope.wire` — and only when `envelope.disposition` is `"ready"`.
+   * It carries its own `assurance`, which names what was not checked. */
+  readonly envelope?: Envelope;
+  /** Present on a refusal: what could not be expressed. Keys where the key is
+   * a compiled-in constant, ordinals where it is not; codes from a compiled-in
+   * vocabulary; never a value. */
+  readonly failures?: readonly ExpressionFailure[];
+  /** ⛔ NEVER SET ANY MORE. Retained so that callers and tests written against
+   * the old redaction path fail LOUDLY on `undefined` rather than silently
+   * sending something this gate no longer vouches for. */
   readonly redactedPayload?: unknown;
   readonly droppedClasses?: readonly string[];
 }
 
+/** Build a model-request decision. Separate from `resolve()` because this gate
+ * no longer derives its decision from a tier: the tier is an ANNOTATION here,
+ * and the decision comes from whether the request could be built. */
+function modelRequestDecision(
+  kind: GateDecisionKind,
+  subject: string,
+  classification: Classification,
+  ctx: GateContext,
+  proposal: unknown,
+  reason: string,
+  extra: { envelope?: Envelope; failures?: readonly ExpressionFailure[] } = {},
+): ModelRequestDecision {
+  const hash = contentHash(proposal);
+  return {
+    gate: "model-request",
+    decision: kind,
+    tier: classification.tier,
+    findings: classification.findings,
+    reason,
+    contentHash: hash,
+    audit: auditBody({
+      event: EVENTS["model-request"][kind],
+      actor: ctx.actor,
+      subject,
+      decision: kind === "approval-required" ? "approval-required" : kind,
+      classification,
+      ...(ctx.approval?.approver === undefined ? {} : { approver: ctx.approval.approver }),
+      contentHash: hash,
+    }),
+    ...(extra.envelope === undefined ? {} : { envelope: extra.envelope }),
+    ...(extra.failures === undefined ? {} : { failures: extra.failures }),
+  };
+}
+
 /**
- * Runs on every outbound provider call.
+ * ⭐ REWIRED. THE QUESTION IS NO LONGER "DOES A SCAN FIND SOMETHING?".
  *
- * Two properties worth stating because they are easy to lose:
+ * ─────────────────────────────────────────────────────────────────────────
+ * WHY THE OLD SHAPE HAD TO GO
+ * ─────────────────────────────────────────────────────────────────────────
+ * This gate used to `classify()` an arbitrary payload and allow what came
+ * back tier 1-2. That is a scanner asked to prove an ARBITRARY payload clean,
+ * and it is unbounded by construction: the payload can be spelled an
+ * unlimited number of ways and the scanner has to win every time. It did not.
+ * The last red-team round put a personal record behind five nested
+ * `JSON.stringify` calls and `classify()` returned tier 1 — and `classify()`
+ * was the only scanner behind this gate, so tier 1 meant ALLOW, meaning SEND.
  *
- * 1. NO APPROVAL PATH. See the header. The gateway answers 422 on residual
- *    personal-data classes and names classes only; if an approval flag could
- *    get a payload past this gate, Studio would be the documented way around
- *    that 422.
+ * The replacement is the host's own answer (`packages/envelope`, modelled on
+ * `flightdeck/server/services/ai/envelope.ts`): the request is CONSTRUCTED
+ * from compiled-in lists — a closed task set, closed vocabularies, an
+ * allowlist of field NAMES, a per-key policy with ceilings — and anything not
+ * expressible in that shape is refused. Five nested stringifies produce a
+ * string, and a string is expressible here only as a member of a compiled-in
+ * list. So the nested payload is refused for the same reason `"hello"` is
+ * refused: not because something recognised it.
  *
- * 2. REDACTION IS VERIFIED, NOT ASSUMED. After `redactTree` the result is
- *    classified again from scratch, and a residual tier 3/4 refuses. This
- *    mirrors `serializeAiRequest`, which calls `assertNoResidualPii` on the
- *    finished JSON even though every text fact already went through
- *    `redact()` — because `as Redacted` is a lie a caller can write, and
- *    "I scrubbed it" is a lie a function can tell itself.
+ * ─────────────────────────────────────────────────────────────────────────
+ * WHAT `classify()` DOES HERE NOW: IT IS A DETECTOR, NOT AN AUTHORITY
+ * ─────────────────────────────────────────────────────────────────────────
+ * It runs only on the REFUSAL path, and only to ANNOTATE: the audit body gets
+ * the classes and the tier it recognised, so a human reading the refusal
+ * learns "there was an IBAN in there" rather than only "not expressible".
+ * Nothing it returns can turn a refusal into an allow. A tier-1 verdict from
+ * it means "this detector recognised nothing", which is worth exactly that
+ * much and no more.
+ *
+ * ─────────────────────────────────────────────────────────────────────────
+ * WHAT `tier` MEANS ON AN ALLOW
+ * ─────────────────────────────────────────────────────────────────────────
+ * 2, never 1. A constructed envelope is compiled-in constants and bounded
+ * integers, which is Internal, and tier 1 is Public — "a decision a human
+ * makes about consequences, not a property a scanner can read off a string"
+ * (`packages/pseudonym/src/tier.ts`). This gate does not hand out tier 1 and
+ * `GATE_POLICY` is untouched: tier 3/4 still refuse, and no approval object
+ * has ever been able to open this gate. It still cannot — `checkApproval` is
+ * not called here at all.
+ *
+ * ─────────────────────────────────────────────────────────────────────────
+ * THE FREE-TEXT PATH ENDS IN A HUMAN, NOT IN AN ALLOW
+ * ─────────────────────────────────────────────────────────────────────────
+ * An envelope carrying a bounded text fact — a pasted Cowork workflow that has
+ * been through `packages/pseudonym` and arrived with its coverage report — is
+ * `requires-human-approval`, and this gate REFUSES it. The refusal carries the
+ * envelope, so the human sees exactly what they would be sending, including
+ * the pseudonymiser's `unchecked` list. "Refuse" here means "this gate will
+ * not send it", not "throw it away".
  */
 export function gateModelRequest(
   request: unknown,
   ctx: GateContext,
   config: ModelRequestConfig = {},
 ): ModelRequestDecision {
-  const options: ClassifyOptions = ctx.declaredNames ? { declaredNames: ctx.declaredNames } : {};
-  const first = classify(request, options);
   const subject = subjectOf(request, "<model-request>");
-
-  if (first.tier <= 2) return resolve("model-request", subject, first, ctx, request);
-
-  const mode = first.tier === 4 ? (config.onTier4 ?? "refuse") : (config.onTier3 ?? "refuse");
-  if (mode === "refuse") return resolve("model-request", subject, first, ctx, request);
-
   const names = ctx.declaredNames ?? [];
-  // Drop at the LOWEST tier this config is redacting rather than refusing.
-  // A config that redacts tier 3 but only drops tier-4 names would leave
-  // `person.surname` standing, fail its own re-scan every time, and turn
-  // "redact" into a slower "refuse".
-  const dropTier: 3 | 4 = (config.onTier3 ?? "refuse") === "redact" ? 3 : 4;
-  const { value, droppedClasses } = redactTree(
-    request,
-    names.length > 0 ? { names, dropTier } : { dropTier },
-  );
-  const after = classify(value, options);
+  const built = buildEnvelope(request, names.length > 0 ? { names } : {});
 
-  if (after.tier >= 3) {
-    // Residual classes survived. Refuse — do NOT send a partially scrubbed
-    // payload. The findings reported are the RESIDUAL ones, because those are
-    // what a human has to fix.
-    const decision = resolve("model-request", subject, after, ctx, request);
-    return { ...decision, decision: "refuse", reason: REASONS.redactionInsufficient };
+  if (!built.ok) {
+    // THE DETECTOR, demoted: it annotates this refusal and cannot lift it.
+    const options: ClassifyOptions = ctx.declaredNames ? { declaredNames: ctx.declaredNames } : {};
+    const detected = classify(request, options);
+    const askedToRedact = config.onTier3 === "redact" || config.onTier4 === "redact";
+    return modelRequestDecision(
+      "refuse",
+      subject,
+      detected,
+      ctx,
+      request,
+      askedToRedact ? REASONS.redactionNotARoute : REASONS.notExpressible,
+      { failures: built.failures },
+    );
   }
 
-  const merged: Classification = { tier: first.tier, findings: dedupe([...first.findings]) };
-  const base = resolve("model-request", subject, { tier: 1, findings: [] }, ctx, request);
-  return {
-    ...base,
-    decision: "allow",
-    reason: REASONS.redacted,
-    tier: merged.tier,
-    findings: merged.findings,
-    audit: auditBody({
-      event: "guardrails.model-request-redacted",
-      actor: ctx.actor,
-      subject,
-      decision: "redact",
-      classification: merged,
-      contentHash: base.contentHash,
-    }),
-    redactedPayload: value,
-    droppedClasses,
-  };
+  if (built.disposition === "requires-human-approval") {
+    // The tier is the pseudonymiser's own verdict on the text it carries,
+    // floored at 2 — this gate never reports tier 1.
+    let tier: Tier = 2;
+    for (const fact of Object.values(built.facts)) {
+      if (fact.kind === "text" && fact.provenance.payloadTier > tier) {
+        tier = Math.min(4, Math.max(1, Math.trunc(fact.provenance.payloadTier))) as Tier;
+      }
+    }
+    return modelRequestDecision("refuse", subject, { tier, findings: [] }, ctx, request, REASONS.textNeedsHuman, {
+      envelope: built,
+    });
+  }
+
+  return modelRequestDecision("allow", subject, { tier: 2, findings: [] }, ctx, request, REASONS.expressible, {
+    envelope: built,
+  });
 }
 
 // ─────────────────────────────────────────────────────────────────────────
