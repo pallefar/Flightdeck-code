@@ -108,8 +108,9 @@ export function Workbench({ store, onPrompt, onStop, theme = DEFAULT_THEME, onTh
     else onStop(turnId);
   }, [store, onStop]);
 
-  // Atlas's panel motion: a new view swaps in, another round re-enters.
-  // Decoration only; with motion off it writes nothing (src/motion/).
+  // Atlas's panel motion: a new view swaps the panel in; the first render
+  // and another round re-enter the body with the panel swapping in inside
+  // it. Decoration only; with motion off it writes nothing (src/motion/).
   const bodyRef = useRef<HTMLDivElement>(null);
   usePanelSwap(bodyRef, state.view, state.selectedRoundId);
 

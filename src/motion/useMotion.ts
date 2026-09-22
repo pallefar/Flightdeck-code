@@ -16,26 +16,45 @@
  * the kill switch, webdriver, a test) each one writes nothing: the committed
  * render is the whole story. */
 import { useLayoutEffect, useRef, type RefObject } from "react";
-import { MOTION, arrive, motionSupported, reenter, swapIn, type MotionHandle, type MotionTargets } from "./motion";
+import { MOTION, arrive, motionSupported, reenter, swapIn, type MotionHandle } from "./motion";
 
-export type Play = (targets: MotionTargets) => MotionHandle;
+/** What usePanelSwap plays for a commit. "swap" is Atlas's `studio-enter`
+ * on the panel alone. "nested" is the pair Atlas plays when it re-keys the
+ * surface around the panel: `work-surface-enter` on the host with
+ * `studio-enter` on the panel inside it. */
+export type PanelPlay = "swap" | "nested";
 
 /** What usePanelSwap last showed: the view, the context, and what it played for them. */
 export interface PanelShown {
   readonly view: unknown;
   readonly context: unknown;
-  readonly play: Play | null;
+  readonly play: PanelPlay;
 }
 
 /** The motion usePanelSwap plays for a commit that shows `view` in
- * `context`, after `prev`: swapIn on mount or a new view (even when the
- * context changed with it), reenter for a new context alone. When neither
- * changed the effect is StrictMode's dev re-run, straight after its cleanup
- * cancelled the motion, so the same one plays again. Exported for the tests. */
-export function panelPlay(prev: PanelShown | null, view: unknown, context: unknown): Play | null {
-  if (prev === null || !Object.is(prev.view, view)) return swapIn;
-  if (!Object.is(prev.context, context)) return reenter;
+ * `context`, after `prev`. "nested" on mount and whenever the context
+ * changed, whether or not the view changed with it, because that is when
+ * Atlas re-keys the surface as well as the panel. "swap" for a new view in
+ * the same context, where Atlas re-keys only the panel. When neither
+ * changed, the effect is StrictMode's dev re-run, straight after its
+ * cleanups cancelled both motions, so the same one plays again. Exported
+ * for the tests. */
+export function panelPlay(prev: PanelShown | null, view: unknown, context: unknown): PanelPlay {
+  if (prev === null || !Object.is(prev.context, context)) return "nested";
+  if (!Object.is(prev.view, view)) return "swap";
   return prev.play;
+}
+
+/** What one commit plays on the panel host and the panel(s) it holds. The
+ * panel always swaps in (`studio-enter`). "nested" also starts the host's
+ * `work-surface-enter` and returns its handle as `surface`; "swap" leaves
+ * the host alone and returns null there, so a surface motion still running
+ * from the last mount or round keeps running around the new panel. They are
+ * two different elements, so their translates and opacities compose as
+ * Atlas's nested CSS animations do, and neither motion cancels the other.
+ * Exported for the tests. */
+export function playPanel(host: Element, play: PanelPlay): { readonly surface: MotionHandle | null; readonly panel: MotionHandle } {
+  return { surface: play === "nested" ? reenter(host) : null, panel: swapIn(host.children) };
 }
 
 /** The items of `items` that are not in `before`, grouped by the delay each
@@ -54,27 +73,43 @@ export function insertedByDelay<T>(before: ReadonlySet<T>, items: readonly T[]):
 
 /** The panel under a tab strip, turning over in place.
  *
- * Atlas keys its `.studio-panel` by the tab (work-studio.tsx:318), so the
- * first render and every tab change mount a panel that plays `studio-enter`
- * (swapIn: rise 6px, fade in, 250ms). Atlas also re-keys a surface when its
- * context changes under it, a project switch, which plays
- * `work-surface-enter` (reenter: opacity 0.5 to 1, rise 5px, 220ms).
+ * Atlas nests two keyed elements here. `.management-surface` is keyed by
+ * the project (project-management.tsx:245) and plays `work-surface-enter`
+ * (reenter: opacity 0.5 to 1, rise 5px, 220ms ease-out). Inside it,
+ * `.studio-panel` is keyed by the tab (work-studio.tsx:318) and plays
+ * `studio-enter` (swapIn: opacity 0 to 1, rise 6px, 250ms ease). So a first
+ * render and a project switch play both, one inside the other: the panel
+ * starts at opacity 0, 11px down. A tab change re-keys only the panel, and
+ * a surface still entering keeps entering around the new one.
  *
- * Studio's panel host keeps its element, so this plays both on the
- * children of `ref`: swapIn on mount and whenever `view` changes; reenter
- * when only `context` changes (another round, same view). When both change
- * in one commit the swap plays, never both. A change mid-motion restarts it;
- * unmount settles it. */
+ * Studio's panel host keeps its element, so this plays the same on `ref`
+ * and its children: the nested pair on mount and whenever `context` changes
+ * (another round), with or without a new `view`; swapIn on the children
+ * alone when only `view` changes. The host's motion is held apart from the
+ * panel's for that reason: a view change restarts the panel's motion and
+ * leaves the host's running, as Atlas's surface is not re-keyed by a tab.
+ * Another context restarts both. Unmount settles both. */
 export function usePanelSwap(ref: RefObject<Element | null>, view: unknown, context: unknown): void {
   const shown = useRef<PanelShown | null>(null);
+  /** The host's work-surface-enter, which outlives a view change. */
+  const surface = useRef<MotionHandle | null>(null);
   useLayoutEffect(() => {
     const play = panelPlay(shown.current, view, context);
     shown.current = { view, context, play };
-    const root = ref.current;
-    if (root === null || play === null) return;
-    const handle = play(root.children);
-    return () => handle.cancel();
+    const host = ref.current;
+    if (host === null) return;
+    const played = playPanel(host, play);
+    // A new surface motion replaced the old one (drive() cancelled it first).
+    if (played.surface !== null) surface.current = played.surface;
+    return () => played.panel.cancel();
   }, [view, context]); // eslint-disable-line react-hooks/exhaustive-deps
+  useLayoutEffect(
+    () => () => {
+      surface.current?.cancel();
+      surface.current = null;
+    },
+    [],
+  );
 }
 
 /** Cards a filter brings in, arriving.

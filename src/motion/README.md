@@ -31,8 +31,8 @@ These are the only places in Studio where Atlas has an equivalent motion.
 | Where | Helper | Atlas source |
 |---|---|---|
 | The workbench view tabs (`Workbench.tsx`, `.fd-tabs__group`) | `<TabIndicator activeKey={view}>` | `.view-tab-indicator`, motion.css:62-77: a 450ms slide on the emphasized curve. At rest the indicator is `hidden` and the tab's own `aria-selected` style marks it. |
-| The panel under the tabs (`.fd-body`), on first render and on a view change | `usePanelSwap` → `swapIn` | `.studio-panel` keyed by its tab, `studio-enter`, work-studio.css:74, 415-423: rise 6px and fade in over 250ms `ease`. |
-| The same panel when only the round changes (a round chip, the same view) | `usePanelSwap` → `reenter` | `work-surface-enter` on a project switch, navigation.css:677, 841-846: from opacity 0.5, rise 5px, over 220ms `ease-out`. When the view changes in the same commit, the swap plays, never both. |
+| The panel under the tabs (`.fd-body > *`), on a view change in the same round | `usePanelSwap` → `swapIn` on the pane | `.studio-panel` keyed by its tab (work-studio.tsx:318), `studio-enter`, work-studio.css:74, 415-423: rise 6px and fade in over 250ms `ease`. A tab or tool change re-keys only the panel, so the surface around it is not restarted: one still entering keeps entering around the new panel, and one at rest does not move. |
+| The panel host and the panel together (`.fd-body` and its pane), on first render and whenever the round changes (a round chip, a new round), with or without a view change | `usePanelSwap` → `reenter` on `.fd-body` plus `swapIn` on its pane | Atlas's nested pair. `.management-surface` is keyed by the project (project-management.tsx:245) and plays `work-surface-enter` (navigation.css:677, 841-846: from opacity 0.5, rise 5px, over 220ms `ease-out`). The `.studio-panel` inside it re-keys with it and plays `studio-enter`. So a mount or a project switch paints the panel at opacity 0.5 × 0, 5 + 6 = 11px down. They are two elements, so the translates compose and neither motion cancels the other. The host's motion has its own handle, which only another round or an unmount cancels, so a view change right after (Studio's demo switches to Run one frame after the first render) swaps the pane inside a surface that is still entering, as in Atlas. |
 | Finding cards that a Gate severity filter brings in (`GatePane.tsx`) | `useArriveInserted` → `arrive` | `atlas-arrive` on inserted `.project-grid > .project-card`, motion.css:129-150. Only inserted cards arrive, each waiting min(n, 3) × 45ms for its place among all the cards. A card still arriving when the filter changes again keeps arriving if it stays, as a CSS animation does. A card that stays does not move: each card's key is the finding itself (`shownFindings`), as Atlas keys its cards by id (atlas.tsx:1063), so a filter that moves a card keeps its element. |
 
 What is deliberately **not** animated, and why:
@@ -91,7 +91,13 @@ These are the same hard rules as the OS module's.
 - the motion-off paths (writes nothing, already settled);
 - on anime's real engine, run under node: the start frames, the clean hand-back on completion and
   on cancel, cancel-first, and the tab indicator's hand-back;
-- the hooks' decisions (`panelPlay`, `insertedByDelay`);
+- the hooks' decisions (`panelPlay`, `insertedByDelay`), and `playPanel`'s two plays: the nested
+  pair's start frames on the host and the pane, each handle handing back only its own element, and
+  the swap never touching the host;
+- `usePanelSwap` run for real, mounted by `react-dom/client` on the small fake document: in
+  StrictMode, the nested pair on mount and on another round, the swap alone on another view, and
+  nothing left inline after an unmount mid-motion; and a view change while the surface is still
+  entering, which swaps the pane and neither cancels nor restarts the surface;
 - `useArriveInserted` run for real inside `GatePane`, mounted by `react-dom/client` on a small fake
   document: across All → Warnings → All a card that stays is the same element and is never written
   to, only the cards that come back arrive, and unmounting mid-arrival leaves no inline style; a

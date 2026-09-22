@@ -19,13 +19,15 @@
  *
  * NOT covered here, and why: timing, easing and the stagger's spacing (no
  * frame here is painted). The hooks' decisions are pure functions and are
- * tested as such. One hook is also run for real: useArriveInserted inside
- * GatePane, mounted by react-dom/client on a small fake document, because
- * which cards count as inserted depends on React keeping their elements,
- * and only a real reconciler shows that. The curves, the hand-back and
+ * tested as such. Both hooks are also run for real, mounted by
+ * react-dom/client on a small fake document: useArriveInserted inside
+ * GatePane, because which cards count as inserted depends on React keeping
+ * their elements, and only a real reconciler shows that; and usePanelSwap
+ * under StrictMode, because which play a commit gets depends on React's
+ * effect order, dev re-run included. The curves, the hand-back and
  * interruption were checked on frames recorded in real Chrome against Atlas
  * (.shots/studio-motion/). */
-import { act, useLayoutEffect } from "react";
+import { StrictMode, act, useLayoutEffect, useRef } from "react";
 import { createRoot } from "react-dom/client";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -37,7 +39,7 @@ import type { Candidate, Severity } from "../../workbench/types";
 import { Workbench } from "../../workbench/Workbench";
 import { MOTION, arrive, closePanel, motionAllowed, motionSupported, reenter, slideIndicator, swapIn } from "../motion";
 import { tabGhost } from "../TabIndicator";
-import { insertedByDelay, panelPlay } from "../useMotion";
+import { insertedByDelay, panelPlay, playPanel, usePanelSwap } from "../useMotion";
 
 // ---------------------------------------------------------------------------
 // A fake element: inline style, connection, offsets. Nothing else.
@@ -210,6 +212,22 @@ describe.each<[string, () => void]>([
     }
   });
 
+  it("playPanel writes nothing on the host or its panel, for either play", async () => {
+    for (const play of ["nested", "swap"] as const) {
+      const panel = new FakeElement();
+      const host = new FakeElement().append(panel);
+      const played = playPanel(asEl(host), play);
+      expect([host.getAttribute("style"), panel.getAttribute("style")]).toEqual([null, null]);
+      expect(played.surface === null).toBe(play === "swap");
+      for (const handle of [played.surface, played.panel]) {
+        if (handle === null) continue;
+        handle.cancel();
+        await expect(handle.finished).resolves.toBeUndefined();
+      }
+      expect([host.getAttribute("style"), panel.getAttribute("style")]).toEqual([null, null]);
+    }
+  });
+
   it("closePanel calls onDone synchronously, so a close is still instant", () => {
     const el = new FakeElement();
     const onDone = vi.fn();
@@ -248,6 +266,40 @@ describe("motion on: the start frame at once, everything taken back", () => {
     expect([b.style.getPropertyValue("opacity"), b.style.getPropertyValue("translate")]).toEqual(["0.5", "0px 5px"]);
     swap.cancel();
     back.cancel();
+  });
+
+  it("playPanel nested: work-surface-enter on the host, studio-enter on the panel, each with its own handle", async () => {
+    const frameOf = (el: FakeElement) => [el.style.getPropertyValue("opacity"), el.style.getPropertyValue("translate")];
+    const panel = new FakeElement();
+    const host = new FakeElement().append(panel);
+    const played = playPanel(asEl(host), "nested");
+    // Two elements, so the rises add up as Atlas's nested CSS does: the
+    // panel paints 5 + 6 = 11px down, at opacity 0.5 x 0.
+    expect(frameOf(host)).toEqual(["0.5", "0px 5px"]);
+    expect(frameOf(panel)).toEqual(["0", "0px 6px"]);
+    await sleep(30); // mid-flight: each handle hands back only its own element
+    played.panel.cancel();
+    expect(panel.getAttribute("style")).toBeNull();
+    expect(host.getAttribute("style")).not.toBeNull();
+    played.surface!.cancel();
+    expect(host.getAttribute("style")).toBeNull();
+
+    const done = new FakeElement();
+    const doneHost = new FakeElement().append(done);
+    const both = playPanel(asEl(doneHost), "nested");
+    await Promise.all([both.surface!.finished, both.panel.finished]);
+    expect([doneHost.getAttribute("style"), done.getAttribute("style")]).toEqual([null, null]);
+  });
+
+  it("playPanel swap: studio-enter on the panel, the host never touched", () => {
+    const panel = new FakeElement();
+    const host = new FakeElement().append(panel);
+    const played = playPanel(asEl(host), "swap");
+    expect(played.surface).toBeNull();
+    expect(host.getAttribute("style")).toBeNull();
+    expect([panel.style.getPropertyValue("opacity"), panel.style.getPropertyValue("translate")]).toEqual(["0", "0px 6px"]);
+    played.panel.cancel();
+    expect(panel.getAttribute("style")).toBeNull();
   });
 
   it("hands the element back with no inline residue when it completes", async () => {
@@ -372,19 +424,20 @@ describe("TabIndicator (tabGhost), motion on", () => {
 });
 
 describe("Studio's hooks: what they decide to play", () => {
-  it("usePanelSwap: swapIn on mount and on a new view, even when the round changed with it", () => {
-    expect(panelPlay(null, "files", null)).toBe(swapIn);
-    expect(panelPlay({ view: "run", context: null, play: swapIn }, "files", "r1")).toBe(swapIn);
+  it("usePanelSwap: the nested pair on mount and whenever the round changed, with or without a new view", () => {
+    // Atlas re-keys .management-surface on those, and .studio-panel inside it.
+    expect(panelPlay(null, "files", null)).toBe("nested");
+    expect(panelPlay({ view: "files", context: "r2", play: "swap" }, "files", "r1")).toBe("nested");
+    expect(panelPlay({ view: "run", context: null, play: "nested" }, "files", "r1")).toBe("nested");
   });
 
-  it("usePanelSwap: reenter when only the round changed (another context, same view)", () => {
-    expect(panelPlay({ view: "files", context: "r2", play: swapIn }, "files", "r1")).toBe(reenter);
+  it("usePanelSwap: the swap alone for a new view in the same round (Atlas re-keys only the panel)", () => {
+    expect(panelPlay({ view: "run", context: "r1", play: "nested" }, "files", "r1")).toBe("swap");
   });
 
   it("usePanelSwap: StrictMode's re-run (nothing changed) replays what its cleanup cancelled", () => {
-    expect(panelPlay({ view: "files", context: "r1", play: swapIn }, "files", "r1")).toBe(swapIn);
-    expect(panelPlay({ view: "files", context: "r1", play: reenter }, "files", "r1")).toBe(reenter);
-    expect(panelPlay({ view: "files", context: "r1", play: null }, "files", "r1")).toBeNull();
+    expect(panelPlay({ view: "files", context: "r1", play: "swap" }, "files", "r1")).toBe("swap");
+    expect(panelPlay({ view: "files", context: "r1", play: "nested" }, "files", "r1")).toBe("nested");
   });
 
   it("useArriveInserted: only new items arrive, each waiting for its place among ALL items", () => {
@@ -734,6 +787,96 @@ describe("GatePane's filter, mounted by react-dom with motion on", () => {
       "FD-W901-server/w1.ts-1-1#1",
       "FD-W901-server/w1.ts-1-7",
     ]);
+  });
+});
+
+describe("usePanelSwap, mounted by react-dom with motion on", () => {
+  /** Studio's `.fd-body`: a host that keeps its element, holding the pane
+   * for the view. */
+  function Panel({ view, round }: { view: string; round: string }) {
+    const ref = useRef<HTMLDivElement>(null);
+    usePanelSwap(ref, view, round);
+    return (
+      <div className="fd-body" ref={ref}>
+        <div className="pane" key={view}>
+          {view}
+        </div>
+      </div>
+    );
+  }
+
+  it("plays the nested pair on mount and on another round, the swap alone on another view, and unmount leaves nothing", async () => {
+    const container = asBrowserWithDom();
+    const root = createRoot(container as unknown as HTMLElement);
+    // StrictMode, as main.tsx mounts it: the mount effect runs, is cleaned
+    // up and runs again, and the second run must replay the nested pair.
+    const show = (view: string, round: string) =>
+      act(() =>
+        root.render(
+          <StrictMode>
+            <Panel view={view} round={round} />
+          </StrictMode>,
+        ),
+      );
+    const host = () => container.children[0]!;
+    const pane = () => host().children[0]!;
+    const frameOf = (el: DomElement) => [el.style.getPropertyValue("opacity"), el.style.getPropertyValue("translate")];
+    const settled = () => vi.waitFor(() => expect([host().getAttribute("style"), pane().getAttribute("style")]).toEqual([null, null]), { timeout: 3000, interval: 25 });
+
+    // Each change is read synchronously with its act(): every layout effect
+    // has run and anime has not ticked (the GatePane test says why).
+    let returned = show("files", "r1");
+    expect(frameOf(host())).toEqual(["0.5", "0px 5px"]);
+    expect(frameOf(pane())).toEqual(["0", "0px 6px"]);
+    await returned;
+    await settled();
+
+    // Another view, same round: only the new pane moves.
+    const writes = host().styleWrites;
+    returned = show("diff", "r1");
+    expect(host().styleWrites).toBe(writes);
+    expect(frameOf(pane())).toEqual(["0", "0px 6px"]);
+    await returned;
+    await settled();
+
+    // Another round, same view: the pane is the same element, and both play.
+    const same = pane();
+    returned = show("diff", "r2");
+    expect(pane()).toBe(same);
+    expect(frameOf(host())).toEqual(["0.5", "0px 5px"]);
+    expect(frameOf(pane())).toEqual(["0", "0px 6px"]);
+    await returned;
+
+    // Unmounted mid-motion: the cleanups settle both.
+    const [h, p] = [host(), pane()];
+    await act(() => root.unmount());
+    expect([h.getAttribute("style"), p.getAttribute("style")]).toEqual([null, null]);
+  });
+
+  it("a view change while the surface is still entering swaps the pane and leaves the surface entering", async () => {
+    // Atlas re-keys only .studio-panel on a tab change, so a surface still
+    // playing work-surface-enter (after a mount or a project switch) keeps
+    // playing it around the new panel. Studio's demo does exactly this on
+    // load: it switches to the Run view one frame after the first render.
+    const container = asBrowserWithDom();
+    const root = createRoot(container as unknown as HTMLElement);
+    const show = (view: string, round: string) => act(() => root.render(<Panel view={view} round={round} />));
+    const host = () => container.children[0]!;
+    const pane = () => host().children[0]!;
+
+    await show("files", "r1");
+    const entering = host().getAttribute("style");
+    expect(entering).toMatch(/opacity/); // still mid-flight, 220ms long
+    const writes = host().styleWrites;
+    const returned = show("run", "r1");
+    // The commit wrote nothing on the host: not cancelled, not restarted.
+    expect(host().styleWrites).toBe(writes);
+    expect(host().getAttribute("style")).toBe(entering);
+    expect([pane().textContent, pane().style.getPropertyValue("opacity"), pane().style.getPropertyValue("translate")]).toEqual(["run", "0", "0px 6px"]);
+    await returned;
+    await vi.waitFor(() => expect(host().styleWrites).toBeGreaterThan(writes), { timeout: 1000, interval: 10 }); // still driven
+    await vi.waitFor(() => expect([host().getAttribute("style"), pane().getAttribute("style")]).toEqual([null, null]), { timeout: 3000, interval: 25 });
+    await act(() => root.unmount());
   });
 });
 
