@@ -52,7 +52,7 @@ describe("a revocation is visible to the very next call", () => {
   it("narrowing the ceiling mid-flight narrows the answer, with no restart", async () => {
     const s = store(rows, [approval({ tier: 4 })]);
     expect((await effectiveGrant({ store: s, ...request })).allowed).toBe(true);
-    s.putGrantRow(ceiling([[CONTRACTS_INPUT, 2]]));
+    s.putGrantRow(ceiling([[CONTRACTS_INPUT, 2]]), 0); // seeded without a rev
     const after = await effectiveGrant({ store: s, ...request });
     expect(after.reason).toBe("tier_above_ceiling");
     expect(after.effectiveTiers).toEqual([1, 2]);
@@ -61,7 +61,7 @@ describe("a revocation is visible to the very next call", () => {
   it("re-granting brings it back, also on the next call", async () => {
     const s = store([ceiling([[CONTRACTS_INPUT, 4]])], [approval({ tier: 4 })]);
     expect((await effectiveGrant({ store: s, ...request })).reason).toBe("no_project_row");
-    s.putGrantRow(row(PROJECT, [[CONTRACTS_INPUT, 4]]));
+    s.putGrantRow(row(PROJECT, [[CONTRACTS_INPUT, 4]]), null);
     expect((await effectiveGrant({ store: s, ...request })).allowed).toBe(true);
   });
 });

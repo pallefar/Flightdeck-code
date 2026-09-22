@@ -338,11 +338,17 @@ These are load-bearing. Each is a property something else depends on.
   only thing standing between this and a promotable build — and per §1, start
   by taking your own baseline, because my sandbox numbers are not a fair
   comparison.
-- **Grant rows are last-write-wins at the row level.** Two operators, one
-  narrowing and one widening, and the narrowing is lost without a trace. Closing
-  it needs a version on `GrantRow` and a compare-and-swap on the port; the *file*
-  is already serialised with a lock. Tracked in
-  `approvals/src/__tests__/redteam-attacks.test.ts` as `STILL OPEN`.
+- **Grant rows are versioned (closed 2026-09-22).** A row carries a
+  store-assigned `rev`; `putGrantRow(row, expectedRev)` (`null` = create-only)
+  throws `GrantRowConflictError` (`code: "grant_row_conflict"`, `status: 409`)
+  when the row moved since the writer read it, so a widening can no longer
+  silently erase a narrowing. `revokeGrantRow` stays unconditional but bumps the
+  rev, so a widening prepared before a revoke is refused after it. Both stores
+  apply the same check (`versionedGrantWrite`, `approvals/src/store.ts`); the
+  file store does it under its lock. Pinned by `row-version.test.ts` and the
+  red-team case `BLOCKED: grant rows carry a version`. ⚠ What is NOT there:
+  nothing in production writes grants, and there is no HTTP route for it, so
+  the 409 is a status on the error, not yet a response anyone receives.
 - **`@spec` cannot describe a proposing app.** The translator refuses a `propose`
   route because `@codegen` needs `proposalKind`, `ticketField`, `fields` and
   `auditEvent`, and nothing in a `@spec` document names a field. Read-only
