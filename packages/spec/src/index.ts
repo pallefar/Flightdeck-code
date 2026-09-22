@@ -75,11 +75,15 @@ export {
   missingFieldQuestion,
   navSectionQuestion,
   orderQuestions,
+  proposalTemplateQuestion,
   rolesQuestion,
   stepsSectionQuestion,
   unknownCapabilityQuestion,
 } from "./questions";
 export type { ClarifyingQuestion, QuestionSeverity, SpecField } from "./questions";
+
+export { TEMPLATE_ID_PATTERN, TEMPLATE_RULE } from "./templates";
+export type { ProposalTemplateChoice } from "./templates";
 
 export { DEFAULT_APP_VERSION, defaultGateContext, evaluateDraft, readConsentAnswers } from "./gates";
 export type { GateContext } from "./gates";

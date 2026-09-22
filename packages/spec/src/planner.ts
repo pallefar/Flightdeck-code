@@ -27,6 +27,7 @@ import type { GateContext } from "./gates";
 import { missingFieldQuestion } from "./questions";
 import type { ClarifyingQuestion } from "./questions";
 import type { PlanOutcome } from "./outcome";
+import type { ProposalTemplateChoice } from "./templates";
 
 export interface PlannerRequest {
   readonly system: string;
@@ -56,6 +57,12 @@ export interface PlanInput {
   readonly appVersion?: string;
   /** Total model calls allowed, including the repair round-trip. Default 2. */
   readonly maxAttempts?: number;
+  /**
+   * The approved proposal templates a propose route may name (owner ruling 2026-09-22 (8)).
+   * Shown to the model and enforced by the gates; absent means none, so a planner that was
+   * offered no templates plans no proposing route.
+   */
+  readonly proposalTemplates?: readonly ProposalTemplateChoice[];
 }
 
 /** Below this, there is nothing to plan from and no point spending a model call. */
@@ -95,7 +102,8 @@ export async function planFromPrompt(input: PlanInput, llm: PlannerLlm): Promise
     };
   }
 
-  const promptInput = { prompt, answers: pairAnswers(answers, asked), existingSubAppIds, hostVersion };
+  const proposalTemplates = input.proposalTemplates ?? [];
+  const promptInput = { prompt, answers: pairAnswers(answers, asked), existingSubAppIds, hostVersion, proposalTemplates };
   const system = buildSystemPrompt(promptInput);
   const context: GateContext = {
     prompt,
@@ -103,6 +111,7 @@ export async function planFromPrompt(input: PlanInput, llm: PlannerLlm): Promise
     existingSubAppIds,
     hostVersion,
     appVersion: input.appVersion ?? DEFAULT_APP_VERSION,
+    proposalTemplates,
   };
 
   let lastRaw: string | null = null;

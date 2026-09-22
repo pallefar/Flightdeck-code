@@ -8,6 +8,8 @@
 import { describe, expect, it } from "vitest";
 
 import type { MiniAppSpec as SpecSpec } from "../../../spec/src/schema";
+import { generateSubApp } from "../../../codegen/src/pure";
+import { PROPOSAL_TEMPLATES } from "../proposal-templates";
 import { translateSpec } from "../translate-spec";
 
 const BASE: SpecSpec = {
@@ -83,20 +85,21 @@ describe("what translates", () => {
 });
 
 describe("what it refuses — and refuses rather than approximates", () => {
-  it("⭐ a propose route, because NOTHING in a @spec document names a field", () => {
-    // @codegen's propose operation needs proposalKind, ticketField, fields
-    // and auditEvent. Inventing them means inventing what the app writes into
-    // someone's inbox.
+  it("⭐ a propose route that names no approved template — the fields come from the catalogue, never the model", () => {
+    // Owner ruling 2026-09-22 (8). @codegen's propose operation needs
+    // proposalKind, ticketField, fields and auditEvent; a @spec route names a
+    // template, and nothing else in the document names a field.
     const result = translateSpec({
       ...BASE,
+      capabilities: ["write:inbox-proposal"],
       routes: [
         { id: "file", method: "POST", path: "/file", summary: "File it", kind: "propose", capabilities: ["write:inbox-proposal"] },
       ],
     });
     expect(result.ok).toBe(false);
     if (result.ok) return;
-    expect(result.refusals[0]?.at).toBe("routes[0]");
-    expect(result.refusals[0]?.needs).toMatch(/proposalKind.*ticketField.*fields/);
+    expect(result.refusals[0]?.at).toBe("routes[0].template");
+    expect(result.refusals[0]?.needs).toMatch(/approved proposal template.*divergence.*handoff/);
   });
 
   it("⭐ a settingsPanel, because the same field name means two different things", () => {
@@ -147,7 +150,7 @@ describe("what it refuses — and refuses rather than approximates", () => {
     });
     expect(result.ok).toBe(false);
     if (result.ok) return;
-    expect(result.refusals.map((r) => r.at).sort()).toEqual(["routes[0]", "routes[1].path", "settingsPanel"]);
+    expect(result.refusals.map((r) => r.at).sort()).toEqual(["routes[0].template", "routes[1].path", "settingsPanel"]);
   });
 
   it("never names a VALUE in a refusal — only a path and what is needed", () => {
@@ -155,6 +158,7 @@ describe("what it refuses — and refuses rather than approximates", () => {
       ...BASE,
       routes: [
         { id: "file", method: "POST", path: "/anna-sorensen-salary", summary: "Anna Sørensen salary", kind: "propose", capabilities: ["write:inbox-proposal"] },
+        { id: "file2", method: "POST", path: "/anna", summary: "s", kind: "propose", capabilities: ["write:inbox-proposal"], template: "anna-sorensen" },
       ],
     });
     expect(result.ok).toBe(false);
@@ -162,5 +166,100 @@ describe("what it refuses — and refuses rather than approximates", () => {
     const written = JSON.stringify(result.refusals);
     expect(written).not.toContain("Anna");
     expect(written).not.toContain("Sørensen");
+    expect(written).not.toContain("anna-sorensen");
+  });
+});
+
+/**
+ * ⭐ OWNER RULING 2026-09-22 (8): proposing apps are generated only from the
+ * closed catalogue of approved templates. The model named a template id; the
+ * translator is where that id becomes the fields a proposal writes — and where
+ * an unknown or unapproved one is refused.
+ */
+describe("proposing routes, from the approved catalogue", () => {
+  const PROPOSING: SpecSpec = {
+    ...BASE,
+    capabilities: ["read:contracts", "write:inbox-proposal"],
+    routes: [
+      BASE.routes[0]!,
+      { id: "flag", method: "POST", path: "/flag", summary: "Flag a divergence", kind: "propose", capabilities: ["write:inbox-proposal"], template: "divergence" },
+    ],
+  };
+
+  it("⭐ turns a template id into the template's operation — nothing from the route but its path", () => {
+    const result = translateSpec(PROPOSING);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const flag = result.spec.domains.find((d) => d.name === "flag")?.routes[0];
+    const template = PROPOSAL_TEMPLATES.find((t) => t.id === "divergence")!;
+    expect(flag).toEqual({
+      method: "POST",
+      path: "/flag",
+      summary: "Flag a divergence",
+      operation: {
+        kind: "propose",
+        proposalKind: template.proposalKind,
+        ticketField: template.ticketField,
+        fields: template.fields,
+        // Namespaced under THIS app's id, as @codegen requires.
+        auditEvent: `works-council-gaps.${template.auditEventSuffix}`,
+      },
+    });
+  });
+
+  it("⭐ generates: the translated spec passes @codegen's own door", () => {
+    const result = translateSpec(PROPOSING);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const generated = generateSubApp(result.spec);
+    const routes = generated.files.find((f) => f.path === "server/subapps/works-council-gaps/routes/flag.ts");
+    expect(routes?.contents).toContain("works-council-gaps-divergence-");
+  });
+
+  it("⛔ refuses a template id that is not in the catalogue, without echoing it", () => {
+    const result = translateSpec({
+      ...PROPOSING,
+      routes: [PROPOSING.routes[0]!, { ...PROPOSING.routes[1]!, template: "salary-change" }],
+    });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.refusals).toHaveLength(1);
+    expect(result.refusals[0]?.at).toBe("routes[1].template");
+    expect(result.refusals[0]?.needs).toMatch(/not in the approved catalogue/);
+    expect(JSON.stringify(result.refusals)).not.toContain("salary-change");
+  });
+
+  it("⛔ refuses an UNAPPROVED template, even one that is in the catalogue", () => {
+    const unapproved = PROPOSAL_TEMPLATES.map((t) => (t.id === "divergence" ? { ...t, approval: null } : t));
+    const result = translateSpec(PROPOSING, unapproved);
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.refusals[0]?.at).toBe("routes[1].template");
+    expect(result.refusals[0]?.needs).toMatch(/no approval record/);
+  });
+
+  it("⛔ refuses a template edited after its approval", () => {
+    const edited = PROPOSAL_TEMPLATES.map((t) =>
+      t.id === "divergence" ? { ...t, fields: [...t.fields, { name: "salary", type: "number" as const }] } : t,
+    );
+    const result = translateSpec(PROPOSING, edited);
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.refusals[0]?.needs).toMatch(/changed since it was approved/);
+  });
+
+  it("⛔ refuses two routes backed by one template — their proposals would be indistinguishable", () => {
+    const result = translateSpec({
+      ...PROPOSING,
+      routes: [...PROPOSING.routes, { ...PROPOSING.routes[1]!, id: "flag2", path: "/flag-again" }],
+    });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.refusals.map((r) => r.at)).toEqual(["routes[2].template"]);
+  });
+
+  it("read-only specs are unaffected — the same output as before the catalogue existed", () => {
+    const result = translateSpec(BASE, []);
+    expect(result.ok).toBe(true);
   });
 });

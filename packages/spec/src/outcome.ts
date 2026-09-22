@@ -16,6 +16,7 @@ export const WARNING_CODES = [
   "capability-denied",
   "route-dropped",
   "route-write-scope-stripped",
+  "route-template-stripped",
   "table-dropped",
   "table-name-truncated",
   "column-type-defaulted",

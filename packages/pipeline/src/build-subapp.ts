@@ -44,10 +44,18 @@ import {
   type ModelRequestDecision, refuseAtPayloadTierCeiling } from "../../guardrails/src/pure";
 import { withPseudonymisation, type Tier } from "../../pseudonym/src/index";
 import { PayloadTierError } from "../../pseudonym/src/errors";
+import { approvedTemplateMenu } from "./proposal-templates";
 import { translateSpec, type TranslationRefusal } from "./translate-spec";
 import type { PlannerLlmLike } from "./gated-planner";
 
-export interface BuildFromPromptInput extends PlanInput {
+/**
+ * ⛔ `proposalTemplates` IS NOT THE CALLER'S. Owner ruling 2026-09-22 (8):
+ * proposing apps are generated only from the closed catalogue of approved
+ * templates, so the menu the planner is shown is always
+ * `approvedTemplateMenu()` — set below, AFTER the caller's input is spread,
+ * so even an input that smuggles one in (past the type) is overridden.
+ */
+export interface BuildFromPromptInput extends Omit<PlanInput, "proposalTemplates"> {
   /** The host's `registry.ts`, so codegen can emit a mount patch. Without it
    * the candidate still builds; there is simply no patch to apply. */
   readonly registrySource?: string;
@@ -187,7 +195,10 @@ export async function buildSubAppFromPrompt(
         return "";
       }
 
-      planned = await planFromPrompt({ ...input, prompt: payload.text }, deps.llm);
+      planned = await planFromPrompt(
+        { ...input, prompt: payload.text, proposalTemplates: approvedTemplateMenu() },
+        deps.llm,
+      );
       return JSON.stringify(planned);
       },
     ));

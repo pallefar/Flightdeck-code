@@ -8,6 +8,7 @@
 
 import { CAPABILITIES, CONTRACT_RULES, NAV_SECTIONS, ROLES } from "./vocabulary";
 import type { Capability, ContractRule, NavSection, Role } from "./vocabulary";
+import { TEMPLATE_RULE, type ProposalTemplateChoice } from "./templates";
 
 export const QUESTION_SEVERITIES = ["consent", "required", "ambiguity"] as const;
 export type QuestionSeverity = (typeof QUESTION_SEVERITIES)[number];
@@ -122,6 +123,32 @@ export function stepsSectionQuestion(candidates: readonly string[]): ClarifyingQ
       "This workflow has no \"## Procedure\" heading - which section holds the steps the mini app should walk through?",
     because: rule("failLoud"),
     options: candidates,
+  };
+}
+
+/**
+ * Asked when a propose route names no approved proposal template, or one that is not on the
+ * menu (owner ruling 2026-09-22 (8)). The options are exactly the approved ids: which of them
+ * fits is the person's call, and a template nobody approved is not an answer. With an empty
+ * menu there is nothing to pick, and the question says so rather than offering a free-text
+ * box that would invite a template to be described into existence.
+ */
+export function proposalTemplateQuestion(
+  routeId: string,
+  routeSummary: string,
+  menu: readonly ProposalTemplateChoice[],
+): ClarifyingQuestion {
+  const question =
+    menu.length === 0
+      ? `Route "${routeSummary}" would file a proposal, but no proposal template has been approved yet - should this app be read-only instead?`
+      : `Route "${routeSummary}" files a proposal - which approved proposal template should it use (${menu.map((t) => `${t.id}: ${t.summary}`).join("; ")})?`;
+  return {
+    id: `routes:template:${routeId}`,
+    field: "routes",
+    severity: "required",
+    question,
+    because: TEMPLATE_RULE,
+    options: menu.length === 0 ? null : menu.map((t) => t.id),
   };
 }
 

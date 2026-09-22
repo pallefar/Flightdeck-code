@@ -358,11 +358,23 @@ These are load-bearing. Each is a property something else depends on.
   red-team case `BLOCKED: grant rows carry a version`. ⚠ What is NOT there:
   nothing in production writes grants, and there is no HTTP route for it, so
   the 409 is a status on the error, not yet a response anyone receives.
-- **`@spec` cannot describe a proposing app.** The translator refuses a `propose`
-  route because `@codegen` needs `proposalKind`, `ticketField`, `fields` and
-  `auditEvent`, and nothing in a `@spec` document names a field. Read-only
-  mini-apps work end to end today. Closing this means teaching the planner to
-  emit field shapes — a change to the model contract, not a patch.
+- **Proposing apps come from an approved template catalogue (closed 2026-09-22,
+  owner ruling 8 — see §8).** The planner is shown the approved templates and a
+  `propose` route names one by id; `@spec`'s draft route has no key a field could
+  be written in, so the model cannot write the fields a proposal carries. The
+  translator turns the id into the template's `proposalKind`/`ticketField`/
+  `fields`/namespaced `auditEvent` and refuses a missing, unknown or unapproved
+  template, or a second route on the same one. The catalogue
+  (`pipeline/src/proposal-templates.ts`) is seeded with `divergence` and
+  `handoff`, taken from `contractRunSpec` and tested against it field for field.
+  Each carries `approvedBy`/`approvedAt` plus a content hash, so editing a
+  template after approval invalidates it. Read-only mini-apps are unchanged.
+  ⚠ What is NOT covered: the Cowork-workflow conversion
+  (`packages/subapp/src/studio/conversion.ts`) still builds its own fixed `step`
+  proposal (`ticket`, `step`, `note`) in code. It is not model-authored, but it
+  is outside the catalogue. Bringing it under would need a `step` template that
+  the owner has not approved, so it is an open question for the owner, not
+  something to fold in quietly.
 - **The workbench has no "export bundle" affordance.** It renders real generated
   source and a real gate verdict, and nothing leaves the browser. There IS a
   `Save` button in the editor pane (`components/EditorPane.tsx:155`) — do not be
@@ -407,3 +419,44 @@ edge exists because there must be exactly ONE named-human rule (invariant 2
 above), and importing it was judged better than a fourth copy. If you ever
 reorganise these into enforced acyclic packages, that is the edge you will hit,
 and the copy is not the answer.
+
+---
+
+## 8. Owner rulings implemented on this branch
+
+On 2026-09-22 the owner, Karsten Haldan, was shown nine numbered decisions, each with a
+recommendation. His reply, verbatim, was:
+
+> "take your recommendations"
+
+The nine-item list itself is not in this repository. So each **question** below is the
+orchestrator's restatement as relayed to this branch, **not a quotation**. The reply is
+quoted exactly. `memory/decisions.md` in the host is deliberately not edited here: the
+orchestrator adds the D-entries at merge.
+
+### Ruling 8: where a proposing mini-app's fields come from
+
+- **Question (restated):** `@spec` names no field, and `@codegen`'s `propose` needs
+  `proposalKind`, `ticketField`, `fields` and `auditEvent`. How should a proposing
+  mini-app get the fields it writes into the review inbox?
+- **Recommendation accepted:** proposing apps are generated only from a closed
+  catalogue of proposal templates the owner approves. The model picks a template id and
+  never invents the fields it writes into the review inbox. Seed the catalogue with
+  templates derived from contract-run's existing `divergence` and `handoff` shapes.
+  Each template carries an approval record (`approvedBy`/`approvedAt`), and generation
+  refuses an unapproved one. Read-only mini-apps are unaffected.
+- **Owner's reply, verbatim:** "take your recommendations"
+- **Implemented:** `packages/pipeline/src/proposal-templates.ts` holds the catalogue
+  and the approval check. `packages/spec/src/templates.ts` defines the menu the planner
+  is shown; the draft route gets a `template` field, the gates and prompt use it.
+  `packages/pipeline/src/translate-spec.ts` resolves the template id into the operation
+  and is where generation refuses. Tests:
+  `pipeline/src/__tests__/proposal-templates.test.ts`, `spec/src/templates.test.ts`,
+  and the new blocks in `translate-spec.test.ts` and `build-subapp.test.ts`.
+- **One addition beyond the letter of the ruling, stated so it can be vetoed:** each
+  approval record also carries the sha256 of the template it approved. A name and a
+  date alone would still "approve" a template whose fields were widened afterwards.
+  With the hash, a widened template counts as unapproved until someone re-approves it.
+- **Approval recorded on the two seeds:** `approvedBy: "Karsten Haldan"`,
+  `approvedAt: "2026-09-22"`. The owner approved seeding these by accepting the
+  recommendation.
