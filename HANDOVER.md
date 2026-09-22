@@ -7,12 +7,16 @@ and says why.
 - **Repo:** `https://github.com/pallefar/Flightdeck-code`
 - **Branch:** `claude/gauntlet-loop-install-hp490e` — the only branch. There is no
   `main` on origin, so clone and stay on this one.
-- **State:** 2240 tests, 0 skipped, 111 files, `tsc --noEmit` clean (2026-09-22, Mac).
-  One case depends on the host checkout: against `project-contract` at
-  `integration/unified-2026-09-22`, `manifest-rules.test.ts` › "accepts the
-  hand-written docusign manifest" fails, because the host's manifest now computes
-  `contributions: docusignContributions` (host 42b0f308, OS-04) and the reader
-  accepts JSON literals only. 2239/2240 there; not a Studio regression.
+- **State:** 2253 tests, 0 skipped, 112 files, all passing against `project-contract`
+  at `integration/unified-2026-09-22`; `tsc --noEmit` clean (2026-09-22, Mac).
+  The one host-dependent failure is closed: the host's docusign manifest declares
+  `contributions: docusignContributions` (host 42b0f308, OS-04), a member of
+  `SubAppManifest` that `subAppManifestSchema` never validates — like
+  `initSchema`/`registerRoutes`. The manifest reader now sets aside exactly the
+  members the host's interface adds beyond the Zod data (drift-tested against
+  `server/subapps/types.ts` in both directions), splits members by bracket depth
+  rather than by line, and still throws on a computed data field, a computed
+  unknown member, a spread or a shorthand.
 
 ---
 
