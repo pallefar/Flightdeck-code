@@ -23,6 +23,7 @@ import { FileTreePane } from "./components/FileTreePane";
 import { GatePane } from "./components/GatePane";
 import { PreviewPane } from "./components/PreviewPane";
 import { RunPane } from "./components/RunPane";
+import { ThemeToggle } from "./components/ThemeToggle";
 import { buildPreview } from "./preview/state";
 import {
   activeRun,
@@ -43,7 +44,7 @@ import {
   visibleRun,
 } from "./selectors";
 import type { WorkbenchStore } from "./store";
-import { WORKBENCH_CSS } from "./theme";
+import { DEFAULT_THEME, WORKBENCH_CSS, type StudioTheme } from "./theme";
 import type { WorkbenchView } from "./types";
 
 export interface WorkbenchProps {
@@ -64,9 +65,15 @@ export interface WorkbenchProps {
    * stop button that leaves the round running would be the one lie this
    * pane cannot afford. */
   readonly onStop?: (turnId: string) => void;
+  /** Light or dark. Defaults to light, as Atlas does. */
+  readonly theme?: StudioTheme;
+  /** Called with the theme a person picked. Remembering it is the driver's
+   * job, like every other persistence decision. When it is NOT supplied no
+   * toggle is drawn — a switch that does nothing would be worse than none. */
+  readonly onThemeChange?: ((theme: StudioTheme) => void) | undefined;
 }
 
-export function Workbench({ store, onPrompt, onStop }: WorkbenchProps) {
+export function Workbench({ store, onPrompt, onStop, theme = DEFAULT_THEME, onThemeChange }: WorkbenchProps) {
   const state = useSyncExternalStore(store.subscribe, store.getState, store.getState);
 
   const round = currentRound(state);
@@ -135,7 +142,7 @@ export function Workbench({ store, onPrompt, onStop }: WorkbenchProps) {
   ];
 
   return (
-    <div className="fd-wb">
+    <div className="fd-wb" data-theme={theme}>
       <style>{WORKBENCH_CSS}</style>
 
       <ChatPane
@@ -150,24 +157,28 @@ export function Workbench({ store, onPrompt, onStop }: WorkbenchProps) {
       />
 
       <main className="fd-main">
-        <div className="fd-tabs" role="tablist" aria-label="Workbench views">
-          {tabs.map((tab) => (
-            <button
-              key={tab.id}
-              type="button"
-              role="tab"
-              className="fd-tab"
-              aria-selected={state.view === tab.id}
-              onClick={() => store.setView(tab.id)}
-            >
-              {tab.label}
-              {tab.count !== undefined && tab.count > 0 && (
-                <span className={`fd-tab__count${tab.tone === "error" ? " fd-tab__count--error" : tab.tone === "warn" ? " fd-tab__count--warn" : ""}`}>
-                  {tab.count}
-                </span>
-              )}
-            </button>
-          ))}
+        <div className="fd-tabs">
+          {/* The tablist holds only tabs; the counts and the theme switch
+              beside it are not views and are not announced as if they were. */}
+          <div className="fd-tabs__group" role="tablist" aria-label="Workbench views">
+            {tabs.map((tab) => (
+              <button
+                key={tab.id}
+                type="button"
+                role="tab"
+                className="fd-tab"
+                aria-selected={state.view === tab.id}
+                onClick={() => store.setView(tab.id)}
+              >
+                {tab.label}
+                {tab.count !== undefined && tab.count > 0 && (
+                  <span className={`fd-tab__count${tab.tone === "error" ? " fd-tab__count--error" : tab.tone === "warn" ? " fd-tab__count--warn" : ""}`}>
+                    {tab.count}
+                  </span>
+                )}
+              </button>
+            ))}
+          </div>
           <span className="fd-tabs__spacer" />
           {/* The aggregate the tree's dots answer one file at a time: is
               there anything of mine in this round, and is any of it stuck
@@ -185,6 +196,7 @@ export function Workbench({ store, onPrompt, onStop }: WorkbenchProps) {
               round #{round.ordinal} · {round.candidate.manifest.id} · {round.candidate.manifest.envVar}
             </span>
           )}
+          {onThemeChange !== undefined && <ThemeToggle theme={theme} onChange={onThemeChange} />}
         </div>
 
         <div className="fd-body">

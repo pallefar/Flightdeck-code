@@ -19,7 +19,7 @@
  * pane and the preview are showing real generated source and a real gate
  * verdict, which is the only way a screenshot of this is worth anything.
  */
-import { StrictMode, useCallback, useEffect, useRef } from "react";
+import { StrictMode, useCallback, useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 
 import { generateSubApp } from "@codegen/pure";
@@ -27,6 +27,7 @@ import { runConformanceGate } from "@conformance/gate";
 
 import { Workbench } from "./workbench/Workbench";
 import { createStore } from "./workbench/store";
+import { DEFAULT_THEME, THEME_STORAGE_KEY, isStudioTheme, type StudioTheme } from "./workbench/theme";
 import type { Candidate, GeneratedFile } from "./workbench/types";
 import wcClockSpec from "../fixtures/wc-clock.spec.json";
 
@@ -142,7 +143,37 @@ async function drive(turnId: string, text: string): Promise<void> {
   store.settle(turnId, candidate);
 }
 
+/** The theme a person last picked on this origin, or Atlas's default.
+ *
+ * Persistence is the driver's, not the workbench's (see `store.test.ts`,
+ * "takes locks back from a driver that persisted them"). Every access is
+ * guarded: storage throws in some private windows and when site data is
+ * blocked, and a Studio that cannot remember a theme must still open. */
+function storedTheme(): StudioTheme {
+  try {
+    const value = window.localStorage.getItem(THEME_STORAGE_KEY);
+    return isStudioTheme(value) ? value : DEFAULT_THEME;
+  } catch {
+    return DEFAULT_THEME;
+  }
+}
+
 function App() {
+  const [theme, setTheme] = useState<StudioTheme>(storedTheme);
+  // Mirrored onto <html> so the page behind the workbench (and the next
+  // load's pre-paint script in index.html) agrees with it.
+  useEffect(() => {
+    document.documentElement.dataset["theme"] = theme;
+  }, [theme]);
+  const onThemeChange = useCallback((next: StudioTheme) => {
+    setTheme(next);
+    try {
+      window.localStorage.setItem(THEME_STORAGE_KEY, next);
+    } catch {
+      // Storage unavailable: the choice lasts for this tab, which is still a choice honoured.
+    }
+  }, []);
+
   const started = useRef(false);
   const onPrompt = useCallback((text: string, turnId: string) => {
     void drive(turnId, text);
@@ -155,7 +186,15 @@ function App() {
     if (turnId !== null) void drive(turnId, "Track the statutory consultation window for a contract folder.");
   }, []);
 
-  return <Workbench store={store} onPrompt={onPrompt} onStop={(turnId) => store.abort(turnId)} />;
+  return (
+    <Workbench
+      store={store}
+      onPrompt={onPrompt}
+      onStop={(turnId) => store.abort(turnId)}
+      theme={theme}
+      onThemeChange={onThemeChange}
+    />
+  );
 }
 
 const host = document.getElementById("root");
