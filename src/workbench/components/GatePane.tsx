@@ -7,6 +7,8 @@
  * caller can tell those apart, and throwing that away in the UI wastes the
  * one thing that makes a clean result trustworthy. So the summary counts
  * rules that ran and came back clean, and says so when it cannot. */
+import { useRef } from "react";
+import { useArriveInserted } from "../../motion/useMotion";
 import type { GateSummary } from "../selectors";
 import type { Candidate, Finding, Severity } from "../types";
 
@@ -29,18 +31,19 @@ export function GatePane({
   onFocusRule,
   onReveal,
 }: Props) {
+  // A filter that brings other findings brings them arriving, as Atlas's
+  // project cards do under its filter tabs. Decoration only (src/motion/).
+  const gateRef = useRef<HTMLDivElement>(null);
+  useArriveInserted(gateRef, ".fd-finding", filter);
+
   if (candidate === null) {
     return <div className="fd-empty">No round selected.</div>;
   }
 
-  const findings =
-    filter === "all" ? candidate.findings : candidate.findings.filter((f) => f.severity === filter);
-  const sorted = [...findings].sort((a, b) =>
-    a.severity === b.severity ? a.file.localeCompare(b.file) || a.line - b.line : a.severity === "error" ? -1 : 1,
-  );
+  const sorted = shownFindings(candidate.findings, filter);
 
   return (
-    <div className="fd-gate">
+    <div className="fd-gate" ref={gateRef}>
       <div className="fd-gate__summary">
         <Stat n={summary.errors} k="blocking" tone={summary.errors > 0 ? "error" : "ok"} />
         <Stat n={summary.warnings} k="warnings" tone={summary.warnings > 0 ? "warn" : "ok"} />
@@ -88,9 +91,9 @@ export function GatePane({
         </p>
       )}
 
-      {sorted.map((finding, i) => (
+      {sorted.map(({ key, finding }) => (
         <FindingCard
-          key={`${finding.rule}-${finding.file}-${finding.line}-${i}`}
+          key={key}
           finding={finding}
           focused={finding.rule === focusedRule}
           onFocus={onFocusRule}
@@ -99,6 +102,37 @@ export function GatePane({
       ))}
     </div>
   );
+}
+
+/** The findings `filter` shows, blocking first, then by file and line, each
+ * with a React key that does not depend on the filter.
+ *
+ * ── WHY THE KEY IS NOT THE CARD'S PLACE IN THE LIST ─────────────────
+ * useArriveInserted plays `arrive` on a card whose ELEMENT is new, and React
+ * keeps a card's element only while its key stays the same. A key that
+ * carried the card's place in the filtered list changed whenever a filter
+ * moved a card that stayed (All -> Warnings moves every warning up), so
+ * React remounted it and it faded out and rose back in although it never
+ * left. So the key is what the finding is: rule, file, line and column,
+ * plus a count for exact duplicates. That count runs over ALL of the
+ * candidate's findings, never the filtered list, so a finding keeps its key
+ * under every filter. Exported for the tests. */
+export function shownFindings(
+  findings: readonly Finding[],
+  filter: Severity | "all",
+): ReadonlyArray<{ readonly key: string; readonly finding: Finding }> {
+  const seen = new Map<string, number>();
+  const keyed = findings.map((finding) => {
+    const base = `${finding.rule}-${finding.file}-${finding.line}-${finding.column}`;
+    const n = seen.get(base) ?? 0;
+    seen.set(base, n + 1);
+    return { key: n === 0 ? base : `${base}#${n}`, finding };
+  });
+  return keyed
+    .filter(({ finding }) => filter === "all" || finding.severity === filter)
+    .sort(({ finding: a }, { finding: b }) =>
+      a.severity === b.severity ? a.file.localeCompare(b.file) || a.line - b.line : a.severity === "error" ? -1 : 1,
+    );
 }
 
 function Stat({
