@@ -7,7 +7,12 @@ and says why.
 - **Repo:** `https://github.com/pallefar/Flightdeck-code`
 - **Branch:** `claude/gauntlet-loop-install-hp490e` — the only branch. There is no
   `main` on origin, so clone and stay on this one.
-- **State:** 2207 tests passing, 0 skipped, 110 files, `tsc --noEmit` clean.
+- **State:** 2240 tests, 0 skipped, 111 files, `tsc --noEmit` clean (2026-09-22, Mac).
+  One case depends on the host checkout: against `project-contract` at
+  `integration/unified-2026-09-22`, `manifest-rules.test.ts` › "accepts the
+  hand-written docusign manifest" fails, because the host's manifest now computes
+  `contributions: docusignContributions` (host 42b0f308, OS-04) and the reader
+  accepts JSON literals only. 2239/2240 there; not a Studio regression.
 
 ---
 
@@ -105,7 +110,7 @@ cd Flightdeck-code
 git checkout claude/gauntlet-loop-install-hp490e
 npm ci                 # package-lock.json is committed
 npm run typecheck      # expect: clean
-npm test               # expect: 2207 passed, 0 skipped  — see the warning below
+npm test               # expect: 2240 passed, 0 skipped  — see the warning below
 ```
 
 > ⚠ **`npm test` FAILS if the host checkout is missing**, with a named reason.
@@ -247,7 +252,7 @@ curl -s localhost:8787/api/studio/build \
 
 | Command | What it does | Works here? |
 |---|---|---|
-| `npm test` | 2207 tests | ✅ |
+| `npm test` | 2240 tests | ✅ |
 | `npm run typecheck` | `tsc --noEmit` | ✅ |
 | `npm run dev` | Vite, the workbench | ✅ |
 | `npm run build` | `tsc -b` + Vite build → `dist/` | ✅ 553 kB bundle, 1.7s |
