@@ -86,9 +86,11 @@ export const routeSchema = z
     /**
      * The approved proposal template a `propose` route files (owner ruling 2026-09-22 (8)) -
      * an id, never the fields. Optional at this level because the Cowork-workflow path
-     * builds its own fixed proposal shape and names none; the prompt path's gates require
-     * one on every propose route, and `@pipeline`'s translator refuses a propose route that
-     * lacks one or names an unapproved one. A read route may not carry one.
+     * names none on its routes: its conversion resolves the catalogue's `step` template
+     * itself, and emits no propose route while that template is unapproved. The prompt
+     * path's gates require one on every propose route, and `@pipeline`'s translator refuses
+     * a propose route that lacks one or names an unapproved one. A read route may not carry
+     * one.
      */
     template: z.string().regex(TEMPLATE_ID_PATTERN, "template must be a lowercase slug").max(48).optional(),
   })

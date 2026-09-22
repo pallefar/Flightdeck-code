@@ -44,6 +44,7 @@ import type { MiniAppSpec as SpecSpec, SpecRoute } from "../../spec/src/schema";
 import {
   PROPOSAL_TEMPLATES,
   approvedTemplateMenu,
+  proposeOperation,
   resolveProposalTemplate,
   type ProposalTemplate,
   type TemplateResolution,
@@ -99,19 +100,6 @@ function templateNeeds(problem: Exclude<TemplateResolution, { ok: true }>["probl
     case "content-changed-since-approval":
       return "a re-approval — the proposal template this route names has changed since it was approved, so its approval no longer covers what it writes";
   }
-}
-
-/** The `@codegen` operation an approved template stands for, under THIS app's
- * id — `auditEvent` must be namespaced by the sub-app, and the template only
- * carries the suffix. */
-function proposeOperation(template: ProposalTemplate, appId: string): Operation {
-  return {
-    kind: "propose",
-    proposalKind: template.proposalKind,
-    ticketField: template.ticketField,
-    fields: template.fields.map((field) => ({ ...field, ...(field.values === undefined ? {} : { values: [...field.values] }) })),
-    auditEvent: `${appId}.${template.auditEventSuffix}`,
-  };
 }
 
 /**

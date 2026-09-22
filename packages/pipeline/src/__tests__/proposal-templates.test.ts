@@ -25,9 +25,14 @@ const divergence = (): ProposalTemplate => {
   return found;
 };
 
+/** The two templates the owner approved seeding (ruling 8). */
+const SEEDS = ["divergence", "handoff"];
+const seeds = () => PROPOSAL_TEMPLATES.filter((t) => SEEDS.includes(t.id));
+
 describe("the seeded catalogue", () => {
-  it("⭐ holds exactly the two templates the owner approved seeding", () => {
-    expect(PROPOSAL_TEMPLATES.map((t) => t.id)).toEqual(["divergence", "handoff"]);
+  it("⭐ holds the two approved seeds, and the conversion's `step` shape unapproved", () => {
+    expect(PROPOSAL_TEMPLATES.map((t) => t.id)).toEqual(["divergence", "handoff", "step"]);
+    expect(PROPOSAL_TEMPLATES.filter((t) => checkTemplateApproval(t) === null).map((t) => t.id)).toEqual(SEEDS);
   });
 
   it("⭐ is contract-run's existing divergence and handoff shapes, field for field", () => {
@@ -38,7 +43,7 @@ describe("the seeded catalogue", () => {
     const proposals = domains
       .flatMap((d) => d.routes)
       .flatMap((r) => (r.operation.kind === "propose" ? [r.operation] : []));
-    for (const template of PROPOSAL_TEMPLATES) {
+    for (const template of seeds()) {
       const source = proposals.find((op) => op.proposalKind === template.proposalKind);
       expect(source, template.id).toBeDefined();
       expect(template.ticketField).toBe(source?.ticketField);
@@ -47,8 +52,8 @@ describe("the seeded catalogue", () => {
     }
   });
 
-  it("carries an approval record on every template, by a named human, on the ruling's date", () => {
-    for (const template of PROPOSAL_TEMPLATES) {
+  it("carries an approval record on every seed, by a named human, on the ruling's date", () => {
+    for (const template of seeds()) {
       expect(template.approval, template.id).not.toBeNull();
       expect(isNamedHuman(template.approval?.approvedBy)).toBe(true);
       expect(template.approval?.approvedAt).toBe("2026-09-22");
@@ -73,6 +78,36 @@ describe("the seeded catalogue", () => {
       expect(Object.isFrozen(template.approval)).toBe(true);
       for (const field of template.fields) expect(Object.isFrozen(field)).toBe(true);
     }
+  });
+});
+
+describe("⛔ the conversion's `step` template — in the catalogue, never generated from", () => {
+  const step = () => {
+    const found = PROPOSAL_TEMPLATES.find((t) => t.id === "step");
+    if (found === undefined) throw new Error("the step template is missing");
+    return found;
+  };
+
+  it("carries no approval: the owner has not approved it", () => {
+    expect(step().approval).toBeNull();
+    expect(checkTemplateApproval(step())).toBe("unapproved");
+    expect(resolveProposalTemplate("step")).toEqual({ ok: false, problem: "unapproved" });
+  });
+
+  it("is off the planner's menu", () => {
+    expect(approvedTemplateMenu().map((t) => t.id)).not.toContain("step");
+  });
+
+  it("is the conversion's fixed step proposal, field for field — named, so an approval approves THAT", () => {
+    expect(step().proposalKind).toBe("step");
+    expect(step().ticketField).toBe("ticket");
+    expect(step().fields).toEqual([
+      { name: "ticket", type: "string", maxLength: 64 },
+      { name: "step", type: "string", maxLength: 48 },
+      { name: "note", type: "string", optional: true, maxLength: 500 },
+    ]);
+    expect(step().auditEventSuffix).toBe("step-proposed");
+    expect(step().derivedFrom).toContain("conversion.ts");
   });
 });
 

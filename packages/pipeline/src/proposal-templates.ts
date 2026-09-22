@@ -29,8 +29,9 @@
  * It is a frozen literal in source. Adding or widening a template is a code change with an
  * approval record a reviewer can read; nothing at runtime can extend it. `translateSpec` and
  * `approvedTemplateMenu` take the catalogue as a parameter only so the refusals can be tested
- * against an unapproved entry; the production path (`buildSubAppFromPrompt`, and through it
- * the server) passes none, so it always reads this one.
+ * against an unapproved entry (and `convertWorkflow`, so the approved `step` path can be); the
+ * production paths (`buildSubAppFromPrompt`, and through it the server, and the conversion)
+ * pass none, so they always read this one.
  *
  * ── THE SEED ─────────────────────────────────────────────────────────────────────────────
  * Two templates, derived from contract-run's existing `divergence` and `handoff` shapes
@@ -38,12 +39,18 @@
  * steps 2 and 5). The owner approved seeding these by accepting the recommendation. The test
  * compares them to the fixture field for field, so "derived from" is checked, not claimed.
  *
- * ⛔ NOT COVERED: the Cowork-workflow conversion (`packages/subapp/src/studio/conversion.ts`)
- * builds its own fixed `step` proposal (`ticket`, `step`, `note`) in code. It is not model-
- * authored, and bringing it under this catalogue would need a `step` template the owner has
- * not approved — so it is left as it is and named in HANDOVER §6 rather than folded in here.
+ * ── THE CONVERSION'S `step` TEMPLATE: IN THE CATALOGUE, NOT APPROVED ─────────────────────
+ * The Cowork-workflow conversion (`packages/subapp/src/studio/conversion.ts`) used to write
+ * its own fixed `step` proposal (`ticket`, `step`, `note`) in code, outside this catalogue.
+ * The ruling covers it all the same — "proposing apps are generated ONLY from" this
+ * catalogue, and "generation refuses unapproved ones" — so that shape is now the `step`
+ * entry below, with `approval: null`: visible, reviewable, never generated from. The
+ * conversion resolves it like any other template and, while it is unapproved, emits no
+ * proposing route (and so no `write:inbox-proposal`). Approving it is one approval record
+ * on that entry; carving the conversion out of the ruling instead is the owner's call, not
+ * this file's (HANDOVER §8).
  */
-import type { FieldSpec } from "../../codegen/src/spec-contract";
+import type { FieldSpec, MiniAppSpec as CodegenSpec } from "../../codegen/src/spec-contract";
 import { isNamedHuman } from "../../guardrails/src/approval-pure";
 import { contentHashWith, sha256Hex } from "../../guardrails/src/pure";
 import type { ProposalTemplateChoice } from "../../spec/src/templates";
@@ -156,7 +163,41 @@ export const PROPOSAL_TEMPLATES: readonly ProposalTemplate[] = Object.freeze([
     derivedFrom: "codegen/src/fixtures/specs.ts contractRunSpec, POST /handoff (orchestrate-workflow step 5)",
     approval: { ...RULING_8, contentHash: "3cb75f1788cc1a6f9838626a2bdfb1058704fd8ce6159710af6ad1e13aa4a1e5" },
   }),
+  // ⛔ UNAPPROVED. The shape the Cowork-workflow conversion wrote in code before ruling 8
+  // brought it under this catalogue, transcribed exactly — so approving it changes nothing
+  // but the fact of approval. Until an approval record is added here, no proposing route is
+  // generated from it (see the header).
+  sealed({
+    id: "step",
+    summary: "Propose that a person act on one step of a converted workflow, for a contract folder.",
+    proposalKind: "step",
+    ticketField: "ticket",
+    fields: [
+      { name: "ticket", type: "string", maxLength: 64 },
+      { name: "step", type: "string", maxLength: 48 },
+      { name: "note", type: "string", optional: true, maxLength: 500 },
+    ],
+    auditEventSuffix: "step-proposed",
+    derivedFrom: "packages/subapp/src/studio/conversion.ts, the Cowork-workflow conversion's fixed step proposal (before ruling 8)",
+    approval: null,
+  }),
 ]);
+
+type Operation = CodegenSpec["domains"][number]["routes"][number]["operation"];
+
+/** The `@codegen` operation an approved template stands for, under THIS app's id —
+ * `auditEvent` must be namespaced by the sub-app, and the template only carries the
+ * suffix. The one place a template becomes an operation: `translate-spec.ts` (the model's
+ * path) and the workflow conversion both build their proposing routes through it. */
+export function proposeOperation(template: ProposalTemplate, appId: string): Operation {
+  return {
+    kind: "propose",
+    proposalKind: template.proposalKind,
+    ticketField: template.ticketField,
+    fields: template.fields.map((field) => ({ ...field, ...(field.values === undefined ? {} : { values: [...field.values] }) })),
+    auditEvent: `${appId}.${template.auditEventSuffix}`,
+  };
+}
 
 /** A template the model named, if it is in the catalogue AND approved. */
 export function resolveProposalTemplate(
