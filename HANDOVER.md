@@ -7,16 +7,22 @@ and says why.
 - **Repo:** `https://github.com/pallefar/Flightdeck-code`
 - **Branch:** `claude/gauntlet-loop-install-hp490e` — the only branch. There is no
   `main` on origin, so clone and stay on this one.
-- **State:** 2309 tests, 0 skipped, 115 files, all passing against `project-contract`
+- **State:** 2353 tests, 0 skipped, 118 files, all passing against `project-contract`
   at `integration/unified-2026-09-22`; `tsc --noEmit` clean (2026-09-22, Mac).
   The one host-dependent failure is closed: the host's docusign manifest declares
   `contributions: docusignContributions` (host 42b0f308, OS-04), a member of
   `SubAppManifest` that `subAppManifestSchema` never validates — like
-  `initSchema`/`registerRoutes`. The manifest reader now sets aside exactly the
-  members the host's interface adds beyond the Zod data (drift-tested against
-  `server/subapps/types.ts` in both directions), splits members by bracket depth
-  rather than by line, and still throws on a computed data field, a computed
-  unknown member, a spread or a shorthand.
+  `initSchema`/`registerRoutes`. Codegen's test-only manifest reader now sets
+  aside exactly the members the host's interface adds beyond the Zod data
+  (drift-tested against `server/subapps/types.ts` in both directions), splits
+  members by bracket depth rather than by line, and still throws on a computed
+  data field, a computed unknown member, a spread or a shorthand.
+  ⛔ **The conformance gate treats `contributions` the opposite way: it REFUSES
+  it (FD-M008).** The host acts on it at boot (`assertContributionsUnambiguous`)
+  and at runtime, so a generated mini-app may not declare one. Before this, the
+  gate called it "additive and ignored" and passed a manifest that contributed
+  signing state. `manifest-members-drift.test.ts` now fails if the host's
+  manifest gains a member the gate neither validates, requires nor refuses.
 
 ---
 
@@ -114,7 +120,7 @@ cd Flightdeck-code
 git checkout claude/gauntlet-loop-install-hp490e
 npm ci                 # package-lock.json is committed
 npm run typecheck      # expect: clean
-npm test               # expect: 2309 passed, 0 skipped  — see the warning below
+npm test               # expect: 2353 passed, 0 skipped  — see the warning below
 ```
 
 > ⚠ **`npm test` FAILS if the host checkout is missing**, with a named reason.
@@ -256,7 +262,7 @@ curl -s localhost:8787/api/studio/build \
 
 | Command | What it does | Works here? |
 |---|---|---|
-| `npm test` | 2309 tests | ✅ |
+| `npm test` | 2353 tests | ✅ |
 | `npm run typecheck` | `tsc --noEmit` | ✅ |
 | `npm run dev` | Vite, the workbench | ✅ |
 | `npm run build` | `tsc -b` + Vite build → `dist/` | ✅ 553 kB bundle, 1.7s |
@@ -369,12 +375,16 @@ These are load-bearing. Each is a property something else depends on.
   `handoff`, taken from `contractRunSpec` and tested against it field for field.
   Each carries `approvedBy`/`approvedAt` plus a content hash, so editing a
   template after approval invalidates it. Read-only mini-apps are unchanged.
-  ⚠ What is NOT covered: the Cowork-workflow conversion
-  (`packages/subapp/src/studio/conversion.ts`) still builds its own fixed `step`
-  proposal (`ticket`, `step`, `note`) in code. It is not model-authored, but it
-  is outside the catalogue. Bringing it under would need a `step` template that
-  the owner has not approved, so it is an open question for the owner, not
-  something to fold in quietly.
+  The Cowork-workflow conversion (`packages/subapp/src/studio/conversion.ts`)
+  is under the catalogue too (fix round 1): its old in-code `step` proposal
+  (`ticket`, `step`, `note`) is now the catalogue's `step` template with
+  `approval: null`, and the conversion resolves it like any other template.
+  ⚠ Consequence to know about: until the owner approves `step`, a converted
+  workflow files NO proposal. Its propose route and `write:inbox-proposal` are
+  dropped with a warning naming ruling 8, its proposal steps show on the rail
+  without an action, and a workflow whose every route would file a proposal is
+  `rejected` by name. Approving `step` restores the previous output byte for
+  byte (checked: same files, same warnings). See §8 for the choice.
 - **The workbench has a browser-only "Download candidate" (closed 2026-09-22,
   owner ruling 9, see §8).** It sits in the tab strip. It is enabled only when
   the conformance gate passes on the EDITED files (the saved overlay, re-gated
@@ -391,7 +401,14 @@ These are load-bearing. Each is a property something else depends on.
   hand-edited candidate cannot yet be promoted as edited. The download is for
   review. Separately, the Gate tab still shows the verdict on Studio's own
   text; the verdict on the edited files appears only in the download button's
-  tooltip and in the downloaded file.
+  tooltip and in the downloaded file. The tooltip therefore names the first
+  failing error by rule, file and line (`FD-M003 server/subapps/wc-clock/
+  manifest.ts:35 — …`, "(and N more)"), since no pane shows it. Showing the
+  edited-files verdict in the Gate pane itself is the larger follow-up.
+  The adapter that decides the verdict in the shipped app now lives in
+  `src/wiring.ts` (moved out of `main.tsx`) and is tested against the real gate
+  (`src/__tests__/wiring.test.ts`); before, changing it to `ok: true` left the
+  suite green.
 
 ---
 
@@ -471,6 +488,37 @@ orchestrator adds the D-entries at merge.
 - **Approval recorded on the two seeds:** `approvedBy: "Karsten Haldan"`,
   `approvedAt: "2026-09-22"`. The owner approved seeding these by accepting the
   recommendation.
+- **Fix round 1 — the workflow conversion brought under the ruling.** Review
+  found the ruling implemented more narrowly than it reads: the Cowork-workflow
+  conversion (`packages/subapp/src/studio/conversion.ts`) still wrote a fixed
+  `step` proposal in code, outside the catalogue, and this document had left that
+  as an open question. The ruling already answers it: "proposing apps are
+  generated ONLY from a closed catalogue of proposal templates the owner
+  approves … generation refuses unapproved ones", and the owner's reply to it was,
+  verbatim, "take your recommendations". So:
+  - The conversion's shape is now the catalogue's `step` entry, transcribed field
+    for field (`ticket` ≤64, `step` ≤48, optional `note` ≤500, audited as
+    `<id>.step-proposed`), with **`approval: null`**. It is visible in review,
+    left off the planner's menu, and never generated from.
+  - The conversion resolves it through `resolveProposalTemplate` and builds the
+    operation with the same `proposeOperation` the prompt path uses (moved into
+    `proposal-templates.ts`). While it is unapproved, the propose route is dropped
+    and so is `write:inbox-proposal` (least privilege: no consent line for a write
+    the app cannot make), each with a warning that cites ruling 8. The review
+    summary shows the capabilities the manifest actually declares. A workflow
+    with nothing left to generate is `rejected` by name.
+  - **Choice made, stated so it can be vetoed:** drop and warn rather than reject
+    every workflow with a proposal step. The ruling says "refuses"; what is
+    refused is the proposing ROUTE. The read-only rest of the app is still
+    generated, the same way the conversion already drops routes it cannot serve.
+  - **No new owner decision was taken here.** Two ways forward are the owner's:
+    approve the `step` template (add an approval record to that entry; output
+    returns to exactly what it was), or carve the conversion out of ruling 8
+    explicitly.
+  - Tests: the `step` block in `proposal-templates.test.ts`, and the ruling 8
+    block in `subapp/src/__tests__/conversion.test.ts`, which also proves an
+    approved `step` builds the route FROM the template and a widened one is
+    refused.
 
 ### Ruling 9: getting the edited files out of the workbench
 
@@ -486,8 +534,8 @@ orchestrator adds the D-entries at merge.
 - **Owner's reply, verbatim:** "take your recommendations"
 - **Implemented:** `src/workbench/download.ts` decides readiness, builds the
   document and does the browser save. `Workbench.tsx` takes the gate as an
-  injected `checkFiles` prop and shows the button, and `main.tsx` wires in
-  `runConformanceGate`. `EditorPane.tsx` has the Save relabel. Tests:
+  injected `checkFiles` prop and shows the button, and `main.tsx` passes in
+  `src/wiring.ts`'s adapter over `runConformanceGate`. `EditorPane.tsx` has the Save relabel. Tests:
   `src/workbench/__tests__/download.test.ts` plus the new blocks in
   `components.test.tsx`. Also checked in headless Chromium against the dev
   server: the download fires with no network request; an unsaved edit disables
@@ -500,3 +548,28 @@ orchestrator adds the D-entries at merge.
     the host.
   - It is also disabled while an edit is unsaved or a conflict is open. In
     either state the download would silently differ from what the panes show.
+- **Fix round 1 — "enabled only when the conformance gate passes on the edited
+  files", made true and tested.** The owner's reply is the same, verbatim: "take
+  your recommendations". Review found three ways the implementation fell short
+  of that sentence:
+  - **The gate passed a manifest the host refuses to boot.** It called any member
+    outside the Zod data "additive and ignored", which stopped being true at host
+    42b0f308 (OS-04). A manifest carrying `contributions` (signing state, `/api/state`
+    flags, background work handed the raw db) passed with zero findings, so the
+    button enabled and the file said `gate.ok: true`. Now FD-M008 refuses
+    `contributions` in any spelling, plus spreads and computed keys that could
+    hide it. The typecheck stub types it `never`, and the mount probe refuses a
+    manifest object that carries it at runtime. `manifest-members-drift.test.ts`
+    reads the host's `SubAppManifest` and fails on any member the gate neither
+    validates, requires nor refuses.
+  - **The shipped adapter was untested.** `checkFiles` moved from `main.tsx` to
+    `src/wiring.ts`, not into `src/workbench/`, which imports neither the
+    generator nor the gate (`workbench/types.ts`). `src/__tests__/wiring.test.ts`
+    runs it against the real gate through the real store. A saved
+    `navSection: "Mini apps"` edit (FD-M003) and a saved `contributions` edit
+    (FD-M008) each disable the button. `rulesRun` is the report's rules, not its
+    checks. Changing the adapter to `ok: true` now fails two tests.
+  - **The refusal named no error.** The tooltip said "(1 error) — fix them
+    first", but the Gate pane shows Studio's verdict and listed nothing. It now
+    names the first error by rule, file and line, adds "(and N more)", and says
+    "it"/"them" by count (conflicts too).
