@@ -16,7 +16,9 @@
  * frozen snapshot whose identity changes only on a real change, which is
  * the contract that hook wants — see `store.ts` for why the no-op case is
  * load-bearing rather than an optimisation. */
-import { useCallback, useMemo, useSyncExternalStore } from "react";
+import { useCallback, useMemo, useRef, useSyncExternalStore } from "react";
+import { TabIndicator } from "../motion/TabIndicator";
+import { usePanelSwap } from "../motion/useMotion";
 import { ChatPane } from "./components/ChatPane";
 import { DiffPane } from "./components/DiffPane";
 import { FileTreePane } from "./components/FileTreePane";
@@ -106,6 +108,11 @@ export function Workbench({ store, onPrompt, onStop, theme = DEFAULT_THEME, onTh
     else onStop(turnId);
   }, [store, onStop]);
 
+  // Atlas's panel motion: a new view swaps in, another round re-enters.
+  // Decoration only; with motion off it writes nothing (src/motion/).
+  const bodyRef = useRef<HTMLDivElement>(null);
+  usePanelSwap(bodyRef, state.view, state.selectedRoundId);
+
   const run = visibleRun(state);
   const running = activeRun(state);
   const steps = progress(state);
@@ -161,6 +168,9 @@ export function Workbench({ store, onPrompt, onStop, theme = DEFAULT_THEME, onTh
           {/* The tablist holds only tabs; the counts and the theme switch
               beside it are not views and are not announced as if they were. */}
           <div className="fd-tabs__group" role="tablist" aria-label="Workbench views">
+            {/* Atlas's sliding indicator. Hidden and aria-hidden at rest, so
+                the tablist still holds only the five tabs. */}
+            <TabIndicator activeKey={state.view} />
             {tabs.map((tab) => (
               <button
                 key={tab.id}
@@ -199,7 +209,7 @@ export function Workbench({ store, onPrompt, onStop, theme = DEFAULT_THEME, onTh
           {onThemeChange !== undefined && <ThemeToggle theme={theme} onChange={onThemeChange} />}
         </div>
 
-        <div className="fd-body">
+        <div className="fd-body" ref={bodyRef}>
           {/* Before the candidate check: the run pane is the only one that
               is useful while there is no candidate yet, which is exactly
               when a person most wants to know what is happening. */}

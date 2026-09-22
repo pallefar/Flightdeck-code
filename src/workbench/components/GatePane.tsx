@@ -7,6 +7,8 @@
  * caller can tell those apart, and throwing that away in the UI wastes the
  * one thing that makes a clean result trustworthy. So the summary counts
  * rules that ran and came back clean, and says so when it cannot. */
+import { useRef } from "react";
+import { useArriveInserted } from "../../motion/useMotion";
 import type { GateSummary } from "../selectors";
 import type { Candidate, Finding, Severity } from "../types";
 
@@ -29,6 +31,11 @@ export function GatePane({
   onFocusRule,
   onReveal,
 }: Props) {
+  // A filter that brings other findings brings them arriving, as Atlas's
+  // project cards do under its filter tabs. Decoration only (src/motion/).
+  const gateRef = useRef<HTMLDivElement>(null);
+  useArriveInserted(gateRef, ".fd-finding", filter);
+
   if (candidate === null) {
     return <div className="fd-empty">No round selected.</div>;
   }
@@ -40,7 +47,7 @@ export function GatePane({
   );
 
   return (
-    <div className="fd-gate">
+    <div className="fd-gate" ref={gateRef}>
       <div className="fd-gate__summary">
         <Stat n={summary.errors} k="blocking" tone={summary.errors > 0 ? "error" : "ok"} />
         <Stat n={summary.warnings} k="warnings" tone={summary.warnings > 0 ? "warn" : "ok"} />
