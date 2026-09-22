@@ -333,7 +333,8 @@ describe("the sandbox is a sandbox", () => {
   it("hands the probe no environment to leak", async () => {
     const staged = await stage({
       modules: new Map(),
-      rootFiles: new Map([["harness.mjs", 'console.log("ENV:" + Object.keys(process.env).sort().join(","));\n']]),
+      // macOS injects __CF_USER_TEXT_ENCODING into every child process itself; it is not ours to leak.
+      rootFiles: new Map([["harness.mjs", 'console.log("ENV:" + Object.keys(process.env).filter((k) => k !== "__CF_USER_TEXT_ENCODING").sort().join(","));\n']]),
       repoRoot: REPO_ROOT,
     });
     stages.push(staged);

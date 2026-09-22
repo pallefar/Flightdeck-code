@@ -50,7 +50,10 @@ export interface Stage {
  * program nobody wrote. There is no `.catch(log)` in this function on
  * purpose. */
 export async function stage(input: StageInput): Promise<Stage> {
-  const dir = await mkdtemp(join(tmpdir(), "flightdeck-verify-"));
+  // Resolved, because the --allow-fs-read grants below are matched against
+  // real paths: on macOS tmpdir() is under /var, a symlink to /private/var,
+  // and an unresolved grant denies the probe its own staging tree.
+  const dir = await realpath(await mkdtemp(join(tmpdir(), "flightdeck-verify-")));
   const appDir = join(dir, "app");
   let nodeModules = join(input.repoRoot, "node_modules");
   try {

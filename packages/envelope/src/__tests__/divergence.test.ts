@@ -38,6 +38,7 @@
  */
 
 import fs from "node:fs";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import {
   HOST_ABSENCE_ACK_ENV,
@@ -65,7 +66,7 @@ import {
 } from "../allowlists";
 
 const host = hostAvailability();
-const MIRROR = new URL("../host-scan.ts", import.meta.url).pathname;
+const MIRROR = fileURLToPath(new URL("../host-scan.ts", import.meta.url));
 
 /** Both directions, named. Returns a human-readable report or null. */
 function diff(label: string, studio: readonly string[], hostList: readonly string[]): string | null {

@@ -36,6 +36,7 @@
  * still compared character for character.
  */
 import fs from "node:fs";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { HOST_ROOT } from "../../../guardrails/src/host-source";
 
@@ -44,7 +45,7 @@ import { HOST_ROOT } from "../../../guardrails/src/host-source";
 // this whole file skipped — silently, and on a MAC that is every run.
 // `HOST_ROOT` is the one place that reads FLIGHTDECK_HOST_ROOT.
 const HOST = `${HOST_ROOT}/flightdeck/server/services/ai/envelope.ts`;
-const MIRROR = new URL("../host-mirror.ts", import.meta.url).pathname;
+const MIRROR = fileURLToPath(new URL("../host-mirror.ts", import.meta.url));
 const available = fs.existsSync(HOST);
 
 /**

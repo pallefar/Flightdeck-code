@@ -41,6 +41,7 @@
  */
 
 import fs from "node:fs";
+import { fileURLToPath } from "node:url";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { readStringArray } from "../../../guardrails/src/host-source";
@@ -56,7 +57,7 @@ import {
 import { MAX_TEXT_CHARS } from "../allowlists";
 import { SCANNED_CLASSES } from "../host-scan";
 
-const PSEUDONYM = path.join(new URL("../../../pseudonym/src/", import.meta.url).pathname);
+const PSEUDONYM = path.join(fileURLToPath(new URL("../../../pseudonym/src/", import.meta.url)));
 const TIER = path.join(PSEUDONYM, "tier.ts");
 const REPRESENTATIONS = path.join(PSEUDONYM, "representations.ts");
 
@@ -144,7 +145,7 @@ describe("the vocabularies are what makes the advertised bound a bound", () => {
     // before. The total is asserted so a parser that stops working fails.
     let specifiers = 0;
     for (const file of ["build.ts", "coverage.ts", "types.ts", "allowlists.ts", "host-scan.ts", "index.ts"]) {
-      const src = fs.readFileSync(new URL(`../${file}`, import.meta.url).pathname, "utf8");
+      const src = fs.readFileSync(fileURLToPath(new URL(`../${file}`, import.meta.url)), "utf8");
       const found = [
         ...src.matchAll(/^import\s+(?!type\b)[\s\S]*?from\s+"([^"]+)";/gm),
         ...src.matchAll(/^export\s+(?!type\b)[\s\S]*?from\s+"([^"]+)";/gm),

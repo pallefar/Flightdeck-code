@@ -181,7 +181,7 @@ describe("when the filesystem says no in the middle", () => {
     expect(refused.message).toContain("rolled back");
     expect(refused.writes.find((w) => w.path === WEB_PATH)?.status).toBe("failed");
     // The real message from the filesystem, not a summary of it.
-    expect(refused.writes.find((w) => w.path === WEB_PATH)?.error).toMatch(/EISDIR|EPERM|illegal operation/i);
+    expect(refused.writes.find((w) => w.path === WEB_PATH)?.error).toMatch(/EISDIR|EPERM|ENOTSUP|illegal operation/i);
     // And nothing that landed before the failure is still there.
     expect(await exists(join(root, MANIFEST_PATH))).toBe(false);
     expect(await exists(join(root, ROUTES_PATH))).toBe(false);
