@@ -18,17 +18,22 @@
  * like Chrome with no reduced-motion preference.
  *
  * NOT covered here, and why: timing, easing and the stagger's spacing (no
- * frame here is painted), and the hooks' effects themselves (no renderer
- * runs effects without a DOM). The hooks' decisions are pure functions and
- * are tested as such; the curves, the hand-back and interruption were
- * checked on frames recorded in real Chrome against Atlas
+ * frame here is painted). The hooks' decisions are pure functions and are
+ * tested as such. One hook is also run for real: useArriveInserted inside
+ * GatePane, mounted by react-dom/client on a small fake document, because
+ * which cards count as inserted depends on React keeping their elements,
+ * and only a real reconciler shows that. The curves, the hand-back and
+ * interruption were checked on frames recorded in real Chrome against Atlas
  * (.shots/studio-motion/). */
+import { act } from "react";
+import { createRoot } from "react-dom/client";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { GatePane } from "../../workbench/components/GatePane";
+import { candidate, finding } from "../../workbench/__tests__/fixtures";
+import { GatePane, shownFindings } from "../../workbench/components/GatePane";
 import { gateSummary } from "../../workbench/selectors";
 import { createStore } from "../../workbench/store";
-import type { Candidate } from "../../workbench/types";
+import type { Candidate, Severity } from "../../workbench/types";
 import { Workbench } from "../../workbench/Workbench";
 import { MOTION, arrive, closePanel, motionAllowed, motionSupported, reenter, slideIndicator, swapIn } from "../motion";
 import { tabGhost } from "../TabIndicator";
@@ -392,6 +397,314 @@ describe("Studio's hooks: what they decide to play", () => {
     ]);
     expect(insertedByDelay(new Set(["a", "b"]), ["b", "a"]).size).toBe(0); // reordered, nothing new
     expect([...insertedByDelay(new Set<string>(), ["x"])]).toEqual([[0, ["x"]]]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Just enough DOM for react-dom/client to mount ONE pane, effects and all.
+//
+// useArriveInserted decides what arrives by element identity: a card is
+// "inserted" when its element was not there in the last commit. Which
+// elements survive a filter change is React's decision, made from the
+// cards' keys, so this is the one place the pure-function tests above
+// cannot reach: a card keyed by its list position is remounted when a filter
+// moves it, and then arrives although it never left. These classes are what
+// react-dom touches to mount and update GatePane, and no more.
+
+class DomStyle extends FakeStyle {
+  readonly #onWrite: () => void;
+  constructor(onWrite: () => void) {
+    super();
+    this.#onWrite = onWrite;
+  }
+  override setProperty(name: string, value: string | null, priority = ""): void {
+    this.#onWrite();
+    super.setProperty(name, value, priority);
+  }
+  override removeProperty(name: string): string {
+    this.#onWrite();
+    return super.removeProperty(name);
+  }
+}
+
+class DomNode {
+  parentNode: DomNode | null = null;
+  childNodes: DomNode[] = [];
+  constructor(
+    readonly nodeType: number,
+    readonly nodeName: string,
+    readonly ownerDocument: DomDocument | null,
+  ) {}
+  get firstChild(): DomNode | null {
+    return this.childNodes[0] ?? null;
+  }
+  get lastChild(): DomNode | null {
+    return this.childNodes[this.childNodes.length - 1] ?? null;
+  }
+  get nextSibling(): DomNode | null {
+    const siblings = this.parentNode?.childNodes ?? [];
+    return siblings[siblings.indexOf(this) + 1] ?? null;
+  }
+  get parentElement(): DomNode | null {
+    return this.parentNode?.nodeType === 1 ? this.parentNode : null;
+  }
+  get isConnected(): boolean {
+    let node: DomNode = this;
+    while (node.parentNode) node = node.parentNode;
+    return node.nodeType === 9;
+  }
+  appendChild(child: DomNode): DomNode {
+    return this.insertBefore(child, null);
+  }
+  insertBefore(child: DomNode, ref: DomNode | null): DomNode {
+    child.parentNode?.removeChild(child);
+    const at = ref === null ? this.childNodes.length : this.childNodes.indexOf(ref);
+    this.childNodes.splice(at, 0, child);
+    child.parentNode = this;
+    return child;
+  }
+  removeChild(child: DomNode): DomNode {
+    this.childNodes.splice(this.childNodes.indexOf(child), 1);
+    child.parentNode = null;
+    return child;
+  }
+  get textContent(): string {
+    return this.childNodes.map((c) => c.textContent).join("");
+  }
+  set textContent(text: string) {
+    for (const c of this.childNodes) c.parentNode = null;
+    this.childNodes = [];
+    if (text && this.ownerDocument) this.appendChild(this.ownerDocument.createTextNode(text));
+  }
+  addEventListener(): void {}
+  removeEventListener(): void {}
+}
+
+class DomText extends DomNode {
+  constructor(
+    public nodeValue: string,
+    doc: DomDocument,
+  ) {
+    super(3, "#text", doc);
+  }
+  override get textContent(): string {
+    return this.nodeValue;
+  }
+  override set textContent(text: string) {
+    this.nodeValue = text;
+  }
+}
+
+class DomElement extends DomNode {
+  /** Every write to this element's inline style, including ones later taken back. */
+  styleWrites = 0;
+  style: FakeStyle = new DomStyle(() => this.styleWrites++);
+  readonly namespaceURI = "http://www.w3.org/1999/xhtml";
+  readonly sheet: Record<string, string> = {};
+  readonly #attrs = new Map<string, string>();
+  constructor(tag: string, doc: DomDocument) {
+    super(1, tag.toUpperCase(), doc);
+  }
+  get tagName(): string {
+    return this.nodeName;
+  }
+  get children(): DomElement[] {
+    return this.childNodes.filter((c): c is DomElement => c instanceof DomElement);
+  }
+  setAttribute(name: string, value: string): void {
+    this.#attrs.set(name, String(value));
+  }
+  getAttribute(name: string): string | null {
+    if (name === "style") return this.style.touched ? this.style.cssText : null;
+    return this.#attrs.get(name) ?? null;
+  }
+  hasAttribute(name: string): boolean {
+    return this.getAttribute(name) !== null;
+  }
+  removeAttribute(name: string): void {
+    if (name === "style") this.style = new DomStyle(() => this.styleWrites++);
+    this.#attrs.delete(name);
+  }
+  /** `.class` selectors only, which is all the hooks use. */
+  querySelectorAll(selector: string): DomElement[] {
+    const cls = selector.replace(/^\./, "");
+    const found: DomElement[] = [];
+    const walk = (el: DomElement) => {
+      for (const kid of el.children) {
+        if ((kid.getAttribute("class") ?? "").split(/\s+/).includes(cls)) found.push(kid);
+        walk(kid);
+      }
+    };
+    walk(this);
+    return found;
+  }
+}
+
+class DomDocument extends DomNode {
+  readonly body: DomElement;
+  readonly activeElement = null;
+  readonly visibilityState = "visible";
+  defaultView: unknown = null;
+  constructor() {
+    super(9, "#document", null);
+    this.body = this.createElement("body");
+    this.appendChild(this.body);
+  }
+  createElement(tag: string): DomElement {
+    return new DomElement(tag, this);
+  }
+  createTextNode(text: string): DomText {
+    return new DomText(text, this);
+  }
+}
+
+/** asBrowser(), plus a document react-dom can mount into. */
+function asBrowserWithDom(): DomElement {
+  asBrowser();
+  const doc = new DomDocument();
+  const win = { ...(globalThis.window as object), document: doc, HTMLIFrameElement: class FakeIframe {} };
+  doc.defaultView = win;
+  vi.stubGlobal("window", win);
+  vi.stubGlobal("document", doc);
+  vi.stubGlobal("Element", DomElement);
+  vi.stubGlobal("HTMLElement", DomElement);
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const container = doc.createElement("div");
+  doc.body.appendChild(container);
+  return container;
+}
+
+describe("GatePane's filter, mounted by react-dom with motion on", () => {
+  // Three blocking findings and three warnings, as the review recorded them:
+  // in "All" the warnings sit at places 3-5, under "Warnings" at 0-2.
+  const sixFindings = candidate({
+    findings: [
+      finding("FD-X001", "(candidate)", 0, "no registry edit", "warning"),
+      finding("FD-E901", "server/e1.ts", 1, "blocking 1"),
+      finding("FD-W901", "server/w1.ts", 1, "warning 1", "warning"),
+      finding("FD-E902", "server/e2.ts", 2, "blocking 2"),
+      finding("FD-W902", "server/w2.ts", 2, "warning 2", "warning"),
+      finding("FD-E903", "server/e3.ts", 3, "blocking 3"),
+    ],
+  });
+
+  it("All -> Warnings -> All: a card that stays is the same element and is never written to; only inserted cards arrive", async () => {
+    const container = asBrowserWithDom();
+    const root = createRoot(container as unknown as HTMLElement);
+    const show = (filter: Severity | "all") =>
+      act(() =>
+        root.render(
+          <GatePane
+            candidate={sixFindings}
+            summary={gateSummary(sixFindings)}
+            filter={filter}
+            focusedRule={null}
+            onFilter={() => {}}
+            onFocusRule={() => {}}
+            onReveal={() => {}}
+          />,
+        ),
+      );
+    const cards = () => container.querySelectorAll(".fd-finding");
+    const rule = (el: DomElement) => el.children[0]!.textContent;
+
+    await show("all");
+    const all = cards();
+    expect(all.map(rule)).toEqual(["FD-E901", "FD-E902", "FD-E903", "FD-X001", "FD-W901", "FD-W902"]);
+    expect(all.map((el) => el.styleWrites)).toEqual([0, 0, 0, 0, 0, 0]); // the panel's entrance plays on mount, not this
+
+    await show("warning");
+    const warnings = cards();
+    expect(warnings.map(rule)).toEqual(["FD-X001", "FD-W901", "FD-W902"]);
+    // Kept, not remounted, and left alone. (Booleans and counts, because
+    // vitest cannot print these fake elements.)
+    expect(warnings.map((el) => all.includes(el))).toEqual([true, true, true]);
+    expect(warnings.map((el) => el.styleWrites)).toEqual([0, 0, 0]);
+
+    await show("all");
+    const again = cards();
+    expect(again.map(rule)).toEqual(["FD-E901", "FD-E902", "FD-E903", "FD-X001", "FD-W901", "FD-W902"]);
+    const [inserted, kept] = [again.slice(0, 3), again.slice(3)];
+    expect(kept.map((el, i) => el === warnings[i])).toEqual([true, true, true]); // the same elements, in place
+    expect(kept.map((el) => el.styleWrites)).toEqual([0, 0, 0]);
+    // The blocking cards came back: new elements, at atlas-arrive's start
+    // frame. This is what makes the "never written to" above mean something.
+    expect(inserted.map((el) => all.includes(el))).toEqual([false, false, false]);
+    for (const el of inserted) {
+      expect([el.style.getPropertyValue("opacity"), el.style.getPropertyValue("translate")]).toEqual(["0", `0px ${MOTION.distance.arrive}px`]);
+    }
+
+    // Unmounting mid-arrival hands every card back with no inline residue.
+    await act(() => root.unmount());
+    expect(again.map((el) => el.getAttribute("style"))).toEqual([null, null, null, null, null, null]);
+  });
+
+  it("a filter change mid-arrival: a card that stays keeps arriving, a card it removes is settled", async () => {
+    const container = asBrowserWithDom();
+    const root = createRoot(container as unknown as HTMLElement);
+    const show = (filter: Severity | "all") =>
+      act(() =>
+        root.render(
+          <GatePane
+            candidate={sixFindings}
+            summary={gateSummary(sixFindings)}
+            filter={filter}
+            focusedRule={null}
+            onFilter={() => {}}
+            onFocusRule={() => {}}
+            onReveal={() => {}}
+          />,
+        ),
+      );
+    const cards = () => container.querySelectorAll(".fd-finding");
+    const styles = (els: DomElement[]) => els.map((el) => el.getAttribute("style"));
+
+    await show("all");
+    await show("warning");
+    await show("all");
+    const blocking = cards().slice(0, 3); // arriving: they came back
+    expect(styles(blocking).every((s) => s !== null)).toBe(true);
+
+    // Blocking only: the blocking cards stay, so their arrivals run on. Had
+    // they been cancelled, each would be handed back (no style) at once,
+    // which on screen is a snap from half faded to opaque.
+    await show("error");
+    expect(cards().map((el, i) => el === blocking[i])).toEqual([true, true, true]);
+    expect(styles(blocking).every((s) => s !== null && s.includes("opacity"))).toBe(true);
+
+    // All, then Blocking again at once: the warnings arrive, then are removed
+    // mid-arrival, and each one's arrival is settled, not left running.
+    await show("all");
+    const warnings = cards().slice(3);
+    expect(styles(warnings).every((s) => s !== null)).toBe(true);
+    await show("error");
+    expect(warnings.map((el) => el.isConnected)).toEqual([false, false, false]);
+    expect(styles(warnings)).toEqual([null, null, null]);
+
+    // The blocking cards finish by themselves, with no inline residue.
+    await sleep(MOTION.duration.arrive + MOTION.stagger.step * MOTION.stagger.maxSteps + 200);
+    expect(styles(blocking)).toEqual([null, null, null]);
+    await act(() => root.unmount());
+  });
+
+  it("shownFindings: a finding keeps its key under every filter, exact duplicates included", () => {
+    const dup = finding("FD-W901", "server/w1.ts", 1, "warning 1", "warning");
+    const findings = [...sixFindings.findings, dup, { ...dup, column: 7 }];
+    const keysOf = (filter: Severity | "all") => new Map(shownFindings(findings, filter).map(({ key, finding: f }) => [f, key]));
+    const all = keysOf("all");
+    expect(new Set(all.values()).size).toBe(findings.length); // unique, so React never sees a clash
+    for (const filter of ["error", "warning"] as const) {
+      const shown = keysOf(filter);
+      expect(shown.size).toBe(findings.filter((f) => f.severity === filter).length);
+      for (const [f, key] of shown) expect(key).toBe(all.get(f));
+    }
+    // The duplicate is told apart by its place among ALL findings, and a
+    // different column is a different finding, not a duplicate.
+    expect([all.get(sixFindings.findings[2]!), all.get(dup), all.get(findings[7]!)]).toEqual([
+      "FD-W901-server/w1.ts-1-1",
+      "FD-W901-server/w1.ts-1-1#1",
+      "FD-W901-server/w1.ts-1-7",
+    ]);
   });
 });
 

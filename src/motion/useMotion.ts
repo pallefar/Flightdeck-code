@@ -16,7 +16,7 @@
  * the kill switch, webdriver, a test) each one writes nothing: the committed
  * render is the whole story. */
 import { useLayoutEffect, useRef, type RefObject } from "react";
-import { MOTION, allOf, arrive, motionSupported, reenter, swapIn, type MotionHandle, type MotionTargets } from "./motion";
+import { MOTION, arrive, motionSupported, reenter, swapIn, type MotionHandle, type MotionTargets } from "./motion";
 
 export type Play = (targets: MotionTargets) => MotionHandle;
 
@@ -87,22 +87,51 @@ export function usePanelSwap(ref: RefObject<Element | null>, view: unknown, cont
  * `key` (the filter) changes. An item that was not there in the previous
  * commit rises 9px and fades in over 450ms, waiting min(n, 3) x 45ms for
  * its place n among the items. Nothing plays on mount, because the panel's
- * own entrance plays then. A change mid-motion restarts it; unmount settles
- * it. */
+ * own entrance plays then.
+ *
+ * A change while items are still arriving leaves alone every item that
+ * stays: its arrival runs to its end, as Atlas's CSS animation does on a
+ * card that stays in the DOM. Cancelling it would snap the card from half
+ * faded to opaque in one frame. An item the change removes has its arrival
+ * settled. Unmount settles them all.
+ *
+ * "Not there" means its ELEMENT is new, so the caller must give each item a
+ * React key that survives the filter, never its place in the filtered list:
+ * a positional key remounts every card a filter moves, and each one arrives
+ * although it never left (GatePane.tsx, shownFindings, says more). */
 export function useArriveInserted(ref: RefObject<Element | null>, selector: string, key: unknown): void {
   const seen = useRef<{ key: unknown; items: ReadonlySet<Element> } | null>(null);
-  const handle = useRef<MotionHandle | null>(null);
+  /** The arrivals still running, one per item. */
+  const arriving = useRef(new Map<Element, MotionHandle>());
   // Every commit, so the items a change is compared against are the ones the
   // person last saw. Where motion can never run, nothing is even queried.
   useLayoutEffect(() => {
     const root = ref.current;
     const items = root !== null && motionSupported() ? Array.from(root.querySelectorAll(selector)) : [];
     const prev = seen.current;
-    seen.current = { key, items: new Set(items) };
+    const now = new Set(items);
+    seen.current = { key, items: now };
+    for (const [el, h] of arriving.current) {
+      if (now.has(el)) continue;
+      h.cancel();
+      arriving.current.delete(el);
+    }
     if (prev === null || Object.is(prev.key, key)) return;
-    handle.current?.cancel();
-    const steps = [...insertedByDelay(prev.items, items)];
-    handle.current = allOf(steps.map(([delay, els]) => arrive(els, { delay, stagger: 0 })));
+    for (const [delay, els] of insertedByDelay(prev.items, items)) {
+      for (const el of els) {
+        const h = arrive(el, { delay, stagger: 0 });
+        arriving.current.set(el, h);
+        void h.finished.then(() => {
+          if (arriving.current.get(el) === h) arriving.current.delete(el);
+        });
+      }
+    }
   });
-  useLayoutEffect(() => () => handle.current?.cancel(), []);
+  useLayoutEffect(() => {
+    const running = arriving.current;
+    return () => {
+      for (const h of running.values()) h.cancel();
+      running.clear();
+    };
+  }, []);
 }

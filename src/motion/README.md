@@ -33,7 +33,7 @@ These are the only places in Studio where Atlas has an equivalent motion.
 | The workbench view tabs (`Workbench.tsx`, `.fd-tabs__group`) | `<TabIndicator activeKey={view}>` | `.view-tab-indicator`, motion.css:62-77: a 450ms slide on the emphasized curve. At rest the indicator is `hidden` and the tab's own `aria-selected` style marks it. |
 | The panel under the tabs (`.fd-body`), on first render and on a view change | `usePanelSwap` → `swapIn` | `.studio-panel` keyed by its tab, `studio-enter`, work-studio.css:74, 415-423: rise 6px and fade in over 250ms `ease`. |
 | The same panel when only the round changes (a round chip, the same view) | `usePanelSwap` → `reenter` | `work-surface-enter` on a project switch, navigation.css:677, 841-846: from opacity 0.5, rise 5px, over 220ms `ease-out`. When the view changes in the same commit, the swap plays, never both. |
-| Finding cards that a Gate severity filter brings in (`GatePane.tsx`) | `useArriveInserted` → `arrive` | `atlas-arrive` on inserted `.project-grid > .project-card`, motion.css:129-150. Only inserted cards arrive, each waiting min(n, 3) × 45ms for its place among all the cards. A card that stays does not move. |
+| Finding cards that a Gate severity filter brings in (`GatePane.tsx`) | `useArriveInserted` → `arrive` | `atlas-arrive` on inserted `.project-grid > .project-card`, motion.css:129-150. Only inserted cards arrive, each waiting min(n, 3) × 45ms for its place among all the cards. A card still arriving when the filter changes again keeps arriving if it stays, as a CSS animation does. A card that stays does not move: each card's key is the finding itself (`shownFindings`), as Atlas keys its cards by id (atlas.tsx:1063), so a filter that moves a card keeps its element. |
 
 What is deliberately **not** animated, and why:
 
@@ -71,6 +71,9 @@ These are the same hard rules as the OS module's.
 - Don't JS-animate an element that also has a CSS `animation`, because the CSS animation beats the
   inline frames.
 - `TabIndicator` goes first in its control, and the control's tabs must be its direct children.
+- `useArriveInserted` tells an inserted item by its element, so key each item by what it is, never
+  by its place in the filtered list. A positional key remounts every item a filter moves, and each
+  one fades out and arrives again although it never left.
 
 ## Opting out
 
@@ -89,11 +92,16 @@ These are the same hard rules as the OS module's.
 - on anime's real engine, run under node: the start frames, the clean hand-back on completion and
   on cancel, cancel-first, and the tab indicator's hand-back;
 - the hooks' decisions (`panelPlay`, `insertedByDelay`);
+- `useArriveInserted` run for real inside `GatePane`, mounted by `react-dom/client` on a small fake
+  document: across All → Warnings → All a card that stays is the same element and is never written
+  to, only the cards that come back arrive, and unmounting mid-arrival leaves no inline style; a
+  filter change mid-arrival lets a card that stays finish arriving and settles a card it removes;
+- `shownFindings`: every finding keeps its key under every filter, exact duplicates included;
 - the rendered markup, which never carries a start frame.
 
-It uses a small fake element rather than a DOM library, which Studio does not have, and the file
-explains why. The curves, interruption and the absence of any residue were checked on frames
-recorded in real Chrome against Atlas.
+It uses small fakes (an element, and for the GatePane test a document) rather than a DOM library,
+which Studio does not have, and the file explains why. The curves, interruption and the absence of
+any residue were checked on frames recorded in real Chrome against Atlas.
 
 ## Dependency record (rule 8)
 
