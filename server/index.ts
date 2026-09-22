@@ -56,7 +56,7 @@ import {
 import { isNamedHuman } from "../packages/guardrails/src/approval-pure";
 import { buildSubAppFromPrompt } from "../packages/pipeline/src/build-subapp";
 import { AnthropicProvider } from "../packages/providers/src/anthropic";
-import { anthropicConfigFromEnv } from "../packages/providers/src/config";
+import { anthropicConfigFromEnv, type ProviderConfigInput } from "../packages/providers/src/config";
 import { DEFAULT_MODEL } from "../packages/providers/src/models";
 import { plannerLlm } from "../packages/providers/src/planner-bridge";
 
@@ -154,6 +154,27 @@ export function grantsFileFromEnv(
   return { file: path.isAbsolute(value) ? value : path.resolve(root, value) };
 }
 
+/**
+ * ⭐ EVERYTHING THE BOOT REFUSES, collected rather than first-wins, so one
+ * restart fixes all of it.
+ *
+ * `anthropicConfigFromEnv` is lenient on purpose — a library must not take a
+ * process down — and reports a bad FLIGHTDECK_EFFORT in `ignored`. Every
+ * caller here read only `.config` and threw `ignored` away, so `turbo` or
+ * `High` ran at the default without a word: an operator who believed they had
+ * turned a dial had not. This is the composition root, the one place that can
+ * say "that is not what you meant", so an `ignored` entry is a refusal here.
+ */
+export function bootProblems(env: Readonly<Record<string, string | undefined>>): string[] {
+  const problems: string[] = [];
+  const operator = operatorFromEnv(env);
+  if (typeof operator === "string") problems.push(operator);
+  const grants = grantsFileFromEnv(env);
+  if ("problem" in grants) problems.push(grants.problem);
+  problems.push(...anthropicConfigFromEnv(env).ignored);
+  return problems;
+}
+
 const buildBody = z
   .object({
     prompt: z.string().min(1).max(8_000),
@@ -205,6 +226,17 @@ export interface ServerOptions {
   readonly directory?: IdentityDirectory;
 }
 
+/**
+ * The real provider's config, or a refusal. Checked HERE as well as at the
+ * entry point, so a server started any other way — a test harness, an
+ * embedding — cannot quietly run a typo'd effort at the default either.
+ */
+function providerConfigOrThrow(env: Readonly<Record<string, string | undefined>>): ProviderConfigInput {
+  const { config, ignored } = anthropicConfigFromEnv(env);
+  if (ignored.length > 0) throw new Error(`studio: refusing to start — ${ignored.join("; ")}`);
+  return config;
+}
+
 function grantsFileOrThrow(env: Readonly<Record<string, string | undefined>>): string {
   const grants = grantsFileFromEnv(env);
   if ("problem" in grants) throw new Error(`studio: refusing to start — ${grants.problem}`);
@@ -230,7 +262,7 @@ export function createServer(options: ServerOptions): ReturnType<typeof Fastify>
     // gates the INPUT boundary instead, before the planner builds anything,
     // and its own tests assert the model is never called on a refusal. So the
     // raw bridge is correct here, and double-gating would break the path.
-    plannerLlm(new AnthropicProvider(anthropicConfigFromEnv().config));
+    plannerLlm(new AnthropicProvider(providerConfigOrThrow(process.env)));
 
   // ⭐ ONE OPERATOR, AND THE DIRECTORY SAYS SO.
   //
@@ -370,14 +402,13 @@ const isEntryPoint = ((): boolean => {
 
 /* c8 ignore start — the boot path; `createServer` is what the tests drive. */
 if (isEntryPoint) {
+  const problems = bootProblems(process.env);
   const operator = operatorFromEnv(process.env);
-  if (typeof operator === "string") {
-    process.stderr.write(`studio: refusing to start — ${operator}\n`);
-    process.exit(1);
-  }
   const grants = grantsFileFromEnv(process.env);
-  if ("problem" in grants) {
-    process.stderr.write(`studio: refusing to start — ${grants.problem}\n`);
+  // The second and third conditions are implied by the first; they are here
+  // so the narrowing below is the compiler's, not a comment's.
+  if (problems.length > 0 || typeof operator === "string" || "problem" in grants) {
+    for (const problem of problems) process.stderr.write(`studio: refusing to start — ${problem}\n`);
     process.exit(1);
   }
   // The PATH, once, so "which store is this" is answerable from the boot

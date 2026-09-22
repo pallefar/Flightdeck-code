@@ -235,7 +235,7 @@ curl -s localhost:8787/api/studio/build \
 | `STUDIO_HOST` | no | `127.0.0.1` | Loopback by default: this process holds a key and a secret. |
 | `STUDIO_GRANTS_FILE` | no | `<studio root>/.studio/grants.json` | Durable approvals, written `0600`. The base is the Studio checkout (`STUDIO_ROOT`: the nearest ancestor of `server/index.ts` holding a `package.json`), never cwd: a relative value resolves against that root, an absolute one is used as given, set-but-empty refuses to boot. Boot prints `studio: grants at <path>`. A grants file created under another cwd before 2026-09-22 is not migrated — it fails closed (reads as no grants), so point this variable at it explicitly. |
 | `FLIGHTDECK_MODEL` | no | `claude-opus-5` | |
-| `FLIGHTDECK_EFFORT` | no | `high` | `low\|medium\|high\|xhigh\|max`. ⚠ An unrecognised value is silently ignored and the default stands — a typo here is invisible. |
+| `FLIGHTDECK_EFFORT` | no | `high` | `low\|medium\|high\|xhigh\|max`, case-sensitive. Anything else is refused at boot (`studio: refusing to start — FLIGHTDECK_EFFORT=turbo is not one of …`, exit 1), and `createServer` throws on it whenever it builds the real provider. Unset or empty takes the default. |
 | `FLIGHTDECK_HOST_ROOT` | no | `/home/user/project-contract` | **Set this on the Mac.** |
 | `FLIGHTDECK_HOST_ABSENT_ACKNOWLEDGED` | no | — | Exact string `unverified-lists-accepted`. Only while the host repo is absent. |
 | `FLIGHTDECK_HARNESS_MODE` | no | — | `live` records fixtures, `playback` replays and fails on a miss. |
