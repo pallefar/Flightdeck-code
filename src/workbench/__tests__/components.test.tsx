@@ -29,6 +29,7 @@ import { FileTreePane } from "../components/FileTreePane";
 import { GatePane } from "../components/GatePane";
 import { PreviewPane } from "../components/PreviewPane";
 import { RunPane } from "../components/RunPane";
+import { ThemeToggle } from "../components/ThemeToggle";
 import { Workbench } from "../Workbench";
 import { diffFileSets } from "../diff";
 import { editDraft, openDraft, saveDraft, type Draft } from "../editing";
@@ -474,5 +475,35 @@ describe("the shell, wired to a store", () => {
     expect(saved).toContain("1 edited");
     // One authoritative model: the saved text is what the file pane shows.
     expect(saved).toContain("// mine");
+  });
+});
+
+describe("theme", () => {
+  it("defaults to Atlas light and draws no toggle when the driver cannot remember one", () => {
+    const out = html(<Workbench store={createStore()} onPrompt={noop} />);
+    expect(out).toContain('class="fd-wb" data-theme="light"');
+    // A switch that does nothing would be worse than none. (Markup, not the
+    // class name: the injected <style> names every class it styles.)
+    expect(out).not.toContain('class="fd-themetoggle"');
+  });
+
+  it("offers the OTHER theme, and keeps it out of the tablist", () => {
+    const out = html(<Workbench store={createStore()} onPrompt={noop} theme="dark" onThemeChange={noop} />);
+    expect(out).toContain('data-theme="dark"');
+    expect(out).toContain('aria-label="Switch to light theme"');
+    // The tablist holds only tabs; the toggle sits after it, not inside it.
+    const start = out.indexOf('role="tablist"');
+    const tablist = out.slice(start, out.indexOf('class="fd-tabs__spacer"', start));
+    expect(tablist.match(/role="tab"/g)).toHaveLength(5);
+    expect(tablist).not.toContain('class="fd-themetoggle"');
+    expect(out.slice(start)).toContain('class="fd-themetoggle"');
+  });
+
+  it("draws the moon in light and the sun in dark, as Atlas does", () => {
+    const light = html(<ThemeToggle theme="light" onChange={noop} />);
+    const dark = html(<ThemeToggle theme="dark" onChange={noop} />);
+    expect(light).toContain('aria-label="Switch to dark theme"');
+    expect(light).not.toContain("<circle");
+    expect(dark).toContain("<circle");
   });
 });
