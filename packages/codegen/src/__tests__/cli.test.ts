@@ -10,7 +10,7 @@ import os from "node:os";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
 import { describe, expect, it } from "vitest";
-import { wcClockSpec } from "../fixtures/specs";
+import { contractRunSpec, wcClockSpec } from "../fixtures/specs";
 
 const TSX = path.join(process.cwd(), "node_modules", ".bin", "tsx");
 const CLI = path.join(process.cwd(), "packages", "codegen", "src", "cli.ts");
@@ -71,6 +71,46 @@ describe.skipIf(!available)("codegen CLI", () => {
       expect(result.status).toBe(2);
       expect(result.stderr).toMatch(/already a hand-written sub-app/);
       expect(fs.existsSync(path.join(dir, "server"))).toBe(false);
+    });
+  });
+
+  /** Owner ruling 2026-09-22 (8), on the path `scripts/promote.sh` step 3 takes into the
+   * host. A review ran exactly this and got exit 0 and 8 planned files. */
+  describe("⛔ a spec whose proposal fields came from no approved template", () => {
+    const invented = (): unknown => {
+      const spec = JSON.parse(JSON.stringify(contractRunSpec)) as { domains: Array<{ name: string; routes: Array<Record<string, unknown>> }> };
+      const flag = spec.domains.find((d) => d.name === "handoffs")?.routes.find((r) => r["path"] === "/flag");
+      if (flag === undefined) throw new Error("contractRunSpec has no /flag route");
+      flag["operation"] = {
+        kind: "propose",
+        proposalKind: "salary-change",
+        ticketField: "ticket",
+        auditEvent: "contract-run.salary-change-proposed",
+        fields: [
+          { name: "ticket", type: "string" },
+          { name: "salary", type: "number" },
+          { name: "employeeName", type: "string", maxLength: 120 },
+        ],
+      };
+      return spec;
+    };
+
+    it("is refused from a file, exit 2, naming the ruling — even under --dry-run", () => {
+      withTempDir((dir) => {
+        const result = run(["--spec", writeSpec(dir, invented()), "--out", dir, "--dry-run"]);
+        expect(result.status).toBe(2);
+        expect(result.stderr).toContain("owner ruling 2026-09-22 (8)");
+        expect(result.stdout).not.toContain("server/subapps/contract-run/");
+      });
+    });
+
+    it("is refused from stdin — a model's output piped straight in — and writes nothing", () => {
+      withTempDir((dir) => {
+        const result = runWithStdin(["--spec", "-", "--out", dir], JSON.stringify(invented()));
+        expect(result.status).toBe(2);
+        expect(result.stderr).toContain("owner ruling 2026-09-22 (8)");
+        expect(fs.existsSync(path.join(dir, "server"))).toBe(false);
+      });
     });
   });
 

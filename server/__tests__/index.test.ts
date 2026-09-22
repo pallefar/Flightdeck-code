@@ -8,12 +8,28 @@
  * and a test that calls the handler directly would repeat exactly that
  * mistake one level up.
  */
-import { describe, expect, it } from "vitest";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { EXAMPLE_DRAFT_JSON } from "../../packages/spec/src/prompt";
 import { createMemoryGrantStore } from "../../packages/approvals/src/store";
 import type { DatasourceRef, GrantRow } from "../../packages/approvals/src/index";
-import { createServer, operatorFromEnv, presentsOperatorToken } from "../index";
+import { EFFORTS } from "../../packages/providers/src/types";
+import {
+  STUDIO_ROOT,
+  bootProblems,
+  createServer,
+  grantsFileFromEnv,
+  operatorFromEnv,
+  presentsOperatorToken,
+} from "../index";
+
+/** The checkout this test file lives in — found from the FILE, never from cwd. */
+const REPO_ROOT = fileURLToPath(new URL("../../", import.meta.url)).replace(/[\\/]$/, "");
 
 const TOKEN = "a-sufficiently-long-operator-token";
 const OPERATOR = { actor: "Karsten Haldan", token: TOKEN };
@@ -290,5 +306,131 @@ describe("a prompt that came from a datasource needs a grant", () => {
     const app = withGrants([], async () => ({ text: DRAFT }));
     const res = await app.inject(ask({ prompt: PROMPT }));
     expect((res.json() as { status: string }).status).toBe("proposed");
+  });
+});
+
+
+/**
+ * ⭐ WHERE THE GRANTS LIVE DOES NOT DEPEND ON WHERE YOU STOOD.
+ *
+ * The default was `.studio/grants.json`, resolved against `process.cwd()`.
+ * Start the server from another directory — a launcher, a service manager,
+ * `npm --prefix` — and it opened a DIFFERENT, EMPTY grant store. That fails
+ * closed (no rows, everything refused), which is exactly why nobody would
+ * notice: every approval anyone made looks revoked, and nothing says why.
+ */
+describe("the grants file is anchored to the Studio checkout, not to cwd", () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it("the Studio root is the checkout this server lives in", () => {
+    expect(STUDIO_ROOT).toBe(REPO_ROOT);
+    expect(fs.existsSync(path.join(STUDIO_ROOT, "package.json"))).toBe(true);
+  });
+
+  it("⭐ unset → <root>/.studio/grants.json, absolute, even after a chdir", () => {
+    const elsewhere = fs.mkdtempSync(path.join(os.tmpdir(), "studio-cwd-"));
+    const before = process.cwd();
+    try {
+      process.chdir(elsewhere);
+      const resolved = grantsFileFromEnv({});
+      expect(resolved).toEqual({ file: path.join(REPO_ROOT, ".studio", "grants.json") });
+      if ("file" in resolved) {
+        expect(path.isAbsolute(resolved.file)).toBe(true);
+        expect(resolved.file.startsWith(fs.realpathSync(elsewhere))).toBe(false);
+        expect(resolved.file.startsWith(elsewhere)).toBe(false);
+      }
+    } finally {
+      process.chdir(before);
+      fs.rmSync(elsewhere, { recursive: true, force: true });
+    }
+  });
+
+  it("a RELATIVE value resolves against the Studio root, not cwd", () => {
+    const root = path.join(os.tmpdir(), "a studio root");
+    expect(grantsFileFromEnv({ STUDIO_GRANTS_FILE: "var/grants.json" }, root)).toEqual({
+      file: path.join(root, "var", "grants.json"),
+    });
+    expect(grantsFileFromEnv({ STUDIO_GRANTS_FILE: "../shared/grants.json" }, root)).toEqual({
+      file: path.join(os.tmpdir(), "shared", "grants.json"),
+    });
+  });
+
+  it("an ABSOLUTE value is used as given", () => {
+    const absolute = path.join(os.tmpdir(), "ops", "grants.json");
+    expect(grantsFileFromEnv({ STUDIO_GRANTS_FILE: absolute }, "/nowhere")).toEqual({ file: absolute });
+  });
+
+  it("⛔ set-but-empty is refused — it is not 'use the default', and not the path \"\"", () => {
+    for (const value of ["", "   ", "\t"]) {
+      expect(grantsFileFromEnv({ STUDIO_GRANTS_FILE: value }), JSON.stringify(value)).toEqual({
+        problem: "STUDIO_GRANTS_FILE is set but empty",
+      });
+    }
+  });
+
+  it("⭐ createServer refuses an empty STUDIO_GRANTS_FILE instead of opening the path \"\"", () => {
+    vi.stubEnv("STUDIO_GRANTS_FILE", "");
+    expect(() => serve(async () => ({ text: DRAFT }))).toThrow(/STUDIO_GRANTS_FILE is set but empty/);
+  });
+});
+
+
+/**
+ * ⭐ A TYPO IN FLIGHTDECK_EFFORT REFUSES THE BOOT.
+ *
+ * `anthropicConfigFromEnv` reports an unrecognised effort in `ignored` and
+ * leaves the default standing — by design, so the LIBRARY never takes a
+ * deploy down. But every caller here threw `ignored` away, so `turbo` (or
+ * `High`) ran at `high` without a word: the operator believed they had turned
+ * a dial they had not. The composition root is where "is this config what
+ * the operator meant" gets answered, so it refuses.
+ */
+describe("what it refuses to boot with: the model config", () => {
+  const OK_ENV = { STUDIO_OPERATOR: "Karsten Haldan", STUDIO_OPERATOR_TOKEN: TOKEN };
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it("⭐ an effort that is not one of the five is a boot problem, naming the value and the allowed set", () => {
+    for (const bad of ["turbo", "High", "HIGH", "hi", "x-high"]) {
+      const problems = bootProblems({ ...OK_ENV, FLIGHTDECK_EFFORT: bad });
+      expect(problems, bad).toEqual([`FLIGHTDECK_EFFORT=${bad} is not one of ${EFFORTS.join(", ")}`]);
+    }
+  });
+
+  it("accepts each of the five, and an unset effort", () => {
+    for (const effort of EFFORTS) {
+      expect(bootProblems({ ...OK_ENV, FLIGHTDECK_EFFORT: effort }), effort).toEqual([]);
+    }
+    expect(bootProblems(OK_ENV)).toEqual([]);
+    expect(bootProblems({ ...OK_ENV, FLIGHTDECK_EFFORT: "" })).toEqual([]);
+  });
+
+  it("reports EVERY problem at once, so one restart fixes them all", () => {
+    const problems = bootProblems({ FLIGHTDECK_EFFORT: "turbo", STUDIO_GRANTS_FILE: " " });
+    expect(problems).toHaveLength(3);
+    expect(problems.some((p) => p.startsWith("STUDIO_OPERATOR is not set"))).toBe(true);
+    expect(problems).toContain("STUDIO_GRANTS_FILE is set but empty");
+    expect(problems.some((p) => p.startsWith("FLIGHTDECK_EFFORT=turbo"))).toBe(true);
+  });
+
+  it("⭐ createServer building the REAL provider refuses a bad effort too — not only the entry point", () => {
+    vi.stubEnv("FLIGHTDECK_EFFORT", "turbo");
+    expect(() => createServer({ operator: OPERATOR, store: createMemoryGrantStore() })).toThrow(
+      /FLIGHTDECK_EFFORT=turbo is not one of low, medium, high, xhigh, max/,
+    );
+  });
+
+  it("but a valid effort builds the real provider without a key — it is resolved lazily", () => {
+    vi.stubEnv("FLIGHTDECK_EFFORT", "low");
+    expect(() => createServer({ operator: OPERATOR, store: createMemoryGrantStore() })).not.toThrow();
+  });
+
+  it("⛔ an injected llm is not second-guessed — the env effort is not what it runs at", () => {
+    vi.stubEnv("FLIGHTDECK_EFFORT", "turbo");
+    expect(() => serve(async () => ({ text: DRAFT }))).not.toThrow();
   });
 });

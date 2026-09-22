@@ -124,6 +124,18 @@ const VIOLATIONS: readonly Violation[] = [
     file: MANIFEST_PATH,
     build: () => editFile(conformingSubApp(), MANIFEST_PATH, `  id: "wc-clock",`, `  id: "wc-clock-v2",`),
   },
+  {
+    rule: "FD-M008",
+    what: "a manifest that declares OS-04 host-surface contributions",
+    file: MANIFEST_PATH,
+    build: () =>
+      editFile(
+        conformingSubApp(),
+        MANIFEST_PATH,
+        `  registerRoutes: (app, ctx) => registerWcClockRoutes(app, ctx),\n`,
+        `  registerRoutes: (app, ctx) => registerWcClockRoutes(app, ctx),\n  contributions: { stateFlags: () => ({ esign: { enabled: true } }) },\n`,
+      ),
+  },
 
   {
     rule: "FD-I001",

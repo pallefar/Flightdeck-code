@@ -21,6 +21,11 @@ import {
   proposalPrefixFor,
 } from "../server/subapps/studio/service/proposal.js";
 import { convertWorkflow } from "../studio/conversion.js";
+import {
+  PROPOSAL_TEMPLATES,
+  templateContentHash,
+  type ProposalTemplate,
+} from "@codegen/pure";
 import { ANSWERS, AUTO_ADVANCING_WORKFLOW, CONVERTIBLE_WORKFLOW } from "./support.js";
 
 const ready = convertWorkflow({ workflow: CONVERTIBLE_WORKFLOW, answers: ANSWERS, source: "skills/wc/SKILL.md" });
@@ -110,11 +115,12 @@ describe("the workflow's own procedure survives the conversion", () => {
   it("narrows a step that would write host state, and says so", () => {
     if (ready.status !== "ready") throw new Error("expected ready");
     // "Record the outcome — write the consultation result…" cannot be
-    // performed by a mini-app. It becomes a proposal, and the narrowing is
-    // reported rather than done quietly.
+    // performed by a mini-app. It becomes a proposal step — and, until the
+    // owner approves the `step` template (ruling 8), a proposal step the app
+    // shows and does not file. Both narrowings are reported, not done quietly.
     const record = ready.spec.steps.find((s) => s.title === "Record the outcome");
     expect(record?.kind).toBe("propose");
-    expect(ready.spec.capabilities).toContain("write:inbox-proposal");
+    expect(ready.warnings.some((w) => w.includes("ruling 2026-09-22 (8)"))).toBe(true);
   });
 
   it("declares no capability it cannot ground in the document's own sentences", () => {
@@ -124,6 +130,105 @@ describe("the workflow's own procedure survives the conversion", () => {
     }
   });
 });
+
+/* ── Owner ruling 2026-09-22 (8) ──────────────────────────────────────────
+ * "Proposing apps are generated ONLY from a closed catalogue of proposal
+ * templates the owner approves … generation refuses unapproved ones." The
+ * conversion used to write its own `step` proposal in code, outside the
+ * catalogue. It now resolves the catalogue's `step` template, which carries no
+ * approval, so the conversion files nothing until the owner approves it. */
+describe("⭐ ruling 8: the conversion's proposal comes from the approved catalogue, or not at all", () => {
+  const routesOf = (conversion: typeof ready) =>
+    conversion.status === "ready" ? conversion.files.find((f) => f.path.endsWith("/routes/workflow.ts"))?.contents ?? "" : "";
+  const manifestOf = (conversion: typeof ready) =>
+    conversion.status === "ready" ? conversion.files.find((f) => f.path.endsWith("/manifest.ts"))?.contents ?? "" : "";
+
+  it("⛔ files no proposal while the `step` template is unapproved — no route writes one", () => {
+    expect(ready.status).toBe("ready");
+    const routes = routesOf(ready);
+    expect(routes).not.toContain("writeInboxProposal");
+    expect(routes).not.toContain("listOwnInboxProposals");
+    expect(routes).not.toContain("step-proposed");
+    expect(routes).not.toMatch(/app\.post\(/);
+  });
+
+  it("⛔ and drops write:inbox-proposal: a consent line for a write the app cannot make is not least privilege", () => {
+    if (ready.status !== "ready") throw new Error("expected ready");
+    expect(manifestOf(ready)).not.toContain("write:inbox-proposal");
+    // The review screen says what the manifest says, not what the plan wanted.
+    expect(ready.spec.capabilities).not.toContain("write:inbox-proposal");
+    expect(ready.spec.capabilities).toContain("read:contracts");
+  });
+
+  it("says so by name — the ruling, the template, and what would change it", () => {
+    if (ready.status !== "ready") throw new Error("expected ready");
+    const said = ready.warnings.join("\n");
+    expect(said).toContain("owner ruling 2026-09-22 (8)");
+    expect(said).toContain("`step` proposal template");
+    expect(said).toMatch(/dropped the POST \/proposals route/);
+    expect(said).toMatch(/dropped write:inbox-proposal/);
+  });
+
+  it("⭐ once the `step` template carries a valid approval, the proposing route is built FROM it", () => {
+    const approved = approvedStepCatalogue();
+    const conversion = convertWorkflow({ workflow: CONVERTIBLE_WORKFLOW, answers: ANSWERS }, { catalogue: approved });
+    expect(conversion.status).toBe("ready");
+    if (conversion.status !== "ready") return;
+    const routes = routesOf(conversion);
+    expect(routes).toContain("writeInboxProposal");
+    expect(routes).toContain('kind: "works-council-clock-step"');
+    expect(routes).toContain('event: "works-council-clock.step-proposed"');
+    expect(routes).toContain("step: z.string().min(1).max(48)");
+    expect(manifestOf(conversion)).toContain("write:inbox-proposal");
+    expect(conversion.spec.capabilities).toContain("write:inbox-proposal");
+    expect(conversion.warnings.join("\n")).not.toContain("ruling 2026-09-22 (8)");
+  });
+
+  it("⛔ a workflow whose every route files a proposal is rejected by name, not generated empty", () => {
+    const proposeOnly = `---
+name: liaison-handoff
+description: >
+  Hand off to the liaison when a person is needed.
+---
+
+# liaison-handoff
+
+## Procedure
+1. **Notify the liaison** — at every hand-off that needs a human, draft the ping for the wc_liaison to review.
+2. **Record the outcome** — write the consultation result to the folder audit entries.
+`;
+    const refused = convertWorkflow({ workflow: proposeOnly, answers: ANSWERS });
+    expect(refused.status).toBe("rejected");
+    if (refused.status !== "rejected") return;
+    expect(refused.issues.join("\n")).toContain("owner ruling 2026-09-22 (8)");
+    expect(refused.issues.join("\n")).toContain("`step` proposal template");
+    // And the same document converts once the template is approved.
+    expect(convertWorkflow({ workflow: proposeOnly, answers: ANSWERS }, { catalogue: approvedStepCatalogue() }).status).toBe("ready");
+  });
+
+  it("⛔ an approval that no longer covers the template (edited after approval) is refused like none", () => {
+    const widened = approvedStepCatalogue().map((t) =>
+      t.id === "step" ? { ...t, fields: [...t.fields, { name: "salary", type: "number" as const }] } : t,
+    );
+    const conversion = convertWorkflow({ workflow: CONVERTIBLE_WORKFLOW, answers: ANSWERS }, { catalogue: widened });
+    expect(conversion.status).toBe("ready");
+    expect(routesOf(conversion)).not.toContain("writeInboxProposal");
+    expect(routesOf(conversion)).not.toContain("salary");
+  });
+});
+
+/** The real catalogue with the `step` template approved — test-only, so the
+ * approved path is exercised without the production catalogue approving it. */
+function approvedStepCatalogue(): ProposalTemplate[] {
+  return PROPOSAL_TEMPLATES.map((template) => {
+    if (template.id !== "step") return template;
+    const unsigned: ProposalTemplate = { ...template, approval: null };
+    return {
+      ...unsigned,
+      approval: { approvedBy: "Test Approver", approvedAt: "2026-09-22", contentHash: templateContentHash(unsigned) },
+    };
+  });
+}
 
 describe("refusals", () => {
   it("refuses an auto-advancing step outright, naming the sentence", () => {

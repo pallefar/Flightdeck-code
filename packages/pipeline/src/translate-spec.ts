@@ -28,13 +28,30 @@
  * and inventing them means inventing what the app writes into the host's
  * inbox on someone's behalf.
  *
- * So a proposing app is refused here, by name, until the planner's own
- * output carries the fields. That is a smaller product than "prompt → any
- * app", and it is the true one: READ-ONLY MINI-APPS TRANSLATE TODAY, and the
- * other half is named rather than approximated.
+ * ⭐ OWNER RULING 2026-09-22 (8) CLOSES THIS WITHOUT INVENTING ANYTHING.
+ * Proposing apps are generated only from a closed catalogue of proposal
+ * templates the owner approved (`codegen/src/proposal-templates.ts`). A `@spec` propose
+ * route names a template id — the only thing the model says about what a
+ * proposal writes — and THIS is where that id becomes the template's
+ * `proposalKind`, `ticketField`, `fields` and namespaced `auditEvent`. A
+ * propose route that names no template, an unknown one, or one whose
+ * approval does not hold (none, an unnamed approver, no real date, or
+ * content changed since it was approved) is refused by name, and so is a
+ * second route filing the same template. READ-ONLY MINI-APPS ARE UNCHANGED.
+ * @codegen's `planSubApp` refuses the same things again on the spec this
+ * produces; this file's refusals come first because they can point at the
+ * @spec path a person has to change.
  */
 import { CAPABILITY_SCOPES, type MiniAppSpec as CodegenSpec } from "../../codegen/src/spec-contract";
 import type { MiniAppSpec as SpecSpec, SpecRoute } from "../../spec/src/schema";
+import {
+  PROPOSAL_TEMPLATES,
+  approvedTemplateMenu,
+  proposeOperation,
+  resolveProposalTemplate,
+  type ProposalTemplate,
+  type TemplateResolution,
+} from "../../codegen/src/proposal-templates";
 
 export interface TranslationRefusal {
   /** Where in the `@spec` document the problem is — a path, never a value. */
@@ -47,6 +64,8 @@ export type Translation =
   | { readonly ok: true; readonly spec: CodegenSpec }
   | { readonly ok: false; readonly refusals: readonly TranslationRefusal[] };
 
+type Operation = CodegenSpec["domains"][number]["routes"][number]["operation"];
+
 /**
  * Which `@codegen` operation a `@spec` route means, or `null` when the route
  * names something this document cannot describe.
@@ -58,13 +77,32 @@ export type Translation =
  *   read + `write:inbox-proposal` → `list-proposals`
  *
  * `list-rows` and `get-row` are absent on purpose: both name a `table`, and a
- * mini-app is database-free.
+ * mini-app is database-free. A `propose` route is not derived here at all: it
+ * is resolved through the approved template catalogue, in `translateSpec`.
  */
-function operationFor(route: SpecRoute): CodegenSpec["domains"][number]["routes"][number]["operation"] | null {
+function operationFor(route: SpecRoute): Operation | null {
   if (route.kind !== "read") return null;
   if (route.capabilities.includes("read:contracts")) return { kind: "list-contracts" };
   if (route.capabilities.includes("write:inbox-proposal")) return { kind: "list-proposals" };
   return null;
+}
+
+/** What each template refusal needs, in words a person can act on. Never the
+ * id the route named: that is model-written text, and a refusal names paths
+ * and needs, not values. */
+function templateNeeds(problem: Exclude<TemplateResolution, { ok: true }>["problem"], offered: string): string {
+  switch (problem) {
+    case "unknown-template":
+      return `a proposal template from the approved catalogue (${offered}) — the one this route names is not in the approved catalogue`;
+    case "unapproved":
+      return "an approved proposal template — the one this route names has no approval record, and generation refuses an unapproved template";
+    case "unnamed-approver":
+      return "a proposal template approved by a named human — the approval on the one this route names does not name one";
+    case "undated-approval":
+      return "a proposal template whose approval carries a real ISO date — the one this route names has none";
+    case "content-changed-since-approval":
+      return "a re-approval — the proposal template this route names has changed since it was approved, so its approval no longer covers what it writes";
+  }
 }
 
 /**
@@ -82,8 +120,18 @@ function domainNameFor(path: string): string | null {
   return first;
 }
 
-export function translateSpec(source: SpecSpec): Translation {
+/**
+ * `catalogue` is a parameter so the refusals can be exercised against an
+ * unapproved entry. Production passes none — `buildSubAppFromPrompt` calls
+ * `translateSpec(spec)` — so the closed catalogue is the one that counts.
+ */
+export function translateSpec(
+  source: SpecSpec,
+  catalogue: readonly ProposalTemplate[] = PROPOSAL_TEMPLATES,
+): Translation {
   const refusals: TranslationRefusal[] = [];
+  const offered = approvedTemplateMenu(catalogue).map((choice) => choice.id).join(", ");
+  const usedTemplates = new Set<string>();
 
   // ── What `@codegen`'s mini-app profile cannot emit at all ──────────────
   //
@@ -124,14 +172,42 @@ export function translateSpec(source: SpecSpec): Translation {
   const domains = new Map<string, CodegenSpec["domains"][number]["routes"][number][]>();
   source.routes.forEach((route, index) => {
     const at = `routes[${index}]`;
-    const operation = operationFor(route);
+    let operation: Operation | null;
+    if (route.kind === "propose") {
+      // ⭐ Owner ruling 2026-09-22 (8): the fields come from an approved
+      // template, never from the route.
+      if (route.template === undefined) {
+        refusals.push({
+          at: `${at}.template`,
+          needs:
+            offered === ""
+              ? "an approved proposal template — none is approved, so no propose route can be generated (owner ruling 2026-09-22 (8))"
+              : `an approved proposal template (one of: ${offered}) — the fields a proposal writes into the review inbox come from that template, never from the model (owner ruling 2026-09-22 (8))`,
+        });
+        return;
+      }
+      const resolved = resolveProposalTemplate(route.template, catalogue);
+      if (!resolved.ok) {
+        refusals.push({ at: `${at}.template`, needs: templateNeeds(resolved.problem, offered) });
+        return;
+      }
+      if (usedTemplates.has(resolved.template.id)) {
+        refusals.push({
+          at: `${at}.template`,
+          needs:
+            "one route per proposal template — another route already files this one, and two routes sharing a template file proposals indistinguishable by filename (<app>-<kind>-<ticket>)",
+        });
+        return;
+      }
+      usedTemplates.add(resolved.template.id);
+      operation = proposeOperation(resolved.template, source.id);
+    } else {
+      operation = operationFor(route);
+    }
     if (operation === null) {
       refusals.push({
         at,
-        needs:
-          route.kind === "propose"
-            ? "a propose operation names proposalKind, ticketField, fields and auditEvent; a @spec route carries none of them and nothing else in the document names a field"
-            : `a read route must declare read:contracts or write:inbox-proposal; this declares [${route.capabilities.join(", ")}]`,
+        needs: `a read route must declare read:contracts or write:inbox-proposal; this declares [${route.capabilities.join(", ")}]`,
       });
       return;
     }

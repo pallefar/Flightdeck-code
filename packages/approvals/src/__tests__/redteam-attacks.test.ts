@@ -15,7 +15,7 @@ import { classify } from "../../../guardrails/src/classify";
 import type { GrantRow } from "../grant";
 import type { ApprovalRecord } from "../approval";
 import type { GrantStore } from "../store";
-import { createMemoryGrantStore } from "../store";
+import { GrantRowConflictError, createMemoryGrantStore, grantRowRev } from "../store";
 import { CEILING_PROJECT_ID } from "../identity";
 import { classifyEveryRepresentation } from "../../../guardrails/src/representations";
 import {
@@ -493,22 +493,27 @@ describe("A8 concurrent / conflicting writes", () => {
     expect(v.ok).toBe(true);
   });
 
-  // ⚠ STILL OPEN AT THE ROW LEVEL, and narrowed at the FILE level.
+  // ⭐ CLOSED AT THE ROW LEVEL, on top of the FILE-level lock.
   //
-  // `createFileGrantStore` now serialises read-modify-write across processes
-  // with a lock and abandons a write whose file moved underneath it, so one
-  // process can no longer erase another's whole ledger. That is a different
-  // failure from this one: two sequential `putGrantRow` calls still overwrite
-  // by primary key, because the row carries no version to compare. Closing
-  // THIS needs a version on `GrantRow` and a compare-and-swap on the port,
-  // which every store would have to implement.
-  it("STILL OPEN: grant rows are last-write-wins, no version / CAS", async () => {
-    const s = store([ceiling([[CONTRACTS_INPUT, 2]])]);
-    s.putGrantRow(row(PROJECT, [[CONTRACTS_INPUT, 1]])); // operator A narrows
-    s.putGrantRow(row(PROJECT, [[CONTRACTS_INPUT, 2]])); // operator B widens, unaware
+  // `createFileGrantStore` serialises read-modify-write across processes with
+  // a lock and abandons a write whose file moved underneath it, so one process
+  // cannot erase another's whole ledger. That did not stop THIS: two
+  // sequential `putGrantRow` calls overwrote by primary key, because the row
+  // carried no version to compare. Now every row carries a store-assigned
+  // `rev`, and `putGrantRow(row, expectedRev)` refuses a write based on a rev
+  // that is no longer current (`GrantRowConflictError`, 409). Both stores
+  // implement it; `row-version.test.ts` runs every case against each.
+  it("BLOCKED: grant rows carry a version; a stale write is refused", async () => {
+    const s = store([ceiling([[CONTRACTS_INPUT, 2]]), row(PROJECT, [[CONTRACTS_INPUT, 2]])]);
+    const seenByA = grantRowRev(await s.readGrantRow(PROJECT, TOOL));
+    const seenByB = grantRowRev(await s.readGrantRow(PROJECT, TOOL));
+    s.putGrantRow(row(PROJECT, [[CONTRACTS_INPUT, 1]]), seenByA); // operator A narrows
+    expect(() => s.putGrantRow(row(PROJECT, [[CONTRACTS_INPUT, 2]]), seenByB)) // operator B widens, unaware
+      .toThrow(GrantRowConflictError);
     const d = await effectiveGrant({ store: s, ...ask({ datasource: CONTRACTS_INPUT, tier: 2 }) });
     log("A8.lww", d);
-    expect(d.allowed).toBe(true); // A's narrowing is gone without a trace
+    expect(d.allowed).toBe(false); // A's narrowing stands
+    expect(d.reason).toBe("tier_above_project");
   });
 
   it("ATTACK: TOCTOU — a revoke landing BETWEEN the two row reads is straddled", async () => {

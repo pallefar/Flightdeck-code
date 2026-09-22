@@ -34,6 +34,13 @@
  * REVOCATION ARCHIVES, NEVER DELETES — `revokedAt` is set and the row stays,
  * matching `createMemoryGrantStore` exactly. A deleted row cannot answer
  * "was this ever allowed, and by whom".
+ *
+ * ROWS ARE VERSIONED, and the lock is not what does it. The lock serialises
+ * two writes; a serialised overwrite is still an overwrite. Each row carries a
+ * store-assigned `rev`, and `putGrantRow(row, expectedRev)` is refused with
+ * `GrantRowConflictError` (409) when the row moved since the writer read it —
+ * the same compare-and-swap `createMemoryGrantStore` applies, from the same
+ * function (`versionedGrantWrite` in `store.ts`).
  */
 import fs from "node:fs";
 
@@ -45,7 +52,7 @@ export { FileStoreBusyError, FileStoreConflictError };
 
 import type { ApprovalRecord } from "./approval";
 import type { GrantRow } from "./grant";
-import type { MemoryGrantStore } from "./store";
+import { versionedGrantRevoke, versionedGrantWrite, type MemoryGrantStore } from "./store";
 
 /** What is on disk. Versioned so a future shape change is a migration rather
  * than a silent misread of someone's approvals. */
@@ -96,6 +103,13 @@ function admitFile(parsed: unknown, file: string): GrantFile {
     }
     if (!Array.isArray(row["datasources"])) {
       throw new GrantStoreCorruptError(file, "a grant row is missing its datasources");
+    }
+    // ⚠ ABSENT IS FINE (a row written before rows carried a version counts as
+    // rev 0, so the file stays version 1); PRESENT AND WRONG IS NOT. Reading
+    // `"rev": "2"` or `-1` as 0 would let a write based on a stale read land.
+    const rev = row["rev"];
+    if (rev !== undefined && !(typeof rev === "number" && Number.isInteger(rev) && rev >= 0)) {
+      throw new GrantStoreCorruptError(file, "a grant row has a rev that is not a non-negative integer");
     }
   }
   for (const record of approvals) {
@@ -154,18 +168,27 @@ export function createFileGrantStore(file: string): MemoryGrantStore {
 
   return {
     counts,
-    putGrantRow(row) {
+    putGrantRow(row, expectedRev) {
+      let assigned = 0;
       mutate((current) => {
+        // ⭐ THE VERSION CHECK RUNS HERE, INSIDE THE LOCK, against the rows
+        // just read from disk — so "is it still at the rev I read" and "write
+        // it" are one step. A conflict throws out of `updateFile`, which
+        // writes nothing and releases the lock.
         const key = rowKey(row.projectId, row.toolId);
+        const existing = current.rows.find((r) => rowKey(r.projectId, r.toolId) === key) ?? null;
+        const stored = versionedGrantWrite(existing, row, expectedRev);
+        assigned = stored.rev;
         const rows = current.rows.filter((r) => rowKey(r.projectId, r.toolId) !== key);
-        return { ...current, rows: [...rows, row] };
+        return { ...current, rows: [...rows, stored] };
       });
+      return assigned;
     },
     revokeGrantRow(projectId, toolId, at) {
       mutate((current) => ({
         ...current,
         rows: current.rows.map((r) =>
-          rowKey(r.projectId, r.toolId) === rowKey(projectId, toolId) ? { ...r, revokedAt: at } : r,
+          rowKey(r.projectId, r.toolId) === rowKey(projectId, toolId) ? versionedGrantRevoke(r, at) : r,
         ),
       }));
     },

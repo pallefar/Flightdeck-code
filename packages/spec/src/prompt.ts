@@ -12,6 +12,7 @@
 import { CAPABILITIES, HOST_VERSION, NAV_SECTIONS, ROLES } from "./vocabulary";
 import { truncate } from "./text";
 import type { PlannerDraft } from "./draft";
+import type { ProposalTemplateChoice } from "./templates";
 
 export interface PromptInput {
   readonly prompt: string;
@@ -19,6 +20,8 @@ export interface PromptInput {
   readonly answers: readonly { readonly question: string; readonly answer: string }[];
   readonly existingSubAppIds: readonly string[];
   readonly hostVersion: string;
+  /** The approved proposal templates a propose route may name. Absent means none. */
+  readonly proposalTemplates?: readonly ProposalTemplateChoice[];
 }
 
 /** A complete, valid draft. Doubles as the few-shot example and as a wire-format test. */
@@ -42,6 +45,7 @@ export const EXAMPLE_DRAFT: PlannerDraft = {
         summary: "Contracts with no works-council date",
         kind: "read",
         capabilities: ["read:contracts"],
+        template: null,
       },
     ],
     // ⛔ EMPTY, AND THAT IS THE LESSON THIS EXAMPLE TEACHES.
@@ -67,6 +71,25 @@ export const EXAMPLE_DRAFT: PlannerDraft = {
 export const EXAMPLE_DRAFT_JSON = JSON.stringify(EXAMPLE_DRAFT, null, 2);
 
 const bullet = (values: readonly string[]): string => values.map((value) => `  - ${value}`).join("\n");
+
+/**
+ * The proposal-template menu (owner ruling 2026-09-22 (8)). The model is told what each
+ * template writes so it can pick, and told it never writes fields itself - which the wire
+ * format then enforces, because a draft route has no key to write them in.
+ */
+function templateSection(menu: readonly ProposalTemplateChoice[]): string {
+  if (menu.length === 0) {
+    return `PROPOSAL TEMPLATES
+No proposal template has been approved, so no route may be "propose". If the user asks the app to
+file proposals, raise a clarification for "routes" instead. Every route has "template": null.`;
+  }
+  return `PROPOSAL TEMPLATES
+A "propose" route files exactly one of these approved templates, named by id in "template". The
+template decides every field the proposal writes into the review inbox: you never write fields, and
+there is no key for them. A "read" route has "template": null.
+${bullet(menu.map((choice) => `${choice.id}: ${choice.summary} (writes: ${choice.fields.join(", ")})`))}
+If none of them fits what was asked, do not describe a new one: raise a clarification for "routes".`;
+}
 
 export function buildSystemPrompt(input: PromptInput): string {
   return `You turn one sentence from an HR or legal user into a draft sub-app spec for Flightdeck OS.
@@ -100,6 +123,8 @@ ROUTES
 "kind" is "read" (reads host data) or "propose" (writes a proposal into the review inbox).
 "propose" requires the write:inbox-proposal scope, so it requires evidence for it too.
 Paths are lowercase segments below the route prefix, e.g. "/gaps" or "/gaps/:contractId".
+
+${templateSection(input.proposalTemplates ?? [])}
 
 REPLY FORMAT
 Reply with one JSON object and nothing else - no prose, no code fence. Unknown keys are rejected.

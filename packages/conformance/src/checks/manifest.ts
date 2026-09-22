@@ -14,11 +14,30 @@ import type { Check } from "../check";
 import { ROUTE_PREFIX_RE, routePrefix } from "../derive";
 import { CANDIDATE_SCOPE, NO_POSITION, finding, type Finding } from "../finding";
 import { exceedsHostCeiling, validateManifestData } from "../manifest-schema";
+import type { ManifestSource } from "../manifest-read";
+import type { ScannedFile } from "../scan";
 
-/** Every field the host's schema reads. A member that is not one of these
- * and not a function member is additive and ignored, exactly as the host's
- * non-strict schema ignores it. */
-const DATA_FIELDS = [
+/** ── EVERY MEMBER THE HOST'S MANIFEST CARRIES IS JUDGED ONE OF THREE WAYS ──
+ *
+ * The host's `SubAppManifest` (`server/subapps/types.ts`) is the Zod data
+ * `subAppManifestSchema` validates, plus members Zod never sees. This check
+ * VALIDATES the first (`DATA_FIELDS`), REQUIRES the host-called functions
+ * (`FUNCTION_MEMBERS`) and REFUSES the rest (`REFUSED_MEMBERS`).
+ * `manifest-members-drift.test.ts` reads the host's interface and fails on a
+ * member in none of the three, so a member the host starts ACTING on cannot
+ * pass this gate unexamined again.
+ *
+ * ⚠ THIS COMMENT USED TO SAY THE OPPOSITE: that any other member "is
+ * additive and ignored, exactly as the host's non-strict schema ignores it".
+ * True of the Zod schema; false of the host since OS-04 (host 42b0f308),
+ * which acts on `contributions` at boot and at runtime without the schema
+ * ever seeing it. A generated manifest carrying one passed this gate clean.
+ *
+ * A member the host does not declare at all is still ignored — the host's
+ * Zod strips it and nothing else reads it. */
+
+/** Every field the host's schema reads. */
+export const DATA_FIELDS: readonly string[] = [
   "id",
   "label",
   "version",
@@ -33,7 +52,27 @@ const DATA_FIELDS = [
   "widgets",
 ];
 
-const FUNCTION_MEMBERS = ["initSchema", "registerRoutes"];
+/** The function members the host calls on every manifest. Required. */
+export const FUNCTION_MEMBERS: readonly string[] = ["initSchema", "registerRoutes"];
+
+/** Members the host's `SubAppManifest` declares that a GENERATED mini-app
+ * may never carry. Refused wherever the manifest file names them.
+ *
+ * `contributions` (OS-04) is how a sub-app reaches a HOST surface without the
+ * host importing it: `/api/state` flags, background work handed the raw `db`
+ * and workspace `root`, fixed connector rows, and the signing state of a
+ * contract (`ContractDetail.signing`, the inbox's signing rows). Every
+ * contribution point replaces a docusign-specific import, and the host acts
+ * on the bundle at BOOT — `app.ts` calls `assertContributionsUnambiguous`,
+ * which throws when a second sub-app claims the single-valued
+ * `ticketSigning`. None of that is a mini-app's to touch, and none of it can
+ * be judged statically: every point is a function. */
+export const REFUSED_MEMBERS: readonly string[] = ["contributions"];
+
+const REFUSAL_REASON: Readonly<Record<string, string>> = {
+  contributions:
+    "`contributions` is the host's OS-04 contribution bundle — `/api/state` flags, background work handed the raw db and workspace root, fixed connector rows, and a contract's signing state — and the host acts on it at boot: app.ts calls assertContributionsUnambiguous, which throws when a second sub-app claims the single-valued `ticketSigning` (docusign already does). A generated mini-app declares no host-surface contributions",
+};
 
 export const manifestCheck: Check = {
   name: "manifest",
@@ -160,9 +199,54 @@ export const manifestCheck: Check = {
       );
     }
 
+    out.push(...refusedMembers(app.manifestPath, scan, manifest));
+
     return out;
   },
 };
+
+/** FD-M008: every place the manifest FILE names a refused member — as a key
+ * (bare or quoted), a method, a getter, a shorthand, a computed key, or a
+ * write after the declaration — plus every member whose name cannot be read
+ * at all, since a spread or a computed key could carry one unseen. Words in
+ * comments and in string VALUES (a label reading "Pension contributions") are
+ * not code and are not findings. What no reader of this file can see —
+ * another module attaching the member — the mount probe asks the object
+ * itself (`verify/mount.ts`). */
+function refusedMembers(file: string, scan: ScannedFile, manifest: ManifestSource): Finding[] {
+  const out: Finding[] = [];
+  const reported = new Set<number>();
+  const report = (offset: number, message: string): void => {
+    if (reported.has(offset)) return;
+    reported.add(offset);
+    out.push(finding("FD-M008", file, scan.positionAt(offset), message, scan.lineTextAt(offset)));
+  };
+  const importOffsets = new Set(scan.imports.map((ref) => ref.offset));
+
+  for (const name of REFUSED_MEMBERS) {
+    const reason = REFUSAL_REASON[name] ?? `\`${name}\` is a SubAppManifest member a generated mini-app may not declare`;
+    for (const member of manifest.members) {
+      if (member.key === name) report(member.keyOffset, `the manifest declares \`${name}\` — ${reason}`);
+    }
+    for (const match of scan.skeleton.matchAll(new RegExp(`(?<![\\w$])${name}(?![\\w$])`, "g"))) {
+      report(match.index ?? 0, `the manifest file names \`${name}\` as code — ${reason}, and attaching it any other way is still declaring it`);
+    }
+    for (const literal of scan.strings) {
+      if (literal.value !== name || importOffsets.has(literal.offset)) continue;
+      report(literal.offset, `the manifest file names \`${name}\` as a property key in a string — ${reason}, and a string-keyed write is still a declaration`);
+    }
+  }
+
+  for (const member of manifest.unreadable) {
+    report(
+      member.offset,
+      member.kind === "spread"
+        ? `the manifest spreads \`${shorten(member.text)}\` into itself — a spread can carry \`contributions\` or any other member where no reader of this file can see it, so every member must be written out`
+        : `the manifest has a computed key, \`${shorten(member.text)}\` — a computed key can name \`contributions\` or any other member without the name appearing in the source, so every key must be written out`,
+    );
+  }
+  return out;
+}
 
 function shorten(text: string): string {
   const single = text.replace(/\s+/g, " ").trim();

@@ -40,6 +40,7 @@ const CATALOG = {
   "FD-M005": { severity: "error", title: "id-derived fields equal their derivation", contract: "§3" },
   "FD-M006": { severity: "error", title: "manifest carries initSchema and registerRoutes", contract: "§2" },
   "FD-M007": { severity: "error", title: "directory name equals the manifest id", contract: "§3" },
+  "FD-M008": { severity: "error", title: "manifest declares no host-surface contributions", contract: "§2" },
 
   // ── The import closure: what does mounting this drag in? ────────────
   "FD-I001": { severity: "error", title: "no sibling sub-app in the import closure", contract: "§5.4" },

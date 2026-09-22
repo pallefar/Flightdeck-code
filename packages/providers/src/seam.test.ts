@@ -19,6 +19,7 @@ import { FakeProvider } from "./fake";
 import type { FakeReply } from "./fake";
 import { readJson } from "./structured";
 import type { Completion, ModelProvider } from "./types";
+import { EFFORTS } from "./types";
 
 /** What each case needs: a provider primed to answer once, however that vendor spells it. */
 interface Harness {
@@ -165,10 +166,17 @@ describe("config defaults", () => {
   });
 
   it("ignores an unrecognised effort instead of taking a deploy down", () => {
+    // The LIBRARY reports and carries on; the composition root
+    // (`server/index.ts`, `bootProblems`) is what refuses to start on it.
     const { config, ignored } = anthropicConfigFromEnv({ FLIGHTDECK_EFFORT: "turbo" });
     expect(config.effort).toBeUndefined();
     expect(ignored).toHaveLength(1);
     expect(ignored[0]).toContain("turbo");
+  });
+
+  it("names the allowed set from EFFORTS itself, so the message cannot drift from the type", () => {
+    const { ignored } = anthropicConfigFromEnv({ FLIGHTDECK_EFFORT: "turbo" });
+    expect(ignored).toEqual([`FLIGHTDECK_EFFORT=turbo is not one of ${EFFORTS.join(", ")}`]);
   });
 
   it("reads nothing from the environment by default", () => {

@@ -57,6 +57,7 @@ export {
 export {
   planSubApp,
   SpecRejectedError,
+  type PlanOptions,
   type PlannedDomain,
   type PlannedRoute,
   type PlannedTable,
@@ -104,5 +105,20 @@ export {
   type FieldSpec,
   type TableSpec,
 } from "./spec-contract";
+export {
+  PROPOSAL_TEMPLATES,
+  approvedTemplateMenu,
+  checkTemplateApproval,
+  proposeOperation,
+  proposeOperationProblem,
+  resolveProposalTemplate,
+  templateContentHash,
+  type ProposalTemplate,
+  type ProposalTemplateMenuEntry,
+  type ProposeOperation,
+  type TemplateApproval,
+  type TemplateApprovalProblem,
+  type TemplateResolution,
+} from "./proposal-templates";
 export * as naming from "./naming";
 

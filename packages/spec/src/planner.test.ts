@@ -69,9 +69,15 @@ const overreachingDraft = makeDraft({
       summary: "File a follow-up proposal",
       kind: "propose",
       capabilities: ["write:inbox-proposal"],
+      template: "divergence",
     },
   ],
 });
+
+/** The approved-template menu @pipeline would pass (owner ruling 2026-09-22 (8)). A propose
+ * route is admitted only when its template is on it, so the consent tests below that expect
+ * a PLANNED proposing spec have to offer one — consent to write is necessary, not sufficient. */
+const MENU = [{ id: "divergence", summary: "Flag a divergence for review.", fields: ["ticket", "note"] }];
 
 function expectPlanned(outcome: PlanOutcome): PlannedOutcome {
   if (outcome.status !== "planned") {
@@ -254,6 +260,7 @@ describe("planFromPrompt: a capability the user never consented to", () => {
         {
           prompt: READ_ONLY_PROMPT,
           answers: { [consentQuestionId("write:inbox-proposal")]: "yes, it may file proposals" },
+          proposalTemplates: MENU,
         },
         llm,
       ),

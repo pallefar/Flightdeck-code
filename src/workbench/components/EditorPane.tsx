@@ -19,7 +19,12 @@
  * buffer says so rather than pointing at lines that have moved.
  *
  * ── WHAT THE BUTTONS MEAN ────────────────────────────────────────────
- *   Save              the buffer becomes the file every other pane reads.
+ *   Save in workbench the buffer becomes the file every other pane reads —
+ *                     in this browser tab only. It writes no file, calls no
+ *                     server and never touches the host repo (owner ruling
+ *                     2026-09-22 (9) renamed it from a bare "Save", which read
+ *                     as a disk write). "Download candidate", in the tab
+ *                     strip, is how the saved files leave the browser.
  *   Revert            drop unsaved typing, keep what was saved.
  *   Restore generated throw the whole edit away, back to Studio's text.
  *   Lock              claim the file. See `editing.ts` for the promise
@@ -152,8 +157,13 @@ export function EditorPane({
           </button>
         )}
         {dirty && onSave !== undefined && (
-          <button type="button" className="fd-save" onClick={() => onSave(file.path)}>
-            Save
+          <button
+            type="button"
+            className="fd-save"
+            onClick={() => onSave(file.path)}
+            title="Makes this text the file every pane reads, in this browser tab only. Nothing is written to disk, the server or the host repo. Download candidate saves the edited files to this computer. (Ctrl/Cmd+S)"
+          >
+            Save in workbench
           </button>
         )}
         {dirty && onRevert !== undefined && (

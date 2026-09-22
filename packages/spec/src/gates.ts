@@ -40,9 +40,11 @@ import {
   modelRaisedQuestion,
   navSectionQuestion,
   orderQuestions,
+  proposalTemplateQuestion,
   rolesQuestion,
   unknownCapabilityQuestion,
 } from "./questions";
+import type { ProposalTemplateChoice } from "./templates";
 import type { ClarifyingQuestion, SpecField } from "./questions";
 import type { PlanOutcome, PlanWarning, WarningCode } from "./outcome";
 
@@ -56,6 +58,12 @@ export interface GateContext {
   readonly hostVersion: string;
   /** Version stamped on the generated manifest. */
   readonly appVersion: string;
+  /**
+   * The approved proposal templates a propose route may name (owner ruling 2026-09-22 (8)).
+   * Supplied by the caller - `@pipeline` passes the approved catalogue's menu - and absent
+   * means empty: a planner that was offered nothing admits no propose route at all.
+   */
+  readonly proposalTemplates?: readonly ProposalTemplateChoice[];
 }
 
 export const DEFAULT_APP_VERSION = "0.1.0";
@@ -191,6 +199,16 @@ function normalizeRoutePath(raw: string): string | null {
 interface NormalizedRoute {
   readonly route: SpecRoute;
   readonly requested: readonly Capability[];
+}
+
+/**
+ * The proposal template a propose route names, trimmed; `null` for none. Matched against the
+ * menu by exact equality - the catalogue is literal, like the host, so a near-miss spelling
+ * is a question rather than a correction.
+ */
+function templateOf(route: DraftRoute): string | null {
+  const template = route.template?.trim() ?? "";
+  return template === "" ? null : template;
 }
 
 /**
@@ -423,6 +441,14 @@ export function evaluateDraft(draft: PlannerDraft, context: GateContext): PlanOu
       continue;
     }
 
+    const template = templateOf(draftRoute);
+    if (draftRoute.kind === "read" && template !== null) {
+      warn(
+        "route-template-stripped",
+        `route "${draftRoute.summary.trim()}" is read-only, so its proposal template was removed - only a propose route files one`,
+      );
+    }
+
     const summary = draftRoute.summary.trim() || `${draftRoute.method} ${path}`;
     let routeId = slugify(draftRoute.id ?? summary) || slugify(`${draftRoute.method}${path}`);
     if (routeId === "") {
@@ -446,12 +472,14 @@ export function evaluateDraft(draft: PlannerDraft, context: GateContext): PlanOu
         summary: summary.slice(0, 160),
         kind: draftRoute.kind,
         capabilities: sortCapabilities(requested),
+        ...(draftRoute.kind === "propose" && template !== null ? { template } : {}),
       },
       requested: sortCapabilities(requested),
     });
   }
 
   // --- capabilities: what the routes actually need ------------------------------------------
+  const menu = context.proposalTemplates ?? [];
   const keptRoutes: SpecRoute[] = [];
   for (const entry of normalizedRoutes) {
     const refused = entry.requested.filter((capability) => consent.denied.has(capability));
@@ -470,6 +498,15 @@ export function evaluateDraft(draft: PlannerDraft, context: GateContext): PlanOu
           `Route "${entry.route.summary}" (${entry.route.method} ${entry.route.path}) would need a scope the request never granted.`,
         ),
       );
+    }
+    // Owner ruling 2026-09-22 (8): what a proposal writes comes from an approved template,
+    // and only the menu the caller offered counts as approved. Asked AFTER the declined-
+    // consent drop above, so a route that is not going to exist is not asked about.
+    if (entry.route.kind === "propose") {
+      const template = entry.route.template;
+      if (template === undefined || !menu.some((choice) => choice.id === template)) {
+        questions.push(proposalTemplateQuestion(entry.route.id, entry.route.summary, menu));
+      }
     }
     keptRoutes.push(entry.route);
   }

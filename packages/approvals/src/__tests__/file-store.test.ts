@@ -32,8 +32,8 @@ describe("it survives the process that wrote it", () => {
   it("⭐ a second store over the same file sees what the first wrote", () => {
     const file = tempFile();
     const first = createFileGrantStore(file);
-    first.putGrantRow(ceiling([[CONTRACTS_INPUT, 2]]));
-    first.putGrantRow(row(PROJECT, [[CONTRACTS_INPUT, 2]]));
+    first.putGrantRow(ceiling([[CONTRACTS_INPUT, 2]]), null);
+    first.putGrantRow(row(PROJECT, [[CONTRACTS_INPUT, 2]]), null);
     first.putApproval(approval());
 
     // A different object, as a restarted process would have.
@@ -52,8 +52,8 @@ describe("it survives the process that wrote it", () => {
     // nothing. This drives `effectiveGrant` itself.
     const file = tempFile();
     const store = createFileGrantStore(file);
-    store.putGrantRow(ceiling([[CONTRACTS_INPUT, 2]]));
-    store.putGrantRow(row(PROJECT, [[CONTRACTS_INPUT, 2]]));
+    store.putGrantRow(ceiling([[CONTRACTS_INPUT, 2]]), null);
+    store.putGrantRow(row(PROJECT, [[CONTRACTS_INPUT, 2]]), null);
 
     const allowed = await effectiveGrant({ store, ...ask({ datasource: CONTRACTS_INPUT, tier: 2 }) });
     expect(allowed.allowed).toBe(true);
@@ -70,8 +70,8 @@ describe("it survives the process that wrote it", () => {
     // revocation that has not happened yet.
     const file = tempFile();
     const reader = createFileGrantStore(file);
-    reader.putGrantRow(ceiling([[CONTRACTS_INPUT, 2]]));
-    reader.putGrantRow(row(PROJECT, [[CONTRACTS_INPUT, 2]]));
+    reader.putGrantRow(ceiling([[CONTRACTS_INPUT, 2]]), null);
+    reader.putGrantRow(row(PROJECT, [[CONTRACTS_INPUT, 2]]), null);
     expect((await reader.readGrantRow(PROJECT, TOOL))?.revokedAt ?? null).toBeNull();
 
     createFileGrantStore(file).revokeGrantRow(PROJECT, TOOL, AT);
@@ -82,7 +82,7 @@ describe("it survives the process that wrote it", () => {
   it("revocation ARCHIVES — the row is still there to answer 'was this ever allowed'", async () => {
     const file = tempFile();
     const store = createFileGrantStore(file);
-    store.putGrantRow(row(PROJECT, [[CONTRACTS_INPUT, 2]]));
+    store.putGrantRow(row(PROJECT, [[CONTRACTS_INPUT, 2]]), null);
     store.putApproval(approval());
     store.revokeGrantRow(PROJECT, TOOL, AT);
     store.revokeApproval(0, AT);
@@ -113,7 +113,7 @@ describe("what it refuses to read", () => {
     const original = '{ "version": 1, "rows": [ truncated...';
     fs.writeFileSync(file, original);
     const store = createFileGrantStore(file);
-    expect(() => store.putGrantRow(row(PROJECT, [[CONTRACTS_INPUT, 2]]))).toThrow(GrantStoreCorruptError);
+    expect(() => store.putGrantRow(row(PROJECT, [[CONTRACTS_INPUT, 2]]), null)).toThrow(GrantStoreCorruptError);
     expect(fs.readFileSync(file, "utf8")).toBe(original);
   });
 
@@ -163,13 +163,13 @@ describe("how it writes", () => {
   it("leaves no temp file behind", () => {
     const file = tempFile();
     const store = createFileGrantStore(file);
-    store.putGrantRow(row(PROJECT, [[CONTRACTS_INPUT, 2]]));
+    store.putGrantRow(row(PROJECT, [[CONTRACTS_INPUT, 2]]), null);
     expect(fs.readdirSync(path.dirname(file)).filter((f) => f.includes("tmp"))).toEqual([]);
   });
 
   it("⭐ is not world-readable — it records who approved what", () => {
     const file = tempFile();
-    createFileGrantStore(file).putGrantRow(row(PROJECT, [[CONTRACTS_INPUT, 2]]));
+    createFileGrantStore(file).putGrantRow(row(PROJECT, [[CONTRACTS_INPUT, 2]]), null);
     // eslint-disable-next-line no-bitwise
     expect(fs.statSync(file).mode & 0o077).toBe(0);
   });
@@ -177,8 +177,8 @@ describe("how it writes", () => {
   it("replaces a row by its primary key rather than appending a second one", async () => {
     const file = tempFile();
     const store = createFileGrantStore(file);
-    store.putGrantRow(row(PROJECT, [[CONTRACTS_INPUT, 2]]));
-    store.putGrantRow(row(PROJECT, [[CONTRACTS_INPUT, 4]]));
+    store.putGrantRow(row(PROJECT, [[CONTRACTS_INPUT, 2]]), null);
+    store.putGrantRow(row(PROJECT, [[CONTRACTS_INPUT, 4]]), 1);
     const parsed = JSON.parse(fs.readFileSync(file, "utf8")) as { rows: unknown[] };
     expect(parsed.rows).toHaveLength(1);
     expect((await store.readGrantRow(PROJECT, TOOL))?.datasources[0]?.maxTier).toBe(4);
@@ -191,17 +191,18 @@ describe("how it writes", () => {
  *
  * One process with one object cannot lose a write to itself. Two processes
  * each reading, modifying and writing the same file can, and the second
- * silently erases the first. `redteam-attacks.test.ts` records the row-level
- * version of this as open ("grant rows are last-write-wins, no version /
- * CAS"); making the store durable without a lock would have widened it from
- * "one operator overwrites another's narrowing" to "one process erases
- * another's entire ledger".
+ * silently erases the first. Making the store durable without a lock would
+ * have turned "one operator overwrites another's narrowing" into "one process
+ * erases another's entire ledger". The lock closes the FILE-level race; the
+ * ROW-level one (two serialised writes, the second based on a stale read) is
+ * closed by the row version — `row-version.test.ts`, and "BLOCKED: grant rows
+ * carry a version" in `redteam-attacks.test.ts`.
  */
 describe("two writers", () => {
   it("⭐ a held lock refuses the write rather than racing it", () => {
     const file = tempFile();
     const store = createFileGrantStore(file);
-    store.putGrantRow(row(PROJECT, [[CONTRACTS_INPUT, 2]]));
+    store.putGrantRow(row(PROJECT, [[CONTRACTS_INPUT, 2]]), null);
     const before = fs.readFileSync(file, "utf8");
 
     // Another writer holds it. `open(..., "wx")` is atomic create-exclusive,
@@ -225,7 +226,7 @@ describe("two writers", () => {
     const longAgo = new Date(Date.now() - 120_000);
     fs.utimesSync(lock, longAgo, longAgo);
 
-    expect(() => store.putGrantRow(row(PROJECT, [[CONTRACTS_INPUT, 2]]))).not.toThrow();
+    expect(() => store.putGrantRow(row(PROJECT, [[CONTRACTS_INPUT, 2]]), null)).not.toThrow();
     expect(fs.existsSync(lock)).toBe(false);
   });
 
@@ -241,7 +242,7 @@ describe("two writers", () => {
 
   it("releases the lock after a successful write", () => {
     const file = tempFile();
-    createFileGrantStore(file).putGrantRow(row(PROJECT, [[CONTRACTS_INPUT, 2]]));
+    createFileGrantStore(file).putGrantRow(row(PROJECT, [[CONTRACTS_INPUT, 2]]), null);
     expect(fs.existsSync(`${file}.lock`)).toBe(false);
   });
 
@@ -251,7 +252,7 @@ describe("two writers", () => {
     // deterministically by changing the file DURING the read-modify-write.
     const file = tempFile();
     const store = createFileGrantStore(file);
-    store.putGrantRow(row(PROJECT, [[CONTRACTS_INPUT, 2]]));
+    store.putGrantRow(row(PROJECT, [[CONTRACTS_INPUT, 2]]), null);
 
     // ⚠ THE COUNTER ONLY COUNTS READS OF THIS FILE.
     //

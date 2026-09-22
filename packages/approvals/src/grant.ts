@@ -87,6 +87,19 @@ export interface GrantRow {
   readonly datasources: readonly DatasourceGrantEntry[];
   /** ISO timestamp. Set = this whole row is off. Revocation archives, never deletes. */
   readonly revokedAt?: string | null;
+  /**
+   * The row's version, ASSIGNED BY THE STORE on every write — a caller's value
+   * is overwritten, never trusted. Absent counts as 0 (a row written before
+   * the field existed). It exists so a write can say which version it was
+   * based on and be refused when that is no longer current (`store.ts`,
+   * `GrantRowConflictError`); without it two operators' writes were
+   * last-write-wins and a narrowing could vanish under a widening.
+   *
+   * ⚠ Nothing in this file reads it. It is concurrency bookkeeping, not a
+   * grant: the intersection's provenance rule above is unchanged, and a rev
+   * cannot widen or narrow anything.
+   */
+  readonly rev?: number;
 }
 
 /**

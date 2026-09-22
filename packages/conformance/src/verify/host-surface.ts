@@ -108,6 +108,10 @@ export interface SubAppManifest {
   readonly widgets?: readonly unknown[];
   initSchema(db: Db): void | Promise<void>;
   registerRoutes(app: FastifyInstance, ctx: RegisterRoutesCtx): void | Promise<void>;
+  /** The host declares this (OS-04 host-surface contributions) and acts on
+   * it at boot. A GENERATED mini-app may not: the gate refuses it (FD-M008),
+   * and \`never\` makes the compiler refuse it too, so the two stages agree. */
+  readonly contributions?: never;
 }
 
 /** The host's Zod schema, which \`loadValidatedManifests\` applies

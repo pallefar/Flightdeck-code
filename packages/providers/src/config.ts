@@ -9,7 +9,7 @@
 
 import { DEFAULT_MODEL } from "./models";
 import type { Effort } from "./types";
-import { isEffort } from "./types";
+import { EFFORTS, isEffort } from "./types";
 
 // The id itself lives in `models.ts` and is re-exported here so callers of
 // this module are unaffected. See that file for why it is separate: this one
@@ -86,8 +86,14 @@ export const EFFORT_ENV_VAR = "FLIGHTDECK_EFFORT";
  * `process.env` on its own — a provider built with `new AnthropicProvider()`
  * and no arguments uses the constants above and only those. That keeps the
  * planner's behaviour a function of its inputs, which is what makes it
- * testable. An unrecognised effort value is ignored rather than crashing a
- * boot; the default stands and the caller is told which value was dropped.
+ * testable. An unrecognised effort value is reported, not thrown: the
+ * default stands in `config` and the dropped value is named in `ignored`.
+ *
+ * ⚠ `ignored` IS NOT OPTIONAL READING. This function stays lenient so a
+ * LIBRARY never takes a process down, which makes every caller responsible
+ * for what it does with `ignored` — and a caller that reads only `.config`
+ * turns a typo (`turbo`, `High`) into a silent `high`. Studio's composition
+ * root (`server/index.ts`, `bootProblems`) refuses to start on any entry.
  */
 export function anthropicConfigFromEnv(
   env: Readonly<Record<string, string | undefined>> = process.env,
@@ -105,7 +111,8 @@ export function anthropicConfigFromEnv(
     if (isEffort(effort)) {
       config.effort = effort;
     } else {
-      ignored.push(`${EFFORT_ENV_VAR}=${effort} is not one of ${["low", "medium", "high", "xhigh", "max"].join(", ")}`);
+      // From EFFORTS, not a second copy of the list that could drift from it.
+      ignored.push(`${EFFORT_ENV_VAR}=${effort} is not one of ${EFFORTS.join(", ")}`);
     }
   }
 

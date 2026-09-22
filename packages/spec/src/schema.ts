@@ -29,6 +29,7 @@ import {
   tablePrefixFor,
 } from "./vocabulary";
 import { isLikelyEmoji, looksLikeI18nKey } from "./text";
+import { TEMPLATE_ID_PATTERN } from "./templates";
 
 export const navSectionSchema = z.enum(NAV_SECTIONS);
 export const capabilitySchema = z.enum(CAPABILITIES);
@@ -82,6 +83,16 @@ export const routeSchema = z
     summary: z.string().min(1).max(160),
     kind: z.enum(["read", "propose"]),
     capabilities: z.array(capabilitySchema),
+    /**
+     * The approved proposal template a `propose` route files (owner ruling 2026-09-22 (8)) -
+     * an id, never the fields. Optional at this level because the Cowork-workflow path
+     * names none on its routes: its conversion resolves the catalogue's `step` template
+     * itself, and emits no propose route while that template is unapproved. The prompt
+     * path's gates require one on every propose route, and `@pipeline`'s translator refuses
+     * a propose route that lacks one or names an unapproved one. A read route may not carry
+     * one.
+     */
+    template: z.string().regex(TEMPLATE_ID_PATTERN, "template must be a lowercase slug").max(48).optional(),
   })
   .strict();
 
@@ -299,6 +310,13 @@ export const miniAppSpecSchema = z
           code: z.ZodIssueCode.custom,
           path: ["routes", index, "capabilities"],
           message: `route "${route.id}" is read-only but holds "write:inbox-proposal"`,
+        });
+      }
+      if (route.kind === "read" && route.template !== undefined) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["routes", index, "template"],
+          message: `route "${route.id}" is read-only but names a proposal template - only a propose route files one`,
         });
       }
     });

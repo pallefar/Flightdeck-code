@@ -231,3 +231,92 @@ export function readHostPiiPatterns(src: string): HostPattern[] {
   if (out.length === 0) throw new Error("PII_PATTERNS parsed to zero entries — the parser or the host changed shape");
   return out;
 }
+
+// ─────────────────────────────────────────────────────────────────────────
+// The host's SubAppManifest shape, read as text
+// ─────────────────────────────────────────────────────────────────────────
+//
+// Two readers that more than one package's drift test needs: codegen's
+// manifest reader skips exactly the members the host's interface adds beyond
+// the Zod data, and conformance's manifest check must validate, require or
+// refuse every member the host acts on. Same deliberately dumb parsing as the
+// rest of this file, and the same posture: throw rather than return an empty
+// list, so a host rewrite that moves a declaration cannot pass as "no members".
+
+function stripComments(source: string): string {
+  return source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/[^\n]*/g, "");
+}
+
+function matchClose(code: string, open: number, what: string): number {
+  let depth = 0;
+  for (let i = open; i < code.length; i++) {
+    if (code[i] === "{") depth++;
+    else if (code[i] === "}" && --depth === 0) return i;
+  }
+  throw new Error(`${what} is never closed`);
+}
+
+/** The member names of `export interface <name> ... { ... }`: comments
+ * dropped, the body brace-matched, members split at depth-0 `;`. */
+export function readInterfaceMembers(source: string, name: string): string[] {
+  const code = stripComments(source);
+  const head = new RegExp(`export\\s+interface\\s+${name}\\b[^{]*\\{`).exec(code);
+  if (head === null) throw new Error(`no "export interface ${name}" in the host source`);
+  const open = head.index + head[0].length - 1;
+  const body = code.slice(open + 1, matchClose(code, open, `interface ${name}`));
+  const members: string[] = [];
+  let level = 0;
+  let current = "";
+  for (let i = 0; i < body.length; i++) {
+    const ch = body[i] ?? "";
+    // `=>` is an arrow, not the end of a generic.
+    if ("({[<".includes(ch)) level++;
+    else if (")}]".includes(ch) || (ch === ">" && body[i - 1] !== "=")) level--;
+    if (ch === ";" && level === 0) {
+      members.push(current);
+      current = "";
+      continue;
+    }
+    current += ch;
+  }
+  if (current.trim() !== "") members.push(current);
+  const names = members
+    .map((m) => /^\s*(?:readonly\s+)?([A-Za-z_$][\w$]*)/.exec(m)?.[1])
+    .filter((m): m is string => m !== undefined);
+  if (names.length === 0) throw new Error(`interface ${name} parsed to zero members`);
+  return names;
+}
+
+/** The top-level keys of `export const <name> = z.object({ ... })` — the
+ * fields a host Zod schema validates. */
+export function readZodObjectKeys(source: string, name: string): string[] {
+  const code = stripComments(source);
+  const head = new RegExp(`export\\s+const\\s+${name}\\s*=\\s*z\\.object\\(\\s*\\{`).exec(code);
+  if (head === null) throw new Error(`no "export const ${name} = z.object({" in the host source`);
+  const open = head.index + head[0].length - 1;
+  const body = code.slice(open + 1, matchClose(code, open, `z.object for ${name}`));
+  const keys: string[] = [];
+  let depth = 0;
+  let start = 0;
+  const take = (member: string) => {
+    const key = /^\s*([A-Za-z_$][\w$]*)\s*:/.exec(member)?.[1];
+    if (key !== undefined) keys.push(key);
+  };
+  for (let i = 0; i < body.length; i++) {
+    const ch = body[i] ?? "";
+    if (ch === '"' || ch === "'") {
+      const end = body.indexOf(ch, i + 1);
+      i = end < 0 ? body.length : end;
+      continue;
+    }
+    if ("([{".includes(ch)) depth++;
+    else if (")]}".includes(ch)) depth--;
+    else if (ch === "," && depth === 0) {
+      take(body.slice(start, i));
+      start = i + 1;
+    }
+  }
+  take(body.slice(start));
+  if (keys.length === 0) throw new Error(`z.object for ${name} parsed to zero keys`);
+  return keys;
+}

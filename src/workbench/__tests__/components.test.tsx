@@ -371,7 +371,10 @@ describe("EditorPane", () => {
       <EditorPane file={FILE} generated={FILE} draft={dirty} findings={[]} onEdit={noop} onSave={noop} onRevert={noop} onRestore={noop} />,
     );
     expect(out).toContain("unsaved");
-    expect(out).toContain(">Save<");
+    // Owner ruling 2026-09-22 (9): the label and tooltip say where a save
+    // goes — into the workbench, and nowhere else.
+    expect(out).toContain(">Save in workbench<");
+    expect(out).toMatch(/title="[^"]*Nothing is written to disk, the server or the host repo[^"]*"/);
     // Revert drops typing; restore drops the edit. Two buttons because
     // they destroy different things.
     expect(out).toContain(">Revert<");
@@ -475,6 +478,58 @@ describe("the shell, wired to a store", () => {
     expect(saved).toContain("1 edited");
     // One authoritative model: the saved text is what the file pane shows.
     expect(saved).toContain("// mine");
+  });
+
+  // ⭐ Owner ruling 2026-09-22 (9): "Download candidate", browser-only, and
+  // enabled only when the conformance gate passes on the EDITED files.
+  describe("Download candidate", () => {
+    const button = (out: string) => /<button[^>]*>Download candidate<\/button>/.exec(out)?.[0] ?? null;
+    const passing = () => ({ ok: true, findings: [], rulesRun: ["FD-M001"] });
+    const failingOnEdits = (files: readonly { contents: string }[]) =>
+      files.some((f) => f.contents.includes("BROKEN"))
+        ? { ok: false, findings: [finding("FD-G001", "server/subapps/wc-clock/manifest.ts", 1, "x")], rulesRun: ["FD-G001"] }
+        : passing();
+
+    it("is not drawn when the driver supplies no gate — no dead buttons", () => {
+      const store = createStore();
+      store.settle(store.prompt("build it") ?? "", candidate());
+      expect(button(html(<Workbench store={store} onPrompt={noop} />))).toBeNull();
+    });
+
+    it("is enabled when the gate passes on the round's files", () => {
+      const store = createStore();
+      store.settle(store.prompt("build it") ?? "", candidate());
+      const drawn = button(html(<Workbench store={store} onPrompt={noop} checkFiles={passing} />));
+      expect(drawn).not.toBeNull();
+      expect(drawn).not.toContain("disabled");
+      expect(drawn).toMatch(/title="[^"]*nothing is sent to the server[^"]*"/i);
+    });
+
+    it("⭐ is disabled, saying why, when a saved edit makes the gate fail", () => {
+      const store = createStore();
+      store.settle(store.prompt("build it") ?? "", candidate());
+      store.editFile("server/subapps/wc-clock/manifest.ts", "// BROKEN\n");
+      store.saveFile("server/subapps/wc-clock/manifest.ts");
+      const drawn = button(html(<Workbench store={store} onPrompt={noop} checkFiles={failingOnEdits} />));
+      expect(drawn).toContain("disabled");
+      expect(drawn).toMatch(/title="[^"]*conformance gate fails on the edited files/i);
+      // The reason names the rule and the place — the Gate pane shows Studio's
+      // own verdict, so the tooltip is the only place this error appears.
+      expect(drawn).toMatch(/title="[^"]*FD-G001 server\/subapps\/wc-clock\/manifest\.ts:1 — x[^"]*"/);
+    });
+
+    it("is disabled while an edit is unsaved", () => {
+      const store = createStore();
+      store.settle(store.prompt("build it") ?? "", candidate());
+      store.editFile("server/subapps/wc-clock/manifest.ts", "// typing\n");
+      const drawn = button(html(<Workbench store={store} onPrompt={noop} checkFiles={passing} />));
+      expect(drawn).toContain("disabled");
+    });
+
+    it("is disabled before any round has landed", () => {
+      const drawn = button(html(<Workbench store={createStore()} onPrompt={noop} checkFiles={passing} />));
+      expect(drawn).toContain("disabled");
+    });
   });
 });
 

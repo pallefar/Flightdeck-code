@@ -70,6 +70,10 @@ export interface ProbeResult {
     readonly routePrefix: unknown;
     readonly hasInitSchema: boolean;
     readonly hasRegisterRoutes: boolean;
+    /** The object carried an OS-04 `contributions` member when it was
+     * imported, or had one after `registerRoutes` and every route ran —
+     * attached by any module, by any means. FD-M008. */
+    readonly declaresContributions: boolean;
   } | null;
   readonly initSchemaError: { readonly name: string; readonly message: string } | null;
   readonly registerRoutesError: { readonly name: string; readonly message: string } | null;
@@ -278,6 +282,7 @@ try {
       routePrefix: manifest.routePrefix,
       hasInitSchema: typeof manifest.initSchema === "function",
       hasRegisterRoutes: typeof manifest.registerRoutes === "function",
+      declaresContributions: "contributions" in manifest,
     };
 
     if (typeof manifest.initSchema === "function") {
@@ -305,6 +310,9 @@ try {
         enabled: await invoke(route, "enabled"),
       });
     }
+    // Asked again once everything has run: a member attached during
+    // registerRoutes or a handler is on the object the host would hold.
+    if ("contributions" in manifest) result.manifestShape.declaresContributions = true;
   }
 } catch (error) {
   result.loadError = { name: errName(error), message: errMessage(error), stack: String(error && error.stack ? error.stack : "") };

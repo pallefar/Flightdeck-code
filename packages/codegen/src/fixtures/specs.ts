@@ -264,12 +264,16 @@ export const wcClockSpec = {
         {
           method: "POST",
           path: "/flag",
-          summary: "Ask a reviewer to look at a folder",
+          summary: "Flag a divergence for review",
+          // Owner ruling 2026-09-22 (8): the approved `divergence` template, exactly
+          // (`proposal-templates.ts`). This route used to file its own `flag` kind with the
+          // same two fields; @codegen now refuses a proposing route no approved template
+          // stands for, fixtures included.
           operation: {
             kind: "propose",
-            proposalKind: "flag",
+            proposalKind: "divergence",
             ticketField: "ticket",
-            auditEvent: "wc-clock.flag-proposed",
+            auditEvent: "wc-clock.divergence-proposed",
             fields: [
               { name: "ticket", type: "string" },
               { name: "note", type: "string", maxLength: 500, optional: true },

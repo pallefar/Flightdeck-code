@@ -14,8 +14,8 @@ import fs from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { assertManifestWouldBoot, subAppManifestSchema } from "../manifest-rules";
-import { readEmittedManifest } from "../testing/readEmittedManifest";
-import { HOST_ROOT } from "../../../guardrails/src/host-source";
+import { NON_DATA_MEMBERS, readEmittedManifest } from "../testing/readEmittedManifest";
+import { HOST_ROOT, readInterfaceMembers } from "../../../guardrails/src/host-source";
 
 // ⚠ DERIVED, NOT HARDCODED. This was the literal Linux path, so on any
 // machine whose checkout lives elsewhere the file was simply absent and
@@ -35,6 +35,25 @@ describe.skipIf(!available)("the local schema copy agrees with the host's real m
       expect(() => assertManifestWouldBoot(data)).not.toThrow();
     });
   }
+
+  /** ⭐ THE READER'S SKIP LIST IS A TRANSCRIBED CONSTANT, SO IT GETS A DRIFT
+   * TEST (HANDOVER §5.4). The reader skips exactly the members the host's
+   * `SubAppManifest` interface declares on top of `SubAppManifestData` —
+   * the ones `subAppManifestSchema` never sees. Read off the host's
+   * `types.ts`, in both directions: a member the host adds and the reader
+   * does not skip turns a real manifest red (that is how OS-04's
+   * `contributions` surfaced); a member the reader skips and the host no
+   * longer declares is a hole a computed field could hide in. */
+  it("skips exactly the members the host's SubAppManifest adds beyond the Zod data", () => {
+    const types = fs.readFileSync(path.join(CONTRACT_SUBAPPS, "types.ts"), "utf8");
+    const hostMembers = readInterfaceMembers(types, "SubAppManifest");
+    expect(hostMembers.length).toBeGreaterThan(0);
+    expect([...NON_DATA_MEMBERS].sort()).toEqual([...hostMembers].sort());
+    // And none of them is a field the Zod copy validates — skipping a
+    // validated field would be exactly the weakening this list must not be.
+    const validated = Object.keys(subAppManifestSchema.shape);
+    expect(NON_DATA_MEMBERS.filter((m) => validated.includes(m))).toEqual([]);
+  });
 });
 
 describe("the boot rules the host applies", () => {

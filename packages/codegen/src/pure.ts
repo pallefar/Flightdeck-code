@@ -32,6 +32,7 @@ export { generateSubApp, type GenerateOptions, type GeneratedSubApp } from "./ge
 export {
   planSubApp,
   SpecRejectedError,
+  type PlanOptions,
   type PlannedDomain,
   type PlannedRoute,
   type PlannedTable,
@@ -78,4 +79,19 @@ export {
   type WorkflowSpec,
   type WorkflowStepSpec,
 } from "./spec-contract";
+export {
+  PROPOSAL_TEMPLATES,
+  approvedTemplateMenu,
+  checkTemplateApproval,
+  proposeOperation,
+  proposeOperationProblem,
+  resolveProposalTemplate,
+  templateContentHash,
+  type ProposalTemplate,
+  type ProposalTemplateMenuEntry,
+  type ProposeOperation,
+  type TemplateApproval,
+  type TemplateApprovalProblem,
+  type TemplateResolution,
+} from "./proposal-templates";
 export * as naming from "./naming";

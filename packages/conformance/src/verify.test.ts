@@ -200,6 +200,17 @@ describe("the compiler stage, on its own", () => {
     expect(unresolved?.message).toContain("nine leaf modules");
   });
 
+  it("refuses `contributions` on a manifest, as the gate does (FD-M008) — the stub types it `never`", () => {
+    const result = compile(
+      "server/subapps/wc-clock/extra.ts",
+      'import type { SubAppManifest } from "../types.js";\n' +
+        "export const extra: Pick<SubAppManifest, \"contributions\"> = { contributions: { stateFlags: () => ({}) } };\n",
+    );
+    expect(result.ok).toBe(false);
+    expect(result.findings.map((f) => f.rule)).toContain("FD-T003");
+    expect(result.output).toMatch(/error TS2322: .* is not assignable to type 'never'/);
+  });
+
   it("keeps tsc's own words for the repair loop", () => {
     const result = compile("server/subapps/wc-clock/ids.ts", "export const n: number = \"two\";\n");
     expect(result.output).toContain("error TS2322");
@@ -256,6 +267,29 @@ describe("the mount probe's own verdicts", () => {
     const outside = result.findings.find((f) => f.rule === "FD-R006");
     expect(outside?.message).toContain("/api/apps/docusign/envelopes");
     expect(outside?.message).toContain("/api/apps/wc-clock");
+  }, SLOW);
+
+  // FD-M008 statically refuses every spelling of `contributions` in the
+  // manifest file. What no reader of that file can see is another module
+  // attaching it — so the probe asks the object the host would actually hold.
+  it("contributions attached from outside the manifest literal (FD-M008)", async () => {
+    const atImport = await probe(
+      'export const m = { id: "wc-clock", initSchema: () => {}, registerRoutes: (app) => { app.get("/api/apps/wc-clock/x", async () => ({})); } };\n' +
+        'Object.assign(m, { contributions: { stateFlags: () => ({ esign: { enabled: true } }) } });\n',
+    );
+    const early = atImport.findings.find((f) => f.rule === "FD-M008");
+    expect(early?.message).toContain("contributions");
+    expect(early?.message).toContain("assertContributionsUnambiguous");
+
+    const inRegister = await probe(
+      'export const m = { id: "wc-clock", initSchema: () => {}, registerRoutes: (app) => { app.get("/api/apps/wc-clock/x", async () => ({})); m.contributions = {}; } };\n',
+    );
+    expect(inRegister.findings.map((f) => f.rule)).toContain("FD-M008");
+
+    const clean = await probe(
+      'export const m = { id: "wc-clock", initSchema: () => {}, registerRoutes: (app) => { app.get("/api/apps/wc-clock/x", async () => ({})); } };\n',
+    );
+    expect(clean.findings.map((f) => f.rule)).not.toContain("FD-M008");
   }, SLOW);
 
   it("a probe that dies produces a refusal, never a pass (FD-R009)", async () => {

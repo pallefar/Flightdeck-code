@@ -55,9 +55,14 @@ import {
 } from "@spec/index";
 import {
   CodegenInvariantError,
+  PROPOSAL_TEMPLATES,
   RESERVED_SUBAPP_IDS,
   SpecRejectedError,
   generateSubApp,
+  proposeOperation,
+  resolveProposalTemplate,
+  type ProposalTemplate,
+  type TemplateResolution,
 } from "@codegen/pure";
 import { runConformanceGate } from "@conformance/gate";
 import type { Finding } from "@conformance/finding";
@@ -66,6 +71,11 @@ import { STUDIO_BUNDLE_SCHEMA, type StudioBundle } from "../server/subapps/studi
 /** The one domain a converted workflow emits. Every generated route lives in
  * `routes/workflow.ts`; a workflow conversion never needs a second file. */
 const WORKFLOW_DOMAIN = "workflow";
+
+/** The catalogue template a converted workflow's proposal step files — owner
+ * ruling 2026-09-22 (8): proposing apps come ONLY from approved templates, and
+ * this one is in the catalogue WITHOUT an approval until the owner gives one. */
+const CONVERSION_TEMPLATE = "step";
 
 /** `@codegen`'s `workflowStepSchema` caps `n` at 99. A document numbering past
  * that is not a procedure anybody holds in their head. */
@@ -212,7 +222,27 @@ export type StudioConversion =
 
 interface TranslationResult {
   readonly spec: Record<string, unknown>;
+  /** What the emitted manifest declares — the plan's, less anything dropped. */
+  readonly capabilities: readonly string[];
   readonly warnings: readonly string[];
+  /** Set when nothing generatable is left; the conversion is then rejected. */
+  readonly refusal: string | null;
+}
+
+/** Why the conversion's template cannot be generated from, in words. */
+function templateProblem(problem: Exclude<TemplateResolution, { ok: true }>["problem"]): string {
+  switch (problem) {
+    case "unapproved":
+      return "has no approval record — the owner has not approved it";
+    case "unknown-template":
+      return "is not in the catalogue";
+    case "unnamed-approver":
+      return "carries an approval that names no human";
+    case "undated-approval":
+      return "carries an approval with no real date";
+    case "content-changed-since-approval":
+      return "has changed since it was approved, so the approval no longer covers what it writes";
+  }
 }
 
 function truncate(value: string, max: number): string {
@@ -228,10 +258,32 @@ function ordinalNumber(ordinal: string): number | null {
   return Number.isInteger(n) && n >= 1 && n <= MAX_STEP_ORDINAL ? n : null;
 }
 
-function translate(spec: DerivedSpec, workflowName: string, source: string | undefined): TranslationResult {
+function translate(
+  spec: DerivedSpec,
+  workflowName: string,
+  source: string | undefined,
+  catalogue: readonly ProposalTemplate[],
+): TranslationResult {
   const warnings: string[] = [];
   const reads = spec.capabilities.includes("read:contracts");
-  const proposes = spec.capabilities.includes("write:inbox-proposal");
+  const wantsProposals = spec.capabilities.includes("write:inbox-proposal");
+
+  /* ── Owner ruling 2026-09-22 (8) ──────────────────────────────────────
+   * "Proposing apps are generated ONLY from a closed catalogue of proposal
+   * templates the owner approves … generation refuses unapproved ones." This
+   * conversion used to write its `step` proposal (`ticket`, `step`, `note`)
+   * in code, outside the catalogue. That shape is now the catalogue's `step`
+   * template, resolved here like any other — and while it carries no valid
+   * approval, no proposing route is emitted, and neither is the
+   * `write:inbox-proposal` it would need. The fields come from the template,
+   * never from this file. */
+  const template = wantsProposals ? resolveProposalTemplate(CONVERSION_TEMPLATE, catalogue) : null;
+  const proposes = template !== null && template.ok;
+  const refusedTemplate =
+    template !== null && !template.ok
+      ? `owner ruling 2026-09-22 (8) generates proposing apps only from an approved template, and the catalogue's \`${CONVERSION_TEMPLATE}\` proposal template ${templateProblem(template.problem)}`
+      : null;
+  let droppedProposals = false;
 
   /* ── Routes ───────────────────────────────────────────────────────────
    * A workflow conversion produces a small, fixed route set, and every one of
@@ -242,31 +294,25 @@ function translate(spec: DerivedSpec, workflowName: string, source: string | und
   const routes: Array<Record<string, unknown>> = [];
   for (const route of spec.routes) {
     if (route.kind === "propose") {
-      if (!proposes) {
+      if (!wantsProposals) {
         warnings.push(
           `dropped the ${route.method} ${route.path} route: it files a proposal, but the app does not declare write:inbox-proposal`,
         );
+        continue;
+      }
+      if (template === null || !template.ok) {
+        droppedProposals = true;
+        warnings.push(`dropped the ${route.method} ${route.path} route: it would file a proposal — ${refusedTemplate ?? "no template resolved"}`);
         continue;
       }
       routes.push({
         method: "POST",
         path: route.path,
         summary: truncate(route.summary, 200),
-        operation: {
-          kind: "propose",
-          proposalKind: "step",
-          ticketField: "ticket",
-          fields: [
-            { name: "ticket", type: "string", maxLength: 64 },
-            { name: "step", type: "string", maxLength: 48 },
-            { name: "note", type: "string", optional: true, maxLength: 500 },
-          ],
-          // FIELD NAMES only ever reach an audit event, never values
-          // (contract rule 8). The generator enforces that; the name is
-          // namespaced under the sub-app id because the host's audit reader
-          // groups on it.
-          auditEvent: `${spec.id}.step-proposed`,
-        },
+        // FIELD NAMES only ever reach an audit event, never values (contract
+        // rule 8). The generator enforces that; the event is namespaced under
+        // the sub-app id because the host's audit reader groups on it.
+        operation: proposeOperation(template.template, spec.id),
       });
       continue;
     }
@@ -288,6 +334,16 @@ function translate(spec: DerivedSpec, workflowName: string, source: string | und
     // asked for.
     warnings.push(
       `dropped the ${route.method} ${route.path} route: the generated page renders the procedure from its own step data, so the route would answer what the page already has`,
+    );
+  }
+  // Least privilege (contract rule 9): with no route that files a proposal, a
+  // `write:inbox-proposal` line on the consent screen would grant a write the
+  // app never makes — and the proposals list below would read an inbox this
+  // app can no longer write to.
+  const capabilities = spec.capabilities.filter((scope) => proposes || scope !== "write:inbox-proposal");
+  if (wantsProposals && !proposes) {
+    warnings.push(
+      `dropped write:inbox-proposal from the app's capabilities: ${refusedTemplate ?? "no template resolved"}. Its proposal steps are shown on the rail and file nothing until the owner approves that template`,
     );
   }
   if (proposes) {
@@ -349,8 +405,15 @@ function translate(spec: DerivedSpec, workflowName: string, source: string | und
   };
   if (source !== undefined && source.length > 0) workflow.source = truncate(source, 200);
 
+  const refusal =
+    routes.length === 0 && droppedProposals
+      ? `nothing is left to generate: every route this workflow needs files a proposal — ${refusedTemplate ?? "no template resolved"}`
+      : null;
+
   return {
     warnings,
+    capabilities,
+    refusal,
     spec: {
       // Named, not defaulted. The generator's `mini-app` profile is what
       // refuses tables, and a spec that relied on the default to be
@@ -362,7 +425,7 @@ function translate(spec: DerivedSpec, workflowName: string, source: string | und
       icon: spec.icon,
       navSection: spec.navSection,
       summary: truncate(spec.purpose, 300),
-      capabilities: [...spec.capabilities],
+      capabilities: [...capabilities],
       visibleToRoles: [...spec.visibleToRoles],
       webModuleId: spec.derived.webModuleId,
       workflow,
@@ -371,7 +434,9 @@ function translate(spec: DerivedSpec, workflowName: string, source: string | und
   };
 }
 
-function summarize(spec: DerivedSpec): StudioSpecSummary {
+/** `capabilities` is what the emitted manifest declares, which is what the
+ * review screen must show — not the plan's, when a route was dropped. */
+function summarize(spec: DerivedSpec, capabilities: readonly string[]): StudioSpecSummary {
   return {
     id: spec.id,
     label: spec.label,
@@ -383,7 +448,7 @@ function summarize(spec: DerivedSpec): StudioSpecSummary {
     webModuleId: spec.derived.webModuleId,
     enableEnvVar: spec.derived.enableEnvVar,
     purpose: spec.purpose,
-    capabilities: [...spec.capabilities],
+    capabilities: [...capabilities],
     visibleToRoles: [...spec.visibleToRoles],
     steps: (spec.steps ?? []).map((step) => ({
       ordinal: step.ordinal,
@@ -398,7 +463,15 @@ function summarize(spec: DerivedSpec): StudioSpecSummary {
  * The conversion
  * ═══════════════════════════════════════════════════════════════════════ */
 
-export function convertWorkflow(input: StudioConversionInput): StudioConversion {
+export interface StudioConversionOptions {
+  /** The proposal-template catalogue. TESTS ONLY — so the approved path can be
+   * exercised without the production catalogue approving anything. Every
+   * production caller passes nothing and gets `PROPOSAL_TEMPLATES`. Never
+   * taken from a request: it is a parameter, not a field of the input. */
+  readonly catalogue?: readonly ProposalTemplate[];
+}
+
+export function convertWorkflow(input: StudioConversionInput, options: StudioConversionOptions = {}): StudioConversion {
   // Read the document once for its own name before planning, so a file that is
   // not a workflow at all is answered as such rather than as a spec problem.
   const parsed = parseWorkflowMarkdown(input.workflow);
@@ -465,11 +538,20 @@ export function convertWorkflow(input: StudioConversionInput): StudioConversion 
     };
   }
 
-  const translation = translate(derived, workflowName, input.source);
+  const translation = translate(derived, workflowName, input.source, options.catalogue ?? PROPOSAL_TEMPLATES);
+  if (translation.refusal !== null) {
+    return { status: "rejected", issues: [translation.refusal] };
+  }
 
   let generated: ReturnType<typeof generateSubApp>;
   try {
-    generated = generateSubApp(translation.spec);
+    // The same catalogue the translation resolved against, so @codegen's own ruling-8
+    // check (`planSubApp`) agrees with it. `undefined` in production: codegen then reads
+    // `PROPOSAL_TEMPLATES` itself, and a test's catalogue never reaches a real run.
+    generated = generateSubApp(
+      translation.spec,
+      options.catalogue === undefined ? {} : { proposalCatalogue: options.catalogue },
+    );
   } catch (err) {
     if (err instanceof SpecRejectedError) {
       return { status: "rejected", issues: err.issues.length > 0 ? err.issues : [err.message] };
@@ -544,7 +626,7 @@ export function convertWorkflow(input: StudioConversionInput): StudioConversion 
     understanding: outcome.understanding,
     subAppId: derived.id,
     label: derived.label,
-    spec: summarize(derived),
+    spec: summarize(derived, translation.capabilities),
     files,
     fileSummaries: files.map((file) => ({ path: file.path, kind: file.kind, bytes: file.contents.length })),
     registry: {

@@ -34,6 +34,13 @@ hot-install path to target, and inventing one is out of scope.
 
 Plus two non-Zod function members: `initSchema(db)` and `registerRoutes(app, ctx)`.
 
+Since OS-04 (host 42b0f308) the host's `SubAppManifest` also declares an optional
+`contributions` bundle — `/api/state` flags, background work handed the raw `db` and
+`root`, fixed connector rows, a contract's signing state — which the host acts on at
+boot (`assertContributionsUnambiguous`) and at runtime. **A generated mini-app declares
+none.** The gate refuses it in any spelling (FD-M008), the typecheck stub types it
+`never`, and the mount probe refuses a manifest object that carries it at runtime.
+
 Validation is **fail-loud**: `loadValidatedManifests` throws on the first violation. One
 malformed generated manifest takes the whole server down at boot, by design. This is why
 the conformance gate exists.

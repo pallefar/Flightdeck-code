@@ -63,6 +63,13 @@ export const draftRouteSchema = z
     summary: z.string(),
     kind: z.enum(["read", "propose"]),
     capabilities: z.array(z.string()).default([]),
+    /**
+     * The approved proposal template a `propose` route files (owner ruling 2026-09-22 (8)).
+     * An id from the menu the prompt lists, and the ONLY thing the model says about what a
+     * proposal writes: there is no `fields` key here, and `.strict()` refuses one, so the
+     * model cannot write the fields into the review inbox by adding them.
+     */
+    template: z.string().nullable().default(null),
   })
   .strict();
 

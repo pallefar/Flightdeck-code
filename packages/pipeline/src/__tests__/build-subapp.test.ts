@@ -115,8 +115,10 @@ describe("prompt → proposal, end to end", () => {
     // translator. What it will NOT do is as much of the point as what it does:
     // a @spec route carries `kind` and `capabilities`, and @codegen's propose
     // operation needs `proposalKind`, `ticketField`, `fields` and
-    // `auditEvent` — which nothing in a @spec document names. So read-only
-    // mini-apps translate today and proposing ones are refused BY NAME.
+    // `auditEvent` — which nothing in a @spec document names. Since owner
+    // ruling 2026-09-22 (8) a proposing route gets them from an APPROVED
+    // template it names (see the describe block at the end of this file); one
+    // that names none is still refused BY NAME, which is what this pins.
     const { translateSpec } = await import("../translate-spec");
     const outcome = await buildSubAppFromPrompt({ prompt: PROMPT }, deps(goodModel));
     // It got past @codegen's door, which is the whole claim.
@@ -299,5 +301,82 @@ describe("a payload above the tier ceiling is refused WITH a record", () => {
     await expect(
       buildSubAppFromPrompt({ prompt: PROMPT }, { ...deps(goodModel), digest: exploding }),
     ).rejects.toThrow("digest exploded");
+  });
+});
+
+/**
+ * ⭐ OWNER RULING 2026-09-22 (8), END TO END. A proposing mini-app, from a
+ * prompt: the model is shown the approved catalogue, picks a template id, and
+ * the fields its proposals write come from that template. HANDOVER §6 listed
+ * "@spec cannot describe a proposing app" as open; this is it closing.
+ */
+describe("a proposing app, from the approved catalogue", () => {
+  const PROPOSE_PROMPT = "Show contract folders needing review and flag a divergence for review, visible to legal and admin.";
+
+  const proposingDraft = (template: string | null) => {
+    const base = JSON.parse(DRAFT) as Record<string, unknown>;
+    const spec = base["spec"] as Record<string, unknown>;
+    spec["id"] = "divergence-desk";
+    spec["label"] = "Divergence desk";
+    spec["capabilities"] = [
+      { capability: "read:contracts", evidence: "contract folders needing review" },
+      { capability: "write:inbox-proposal", evidence: "flag a divergence for review" },
+    ];
+    spec["routes"] = [
+      ...(spec["routes"] as unknown[]),
+      {
+        id: "flag",
+        method: "POST",
+        path: "/flag",
+        summary: "Flag a divergence for review",
+        kind: "propose",
+        capabilities: ["write:inbox-proposal"],
+        template,
+      },
+    ];
+    return JSON.stringify(base);
+  };
+
+  it("⭐ shows the model the approved templates, and generates from the one it picked", async () => {
+    const model = vi.fn(async () => ({ text: proposingDraft("divergence") }));
+    const outcome = await buildSubAppFromPrompt({ prompt: PROPOSE_PROMPT }, deps(model));
+
+    const system = (model.mock.calls[0] as unknown as [{ system: string }] | undefined)?.[0].system ?? "";
+    expect(system).toContain("divergence");
+    expect(system).toContain("handoff");
+
+    expect(outcome.status).toBe("proposed");
+    if (outcome.status !== "proposed") return;
+    const route = outcome.generated.files.find((f) => f.path === "server/subapps/divergence-desk/routes/flag.ts");
+    expect(route?.contents).toContain("divergence-desk-divergence-");
+    // The template's fields and nothing else: `ticket` and `note`.
+    expect(route?.contents).toContain("ticket:");
+    expect(route?.contents).toContain("note:");
+    expect(outcome.conformance.ok).toBe(true);
+  });
+
+  it("asks which approved template, rather than generating, when the model names none", async () => {
+    const outcome = await buildSubAppFromPrompt(
+      { prompt: PROPOSE_PROMPT },
+      deps(async () => ({ text: proposingDraft(null) })),
+    );
+    expect(outcome.status).toBe("needs_input");
+    if (outcome.status !== "needs_input") return;
+    const question = outcome.questions.find((q) => q.id.startsWith("routes:template:"));
+    expect(question?.options).toEqual(["divergence", "handoff"]);
+  });
+
+  it("⛔ the menu is the pipeline's, not the caller's — a smuggled template never reaches the model", async () => {
+    const model = vi.fn(async () => ({ text: proposingDraft("salary-change") }));
+    const outcome = await buildSubAppFromPrompt(
+      {
+        prompt: PROPOSE_PROMPT,
+        proposalTemplates: [{ id: "salary-change", summary: "Change a salary.", fields: ["ticket", "salary"] }],
+      } as never,
+      deps(model),
+    );
+    const system = (model.mock.calls[0] as unknown as [{ system: string }] | undefined)?.[0].system ?? "";
+    expect(system).not.toContain("salary-change");
+    expect(outcome.status).toBe("needs_input");
   });
 });

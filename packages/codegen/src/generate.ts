@@ -20,7 +20,9 @@
  *   1. `planSubApp` parses, resolves and cross-checks — and, before
  *      anything is emitted, runs the DERIVED MANIFEST past a local copy of
  *      the host's `subAppManifestSchema`. A manifest that would not boot
- *      never becomes a file.
+ *      never becomes a file, and neither does a proposing route that no
+ *      approved proposal template stands for (owner ruling 2026-09-22 (8),
+ *      `proposal-templates.ts`).
  *   2. The emitters write text from the plan.
  *   3. `checkEmittedInvariants` reads that text back and refuses it if it
  *      breaks a contract rule.
@@ -40,6 +42,7 @@ import { emitWebModule } from "./emitters/web";
 import { CodegenInvariantError, checkEmittedInvariants, type GeneratedFile } from "./invariants";
 import { serverDir, webDir } from "./naming";
 import { planSubApp, type SubAppPlan } from "./plan";
+import type { ProposalTemplate } from "./proposal-templates";
 import { REGISTRY_PATH, buildRegistryPatch, type RegistryPatch } from "./registry-patch";
 
 export interface GenerateOptions {
@@ -49,6 +52,9 @@ export interface GenerateOptions {
    * has. A diff cannot be invented without the file it applies to, and
    * inventing one is how a patch stops applying. */
   registrySource?: string;
+  /** ⛔ TESTS ONLY — see `PlanOptions.proposalCatalogue` in `plan.ts`. Every production
+   * caller passes nothing and generates from the approved catalogue. */
+  proposalCatalogue?: readonly ProposalTemplate[];
 }
 
 export interface GeneratedSubApp {
@@ -67,7 +73,7 @@ function camelFile(id: string): string {
 }
 
 export function generateSubApp(input: unknown, options: GenerateOptions = {}): GeneratedSubApp {
-  const plan = planSubApp(input);
+  const plan = planSubApp(input, options.proposalCatalogue === undefined ? {} : { proposalCatalogue: options.proposalCatalogue });
   const server = serverDir(plan.id);
 
   const files: GeneratedFile[] = [

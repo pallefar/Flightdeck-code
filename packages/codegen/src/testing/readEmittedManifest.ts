@@ -8,34 +8,62 @@
  * same path the reviewer does — it reads what is written.
  *
  * It works because the emitter holds up its end: every DATA field of a
- * generated manifest is a JSON-compatible literal on its own line, and the
- * only non-JSON members are the two function ones. So: strip the comments,
- * take the object body, drop the function members, quote the keys, drop
- * trailing commas, and the result is JSON.
+ * generated manifest is a JSON-compatible literal. So: strip the comments,
+ * take the object body, split it into its top-level members, set aside the
+ * members that are not data, quote the keys, drop trailing commas, and the
+ * result is JSON.
+ *
+ * ── WHAT "NOT DATA" MEANS, AND WHO DECIDES IT ───────────────────────
+ * The host's `SubAppManifest` interface (`server/subapps/types.ts`) is
+ * `SubAppManifestData` — the fields `subAppManifestSchema` validates at
+ * boot — plus members Zod never sees: `initSchema`, `registerRoutes`, and
+ * since OS-04 (host 42b0f308) an optional `contributions` bundle, which
+ * docusign declares as `contributions: docusignContributions`. The host's
+ * `loadValidatedManifests` runs the schema over the object; Zod's default
+ * strips unknown keys, so none of the three is checked there, and a
+ * function-bearing member CANNOT be — "a schema-level `z.any()` would buy
+ * nothing while implying it had checked something" (the host's own words).
+ *
+ * So `NON_DATA_MEMBERS` is exactly that list, and a test reads it off the
+ * host's interface in both directions (`manifest-rules.test.ts`). Nothing
+ * else is set aside: a computed `widgets`, an unknown `hooks: x`, a spread
+ * or a shorthand `id,` still throws, because each of those could be — or
+ * could carry — a field the host's schema DOES validate.
+ *
+ * Members are split by bracket depth, not by line, so a non-data member
+ * whose value spans lines (an inline arrow body, an inline contributions
+ * object) is set aside whole rather than leaving its tail behind.
  *
  * ⚠ It is a reader for THIS shape — manifests whose data fields are
- * literals. That covers every hand-written manifest in the host today
- * (`__tests__/manifest-rules.test.ts` runs all four through it), and a
- * manifest that computed a field would throw here rather than quietly
- * validate. Throwing is the right answer: a computed data field is exactly
- * what must not be shipped. */
+ * literals. That covers the hand-written manifests
+ * `__tests__/manifest-rules.test.ts` runs through it, and a manifest that
+ * computed a data field throws here rather than quietly validating.
+ * Throwing is the right answer: a computed data field is exactly what must
+ * not be shipped. */
 export class ManifestReadError extends Error {}
 
-const FUNCTION_MEMBERS = ["initSchema", "registerRoutes"];
+/** The members the host's `SubAppManifest` declares beyond
+ * `SubAppManifestData`. Transcribed from the host; drift-tested against it. */
+export const NON_DATA_MEMBERS: readonly string[] = ["initSchema", "registerRoutes", "contributions"];
+
+const KEY_RE = /^([A-Za-z_$][A-Za-z0-9_$]*)\s*:/;
 
 export function readEmittedManifest(source: string): Record<string, unknown> {
   const body = extractObjectBody(stripComments(source));
-  const kept = body
-    .split("\n")
-    .filter((line) => {
-      const trimmed = line.trim();
-      if (trimmed.length === 0) return false;
-      return !FUNCTION_MEMBERS.some((member) => trimmed.startsWith(`${member}:`));
-    })
-    .join("\n");
+  const kept: string[] = [];
+  for (const member of topLevelMembers(body)) {
+    const key = KEY_RE.exec(member)?.[1];
+    // A `name(args) { ... }` method is a function member by construction.
+    const method = /^([A-Za-z_$][A-Za-z0-9_$]*)\s*\(/.exec(member)?.[1];
+    if (key === undefined && method !== undefined && NON_DATA_MEMBERS.includes(method)) continue;
+    if (key !== undefined && NON_DATA_MEMBERS.includes(key)) continue;
+    // Anything else must be `key: literal`. A spread, a shorthand, a
+    // computed key or a method named after a data field falls through to
+    // the parse below and fails it — a refusal, never a skip.
+    kept.push(member);
+  }
 
-  const quoted = kept.replace(/(^|[{,\s])([A-Za-z_][A-Za-z0-9_]*)\s*:/g, '$1"$2":');
-  const json = `{${quoted}}`.replace(/,(\s*[}\]])/g, "$1");
+  const json = `{${quoteKeys(kept.join(",\n"))}}`.replace(/,(\s*[}\]])/g, "$1");
   try {
     return JSON.parse(json) as Record<string, unknown>;
   } catch (err) {
@@ -43,6 +71,64 @@ export function readEmittedManifest(source: string): Record<string, unknown> {
       `manifest data fields are not all JSON literals — a generated manifest must not compute one (${(err as Error).message})`,
     );
   }
+}
+
+/** The object body's members, split at depth-0 commas and trimmed. Strings
+ * and template literals are skipped whole, so a comma or a brace inside a
+ * label does not split anything. */
+function topLevelMembers(body: string): string[] {
+  const members: string[] = [];
+  let depth = 0;
+  let start = 0;
+  for (let i = 0; i < body.length; i++) {
+    const ch = body[i];
+    if (ch === '"' || ch === "'" || ch === "`") {
+      i = skipStringAny(body, i);
+      continue;
+    }
+    if (ch === "(" || ch === "[" || ch === "{") depth++;
+    else if (ch === ")" || ch === "]" || ch === "}") depth--;
+    else if (ch === "," && depth === 0) {
+      members.push(body.slice(start, i));
+      start = i + 1;
+    }
+  }
+  members.push(body.slice(start));
+  return members.map((m) => m.trim()).filter((m) => m.length > 0);
+}
+
+/** Quotes bare object keys — `id:` becomes `"id":` — outside string
+ * literals only, so a label reading "Settings: all" is left alone. */
+function quoteKeys(text: string): string {
+  let out = "";
+  let i = 0;
+  while (i < text.length) {
+    const ch = text[i] ?? "";
+    if (ch === '"' || ch === "'" || ch === "`") {
+      const end = skipStringAny(text, i);
+      out += text.slice(i, end + 1);
+      i = end + 1;
+      continue;
+    }
+    const key = /^[A-Za-z_$][A-Za-z0-9_$]*(?=\s*:)/.exec(text.slice(i));
+    const before = out.trimEnd().slice(-1);
+    if (key !== null && (before === "" || before === "{" || before === ",")) {
+      out += `"${key[0]}"`;
+      i += key[0].length;
+      continue;
+    }
+    if (key !== null) {
+      // An identifier that is not in key position (a computed value such as
+      // `SECTIONS.ops`). Copied whole so it cannot be half-quoted into
+      // something that parses.
+      out += key[0];
+      i += key[0].length;
+      continue;
+    }
+    out += ch;
+    i++;
+  }
+  return out;
 }
 
 /** The text between the braces of the single `... Manifest: SubAppManifest = {`

@@ -37,7 +37,9 @@
  * that is the only function that decides who is asking.
  */
 import { createHash, timingSafeEqual } from "node:crypto";
-import { pathToFileURL } from "node:url";
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 import Fastify from "fastify";
 import { z } from "zod";
@@ -54,7 +56,7 @@ import {
 import { isNamedHuman } from "../packages/guardrails/src/approval-pure";
 import { buildSubAppFromPrompt } from "../packages/pipeline/src/build-subapp";
 import { AnthropicProvider } from "../packages/providers/src/anthropic";
-import { anthropicConfigFromEnv } from "../packages/providers/src/config";
+import { anthropicConfigFromEnv, type ProviderConfigInput } from "../packages/providers/src/config";
 import { DEFAULT_MODEL } from "../packages/providers/src/models";
 import { plannerLlm } from "../packages/providers/src/planner-bridge";
 
@@ -110,6 +112,69 @@ export function presentsOperatorToken(header: string | undefined, token: string)
   return timingSafeEqual(a, b);
 }
 
+/**
+ * The Studio checkout this server belongs to: the nearest ancestor of THIS
+ * FILE that holds a `package.json`. Found from `import.meta.url`, so it is the
+ * same under `tsx server/index.ts`, `tsx watch`, and a build output in
+ * `dist/server/` — and it never depends on the directory the process was
+ * started from.
+ */
+export const STUDIO_ROOT: string = ((): string => {
+  const here = path.dirname(fileURLToPath(import.meta.url));
+  for (let dir = here; ; dir = path.dirname(dir)) {
+    if (fs.existsSync(path.join(dir, "package.json"))) return dir;
+    if (path.dirname(dir) === dir) return path.dirname(here); // no package.json anywhere: the dir above server/
+  }
+})();
+
+export const GRANTS_FILE_ENV_VAR = "STUDIO_GRANTS_FILE";
+
+/**
+ * ⭐ WHERE THE GRANTS LIVE — anchored to the Studio checkout, never to cwd.
+ *
+ * This was `process.env.STUDIO_GRANTS_FILE ?? ".studio/grants.json"`, which
+ * `fs` resolves against `process.cwd()`. Start the server from another
+ * directory and it opened a DIFFERENT, EMPTY store. That fails closed — no
+ * rows, everything refused — which is exactly why it would go unnoticed:
+ * every approval anyone made reads as absent, and nothing says why.
+ *
+ *   unset            → `<root>/.studio/grants.json`
+ *   relative value   → resolved against `<root>`, not cwd
+ *   absolute value   → used as given
+ *   empty/whitespace → a boot problem. `??` kept the empty string, so the
+ *                      store would have tried to read the path "".
+ */
+export function grantsFileFromEnv(
+  env: Readonly<Record<string, string | undefined>>,
+  root: string = STUDIO_ROOT,
+): { readonly file: string } | { readonly problem: string } {
+  const value = env[GRANTS_FILE_ENV_VAR];
+  if (value === undefined) return { file: path.join(root, ".studio", "grants.json") };
+  if (value.trim() === "") return { problem: `${GRANTS_FILE_ENV_VAR} is set but empty` };
+  return { file: path.isAbsolute(value) ? value : path.resolve(root, value) };
+}
+
+/**
+ * ⭐ EVERYTHING THE BOOT REFUSES, collected rather than first-wins, so one
+ * restart fixes all of it.
+ *
+ * `anthropicConfigFromEnv` is lenient on purpose — a library must not take a
+ * process down — and reports a bad FLIGHTDECK_EFFORT in `ignored`. Every
+ * caller here read only `.config` and threw `ignored` away, so `turbo` or
+ * `High` ran at the default without a word: an operator who believed they had
+ * turned a dial had not. This is the composition root, the one place that can
+ * say "that is not what you meant", so an `ignored` entry is a refusal here.
+ */
+export function bootProblems(env: Readonly<Record<string, string | undefined>>): string[] {
+  const problems: string[] = [];
+  const operator = operatorFromEnv(env);
+  if (typeof operator === "string") problems.push(operator);
+  const grants = grantsFileFromEnv(env);
+  if ("problem" in grants) problems.push(grants.problem);
+  problems.push(...anthropicConfigFromEnv(env).ignored);
+  return problems;
+}
+
 const buildBody = z
   .object({
     prompt: z.string().min(1).max(8_000),
@@ -151,10 +216,31 @@ export interface ServerOptions {
   readonly operator: OperatorIdentity;
   /** Injected so the tests drive the whole route without a key or a socket. */
   readonly llm?: Parameters<typeof buildSubAppFromPrompt>[1]["llm"];
-  /** Where grants live. Defaults to the file named by `STUDIO_GRANTS_FILE`. */
+  /**
+   * Where grants live. Defaults to the file `grantsFileFromEnv` names:
+   * `STUDIO_GRANTS_FILE`, resolved against `STUDIO_ROOT` when relative, and
+   * `<STUDIO_ROOT>/.studio/grants.json` when unset — never against cwd.
+   */
   readonly store?: GrantStore;
   /** Who the subject ids resolve to. Defaults to the operator, alone. */
   readonly directory?: IdentityDirectory;
+}
+
+/**
+ * The real provider's config, or a refusal. Checked HERE as well as at the
+ * entry point, so a server started any other way — a test harness, an
+ * embedding — cannot quietly run a typo'd effort at the default either.
+ */
+function providerConfigOrThrow(env: Readonly<Record<string, string | undefined>>): ProviderConfigInput {
+  const { config, ignored } = anthropicConfigFromEnv(env);
+  if (ignored.length > 0) throw new Error(`studio: refusing to start — ${ignored.join("; ")}`);
+  return config;
+}
+
+function grantsFileOrThrow(env: Readonly<Record<string, string | undefined>>): string {
+  const grants = grantsFileFromEnv(env);
+  if ("problem" in grants) throw new Error(`studio: refusing to start — ${grants.problem}`);
+  return grants.file;
 }
 
 export function createServer(options: ServerOptions): ReturnType<typeof Fastify> {
@@ -176,7 +262,7 @@ export function createServer(options: ServerOptions): ReturnType<typeof Fastify>
     // gates the INPUT boundary instead, before the planner builds anything,
     // and its own tests assert the model is never called on a refusal. So the
     // raw bridge is correct here, and double-gating would break the path.
-    plannerLlm(new AnthropicProvider(anthropicConfigFromEnv().config));
+    plannerLlm(new AnthropicProvider(providerConfigOrThrow(process.env)));
 
   // ⭐ ONE OPERATOR, AND THE DIRECTORY SAYS SO.
   //
@@ -190,7 +276,7 @@ export function createServer(options: ServerOptions): ReturnType<typeof Fastify>
     createMemoryDirectory([
       { id: options.operator.actor, kind: "human", displayName: options.operator.actor, active: true },
     ]);
-  const store = options.store ?? createFileGrantStore(process.env["STUDIO_GRANTS_FILE"] ?? ".studio/grants.json");
+  const store = options.store ?? createFileGrantStore(grantsFileOrThrow(process.env));
 
   app.get("/api/studio/health", async () => ({
     ok: true,
@@ -316,17 +402,24 @@ const isEntryPoint = ((): boolean => {
 
 /* c8 ignore start — the boot path; `createServer` is what the tests drive. */
 if (isEntryPoint) {
+  const problems = bootProblems(process.env);
   const operator = operatorFromEnv(process.env);
-  if (typeof operator === "string") {
-    process.stderr.write(`studio: refusing to start — ${operator}\n`);
+  const grants = grantsFileFromEnv(process.env);
+  // The second and third conditions are implied by the first; they are here
+  // so the narrowing below is the compiler's, not a comment's.
+  if (problems.length > 0 || typeof operator === "string" || "problem" in grants) {
+    for (const problem of problems) process.stderr.write(`studio: refusing to start — ${problem}\n`);
     process.exit(1);
   }
+  // The PATH, once, so "which store is this" is answerable from the boot
+  // log. Never anything read from it.
+  process.stdout.write(`studio: grants at ${grants.file}\n`);
   const port = Number(process.env["PORT"] ?? 8787);
   // ⚠ LOOPBACK BY DEFAULT. This process holds a model key and a bearer
   // secret; binding every interface is a decision someone should have to
   // make out loud.
   const host = process.env["STUDIO_HOST"] ?? "127.0.0.1";
-  void createServer({ operator })
+  void createServer({ operator, store: createFileGrantStore(grants.file) })
     .listen({ port, host })
     .then(() => process.stdout.write(`studio: listening on http://${host}:${port}\n`))
     .catch((error: unknown) => {
