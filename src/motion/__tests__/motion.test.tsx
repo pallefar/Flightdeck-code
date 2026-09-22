@@ -25,7 +25,7 @@
  * and only a real reconciler shows that. The curves, the hand-back and
  * interruption were checked on frames recorded in real Chrome against Atlas
  * (.shots/studio-motion/). */
-import { act } from "react";
+import { act, useLayoutEffect } from "react";
 import { createRoot } from "react-dom/client";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -558,6 +558,21 @@ class DomDocument extends DomNode {
   }
 }
 
+/** Holds the thread for `ms` in its layout effect, which runs after the
+ * layout effects of the siblings before it. It stands in for a loaded
+ * machine: anime's engine and an awaited act() both tick on setImmediate,
+ * and anime's tick is queued first, so this much time passes before the
+ * first one. */
+function CommitWork({ ms }: { ms: number }) {
+  useLayoutEffect(() => {
+    const until = performance.now() + ms;
+    while (performance.now() < until) {
+      // busy: the point is the elapsed time
+    }
+  });
+  return null;
+}
+
 /** asBrowser(), plus a document react-dom can mount into. */
 function asBrowserWithDom(): DomElement {
   asBrowser();
@@ -594,15 +609,18 @@ describe("GatePane's filter, mounted by react-dom with motion on", () => {
     const show = (filter: Severity | "all") =>
       act(() =>
         root.render(
-          <GatePane
-            candidate={sixFindings}
-            summary={gateSummary(sixFindings)}
-            filter={filter}
-            focusedRule={null}
-            onFilter={() => {}}
-            onFocusRule={() => {}}
-            onReveal={() => {}}
-          />,
+          <>
+            <GatePane
+              candidate={sixFindings}
+              summary={gateSummary(sixFindings)}
+              filter={filter}
+              focusedRule={null}
+              onFilter={() => {}}
+              onFocusRule={() => {}}
+              onReveal={() => {}}
+            />
+            <CommitWork ms={20} />
+          </>,
         ),
       );
     const cards = () => container.querySelectorAll(".fd-finding");
@@ -621,7 +639,12 @@ describe("GatePane's filter, mounted by react-dom with motion on", () => {
     expect(warnings.map((el) => all.includes(el))).toEqual([true, true, true]);
     expect(warnings.map((el) => el.styleWrites)).toEqual([0, 0, 0]);
 
-    await show("all");
+    // Read before awaiting. A synchronous act() has rendered and run every
+    // layout effect by the time it returns, so arrive() has painted its
+    // start frame and anime has not ticked. Awaited first, the reads would
+    // come after anime's first tick, which moves the delay-0 card off its
+    // start frame by however long the commit took.
+    const returned = show("all");
     const again = cards();
     expect(again.map(rule)).toEqual(["FD-E901", "FD-E902", "FD-E903", "FD-X001", "FD-W901", "FD-W902"]);
     const [inserted, kept] = [again.slice(0, 3), again.slice(3)];
@@ -633,6 +656,7 @@ describe("GatePane's filter, mounted by react-dom with motion on", () => {
     for (const el of inserted) {
       expect([el.style.getPropertyValue("opacity"), el.style.getPropertyValue("translate")]).toEqual(["0", `0px ${MOTION.distance.arrive}px`]);
     }
+    await returned;
 
     // Unmounting mid-arrival hands every card back with no inline residue.
     await act(() => root.unmount());
@@ -661,29 +685,34 @@ describe("GatePane's filter, mounted by react-dom with motion on", () => {
 
     await show("all");
     await show("warning");
-    await show("all");
+    // From here each change is read synchronously with its act(), for the
+    // reason given in the test above: no anime tick comes in between, so no
+    // arrival can finish early on a loaded machine and turn "still
+    // arriving" into a race.
+    void show("all");
     const blocking = cards().slice(0, 3); // arriving: they came back
     expect(styles(blocking).every((s) => s !== null)).toBe(true);
 
     // Blocking only: the blocking cards stay, so their arrivals run on. Had
     // they been cancelled, each would be handed back (no style) at once,
     // which on screen is a snap from half faded to opaque.
-    await show("error");
+    void show("error");
     expect(cards().map((el, i) => el === blocking[i])).toEqual([true, true, true]);
     expect(styles(blocking).every((s) => s !== null && s.includes("opacity"))).toBe(true);
 
     // All, then Blocking again at once: the warnings arrive, then are removed
     // mid-arrival, and each one's arrival is settled, not left running.
-    await show("all");
+    void show("all");
     const warnings = cards().slice(3);
     expect(styles(warnings).every((s) => s !== null)).toBe(true);
-    await show("error");
+    void show("error");
     expect(warnings.map((el) => el.isConnected)).toEqual([false, false, false]);
     expect(styles(warnings)).toEqual([null, null, null]);
 
-    // The blocking cards finish by themselves, with no inline residue.
-    await sleep(MOTION.duration.arrive + MOTION.stagger.step * MOTION.stagger.maxSteps + 200);
-    expect(styles(blocking)).toEqual([null, null, null]);
+    // The blocking cards finish by themselves, with no inline residue. Waited
+    // for, not slept on: a fixed sleep's timer can fire before the anime tick
+    // that completes them when the worker was held up.
+    await vi.waitFor(() => expect(styles(blocking)).toEqual([null, null, null]), { timeout: 3000, interval: 25 });
     await act(() => root.unmount());
   });
 
