@@ -56,6 +56,7 @@ export { PreviewFrame } from "./components/PreviewFrame";
 export { GeneratedPageMirror } from "./components/GeneratedPageMirror";
 export { RunPane } from "./components/RunPane";
 export { EditorPane, type EditorPaneProps } from "./components/EditorPane";
+export { ThemeToggle } from "./components/ThemeToggle";
 
 // State.
 export { WorkbenchStore, createStore, defaultSelection, type StoreOptions, type WorkbenchState, type SeverityFilter } from "./store";
@@ -135,4 +136,13 @@ export { buildPreview, isReady, BLOCKING_RULES, type PreviewState, type PreviewB
 export { readWebModule, RUNTIME_MARKERS, type WebModule, type PanelDescriptor } from "./preview/descriptor";
 export { MockCapabilityHost, bodySchema, scanScopes, type HostSnapshot } from "./preview/adapter";
 export { buildLedger, type LedgerRow, type Fidelity } from "./preview/fidelity";
-export { TOKENS, WORKBENCH_CSS, HOST_FRAME_CSS } from "./theme";
+export {
+  TOKENS,
+  WORKBENCH_CSS,
+  HOST_FRAME_CSS,
+  DEFAULT_THEME,
+  THEME_STORAGE_KEY,
+  isStudioTheme,
+  tokenVar,
+  type StudioTheme,
+} from "./theme";
