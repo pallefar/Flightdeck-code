@@ -233,7 +233,7 @@ curl -s localhost:8787/api/studio/build \
 | `ANTHROPIC_API_KEY` | for real calls | — | Read lazily; the server boots without it. |
 | `PORT` | no | `8787` | `vite.config.ts` derives its `/api` proxy target from this, so `npm run dev` and `npm run dev:server` stay in step. |
 | `STUDIO_HOST` | no | `127.0.0.1` | Loopback by default: this process holds a key and a secret. |
-| `STUDIO_GRANTS_FILE` | no | `.studio/grants.json` | Durable approvals, written `0600`. ⚠ The default is RELATIVE, so starting the server from a different directory silently opens a different, empty grant store. Use an absolute path if that matters. |
+| `STUDIO_GRANTS_FILE` | no | `<studio root>/.studio/grants.json` | Durable approvals, written `0600`. The base is the Studio checkout (`STUDIO_ROOT`: the nearest ancestor of `server/index.ts` holding a `package.json`), never cwd: a relative value resolves against that root, an absolute one is used as given, set-but-empty refuses to boot. Boot prints `studio: grants at <path>`. A grants file created under another cwd before 2026-09-22 is not migrated — it fails closed (reads as no grants), so point this variable at it explicitly. |
 | `FLIGHTDECK_MODEL` | no | `claude-opus-5` | |
 | `FLIGHTDECK_EFFORT` | no | `high` | `low\|medium\|high\|xhigh\|max`. ⚠ An unrecognised value is silently ignored and the default stands — a typo here is invisible. |
 | `FLIGHTDECK_HOST_ROOT` | no | `/home/user/project-contract` | **Set this on the Mac.** |

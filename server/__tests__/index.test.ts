@@ -8,12 +8,20 @@
  * and a test that calls the handler directly would repeat exactly that
  * mistake one level up.
  */
-import { describe, expect, it } from "vitest";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { EXAMPLE_DRAFT_JSON } from "../../packages/spec/src/prompt";
 import { createMemoryGrantStore } from "../../packages/approvals/src/store";
 import type { DatasourceRef, GrantRow } from "../../packages/approvals/src/index";
-import { createServer, operatorFromEnv, presentsOperatorToken } from "../index";
+import { STUDIO_ROOT, createServer, grantsFileFromEnv, operatorFromEnv, presentsOperatorToken } from "../index";
+
+/** The checkout this test file lives in — found from the FILE, never from cwd. */
+const REPO_ROOT = fileURLToPath(new URL("../../", import.meta.url)).replace(/[\\/]$/, "");
 
 const TOKEN = "a-sufficiently-long-operator-token";
 const OPERATOR = { actor: "Karsten Haldan", token: TOKEN };
@@ -290,5 +298,72 @@ describe("a prompt that came from a datasource needs a grant", () => {
     const app = withGrants([], async () => ({ text: DRAFT }));
     const res = await app.inject(ask({ prompt: PROMPT }));
     expect((res.json() as { status: string }).status).toBe("proposed");
+  });
+});
+
+
+/**
+ * ⭐ WHERE THE GRANTS LIVE DOES NOT DEPEND ON WHERE YOU STOOD.
+ *
+ * The default was `.studio/grants.json`, resolved against `process.cwd()`.
+ * Start the server from another directory — a launcher, a service manager,
+ * `npm --prefix` — and it opened a DIFFERENT, EMPTY grant store. That fails
+ * closed (no rows, everything refused), which is exactly why nobody would
+ * notice: every approval anyone made looks revoked, and nothing says why.
+ */
+describe("the grants file is anchored to the Studio checkout, not to cwd", () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it("the Studio root is the checkout this server lives in", () => {
+    expect(STUDIO_ROOT).toBe(REPO_ROOT);
+    expect(fs.existsSync(path.join(STUDIO_ROOT, "package.json"))).toBe(true);
+  });
+
+  it("⭐ unset → <root>/.studio/grants.json, absolute, even after a chdir", () => {
+    const elsewhere = fs.mkdtempSync(path.join(os.tmpdir(), "studio-cwd-"));
+    const before = process.cwd();
+    try {
+      process.chdir(elsewhere);
+      const resolved = grantsFileFromEnv({});
+      expect(resolved).toEqual({ file: path.join(REPO_ROOT, ".studio", "grants.json") });
+      if ("file" in resolved) {
+        expect(path.isAbsolute(resolved.file)).toBe(true);
+        expect(resolved.file.startsWith(fs.realpathSync(elsewhere))).toBe(false);
+        expect(resolved.file.startsWith(elsewhere)).toBe(false);
+      }
+    } finally {
+      process.chdir(before);
+      fs.rmSync(elsewhere, { recursive: true, force: true });
+    }
+  });
+
+  it("a RELATIVE value resolves against the Studio root, not cwd", () => {
+    const root = path.join(os.tmpdir(), "a studio root");
+    expect(grantsFileFromEnv({ STUDIO_GRANTS_FILE: "var/grants.json" }, root)).toEqual({
+      file: path.join(root, "var", "grants.json"),
+    });
+    expect(grantsFileFromEnv({ STUDIO_GRANTS_FILE: "../shared/grants.json" }, root)).toEqual({
+      file: path.join(os.tmpdir(), "shared", "grants.json"),
+    });
+  });
+
+  it("an ABSOLUTE value is used as given", () => {
+    const absolute = path.join(os.tmpdir(), "ops", "grants.json");
+    expect(grantsFileFromEnv({ STUDIO_GRANTS_FILE: absolute }, "/nowhere")).toEqual({ file: absolute });
+  });
+
+  it("⛔ set-but-empty is refused — it is not 'use the default', and not the path \"\"", () => {
+    for (const value of ["", "   ", "\t"]) {
+      expect(grantsFileFromEnv({ STUDIO_GRANTS_FILE: value }), JSON.stringify(value)).toEqual({
+        problem: "STUDIO_GRANTS_FILE is set but empty",
+      });
+    }
+  });
+
+  it("⭐ createServer refuses an empty STUDIO_GRANTS_FILE instead of opening the path \"\"", () => {
+    vi.stubEnv("STUDIO_GRANTS_FILE", "");
+    expect(() => serve(async () => ({ text: DRAFT }))).toThrow(/STUDIO_GRANTS_FILE is set but empty/);
   });
 });
