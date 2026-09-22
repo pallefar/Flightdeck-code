@@ -22,67 +22,13 @@
 import { StrictMode, useCallback, useEffect, useRef } from "react";
 import { createRoot } from "react-dom/client";
 
-import { generateSubApp } from "@codegen/pure";
-import { runConformanceGate } from "@conformance/gate";
-
 import { Workbench } from "./workbench/Workbench";
-import type { FileGate } from "./workbench/download";
 import { createStore } from "./workbench/store";
-import type { Candidate, GeneratedFile } from "./workbench/types";
+import type { Candidate } from "./workbench/types";
+import { candidateFrom, checkFiles } from "./wiring";
 import wcClockSpec from "../fixtures/wc-clock.spec.json";
 
 const store = createStore();
-
-/** The generator's own output, turned into what the panes read. */
-function candidateFrom(spec: unknown): Candidate {
-  const generated = generateSubApp(spec);
-  // The HOST half. The standalone harness is emitted too and is not part of
-  // a candidate a person mounts — but the REGISTRY PATCH is: dropping it made
-  // the gate raise FD-X001 ("nothing in this candidate edits
-  // server/subapps/registry.ts"), which was my filter talking, not the
-  // generator. `GeneratedFileKind` has "patch" precisely so the tree can show
-  // the one edit a human still has to apply.
-  const host = generated.files.filter((f) => f.kind !== "standalone");
-  const report = runConformanceGate({
-    files: host.map((f) => ({ path: f.path, contents: f.contents })),
-  });
-  const plan = generated.plan;
-  return {
-    manifest: {
-      id: plan.id,
-      label: plan.label,
-      version: plan.version,
-      summary: plan.summary ?? "",
-      icon: plan.manifestData.icon,
-      navSection: plan.manifestData.navSection,
-      routePrefix: plan.routePrefix,
-      webModuleId: plan.webModuleId,
-      capabilities: [...plan.manifestData.capabilities],
-      visibleToRoles: [...plan.manifestData.visibleToRoles],
-      envVar: plan.envVar,
-      tablePrefix: plan.tablePrefix,
-    },
-    files: host as GeneratedFile[],
-    findings: report.findings,
-    // ⚠ `rules`, NOT `checks`. A check is a pass over the file set ("7
-    // checks"); a rule is what a finding cites ("FD-X001"). Wiring `checks`
-    // in here meant `rulesClean` filtered rule-ids out of a list of
-    // check-names, never intersected, and reported "7 of 7 rules ran and
-    // found nothing" on a candidate with a warning — an arithmetic pass
-    // guaranteed by the mismatch rather than by the candidate being clean.
-    rulesRun: report.rules,
-    notes: generated.warnings,
-  };
-}
-
-/** The conformance gate over whatever file set the workbench hands it — the
- * EDITED files, for "Download candidate" (owner ruling 2026-09-22 (9)). The
- * same pure gate `candidateFrom` runs over Studio's own output, run in the
- * browser; nothing here reaches a server. */
-const checkFiles: FileGate = (files) => {
-  const report = runConformanceGate({ files: files.map((f) => ({ path: f.path, contents: f.contents })) });
-  return { ok: report.ok, findings: report.findings, rulesRun: report.rules };
-};
 
 /** A scripted session, reporting the work the way a driver would. */
 async function drive(turnId: string, text: string): Promise<void> {

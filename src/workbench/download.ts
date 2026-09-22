@@ -29,9 +29,11 @@
  *
  * The gate is INJECTED (`FileGate`), like every other piece of behaviour the
  * workbench is handed: this package renders, it does not import the
- * generator or the gate (`types.ts` explains why). `main.tsx` wires
- * `runConformanceGate` in. Pure except `saveInBrowser`, which takes its DOM
- * as a parameter so it can be tested in node. */
+ * generator or the gate (`types.ts` explains why). `src/wiring.ts` adapts
+ * `runConformanceGate` into one and `main.tsx` passes it in;
+ * `src/__tests__/wiring.test.ts` runs that adapter for real. Pure except
+ * `saveInBrowser`, which takes its DOM as a parameter so it can be tested in
+ * node. */
 import type { EditSummary } from "./editing";
 import type { Candidate, Finding, GeneratedFile } from "./types";
 
@@ -62,6 +64,16 @@ export type DownloadReadiness =
   | { readonly ready: false; readonly reason: string };
 
 const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
+/** "it" for one, "them" for several — "fix them first" over one error reads wrong. */
+const them = (n: number) => (n === 1 ? "it" : "them");
+
+/** `FD-M003 server/subapps/wc-clock/manifest.ts:35 — <message>`: the rule, the
+ * place a person opens, and the gate's own sentence. A finding about the file
+ * set (line 0) has no line to name. */
+function cite(finding: Finding): string {
+  const where = finding.line > 0 ? `${finding.file}:${finding.line}` : finding.file;
+  return `${finding.rule} ${where} — ${finding.message}`;
+}
 
 /** Whether the button may be pressed, and when not, the sentence that says
  * why — the tooltip a person reads on a disabled button. */
@@ -75,7 +87,7 @@ export function downloadReadiness(input: {
   if (input.edits.conflicted > 0) {
     return {
       ready: false,
-      reason: `${plural(input.edits.conflicted, "conflict")} open — resolve them first. While one is open the panes show Studio's text, not yours.`,
+      reason: `${plural(input.edits.conflicted, "conflict")} open — resolve ${them(input.edits.conflicted)} first. While one is open the panes show Studio's text, not yours.`,
     };
   }
   if (input.edits.dirty > 0) {
@@ -88,10 +100,17 @@ export function downloadReadiness(input: {
     return { ready: false, reason: "The conformance gate could not run on the edited files, so nothing can be downloaded." };
   }
   if (!input.verdict.ok) {
-    const errors = input.verdict.findings.filter((f) => f.severity === "error").length;
+    // ⭐ NAME THE ERROR, NOT JUST THE COUNT. The Gate pane shows Studio's own
+    // verdict on Studio's text (HANDOVER §6); this verdict is over the edited
+    // files and appears nowhere else on screen. "Fix them first" with no rule,
+    // file or line sent a person looking for an error no pane showed.
+    const errors = input.verdict.findings.filter((f) => f.severity === "error");
+    const first = errors[0];
+    const detail =
+      first === undefined ? "" : `: ${cite(first)}${errors.length > 1 ? ` (and ${errors.length - 1} more)` : ""}`;
     return {
       ready: false,
-      reason: `The conformance gate fails on the edited files (${plural(errors, "error")}) — fix them first.`,
+      reason: `The conformance gate fails on the edited files (${plural(errors.length, "error")})${detail}. Fix ${them(errors.length)} first.`,
     };
   }
   return { ready: true, verdict: input.verdict };

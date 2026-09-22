@@ -71,6 +71,43 @@ describe("when the button is enabled", () => {
     if (readiness.ready) return;
     expect(readiness.reason).toMatch(/conformance gate fails on the edited files/i);
     expect(readiness.reason).toContain("1 error");
+    // ⭐ It names what fails and where. The Gate pane shows Studio's own
+    // verdict, not this one, so a reason that only counted errors would send
+    // the person looking for an error that is on no screen.
+    expect(readiness.reason).toContain(`FD-G001 ${MANIFEST}:1 — guard is not first`);
+    expect(readiness.reason).toMatch(/Fix it first\./);
+    expect(readiness.reason).not.toMatch(/Fix them first/);
+  });
+
+  it("names the first error and counts the rest — plural when there are several", () => {
+    const several: FileGateVerdict = {
+      ok: false,
+      findings: [
+        finding("FD-X001", "(candidate)", 0, "no registry edit", "warning"),
+        finding("FD-M003", MANIFEST, 35, "`navSection` is not one of the host's sections"),
+        finding("FD-G001", "server/subapps/wc-clock/routes/entries.ts", 12, "guard is not first"),
+        finding("FD-M008", MANIFEST, 40, "the manifest declares `contributions`"),
+      ],
+      rulesRun: PASS.rulesRun,
+    };
+    const readiness = downloadReadiness({ candidate: candidate(), edits: { dirty: 0, saved: 1, conflicted: 0, locked: 0 }, verdict: several });
+    expect(readiness.ready).toBe(false);
+    if (readiness.ready) return;
+    expect(readiness.reason).toContain("(3 errors)");
+    // The first ERROR, not the warning ahead of it.
+    expect(readiness.reason).toContain(`FD-M003 ${MANIFEST}:35 — \`navSection\` is not one of the host's sections`);
+    expect(readiness.reason).toContain("(and 2 more)");
+    expect(readiness.reason).toMatch(/Fix them first\./);
+  });
+
+  it("a finding about the file set names no line", () => {
+    const readiness = downloadReadiness({
+      candidate: candidate(),
+      edits: { dirty: 0, saved: 1, conflicted: 0, locked: 0 },
+      verdict: { ok: false, findings: [finding("FD-X002", "(candidate)", 0, "the web module is missing")], rulesRun: PASS.rulesRun },
+    });
+    if (readiness.ready) throw new Error("expected not ready");
+    expect(readiness.reason).toContain("FD-X002 (candidate) — the web module is missing");
   });
 
   it("is ready again once the edit is fixed and saved", () => {
@@ -100,6 +137,17 @@ describe("when the button is enabled", () => {
     expect(readiness.ready).toBe(false);
     if (readiness.ready) return;
     expect(readiness.reason).toMatch(/2 conflicts/);
+    expect(readiness.reason).toMatch(/resolve them first/);
+  });
+
+  it("one conflict is 'it', not 'them'", () => {
+    const readiness = downloadReadiness({
+      candidate: candidate(),
+      edits: { dirty: 0, saved: 0, conflicted: 1, locked: 0 },
+      verdict: PASS,
+    });
+    if (readiness.ready) throw new Error("expected not ready");
+    expect(readiness.reason).toMatch(/1 conflict open — resolve it first/);
   });
 
   it("⛔ not when the gate could not run — fail closed, never a pass by default", () => {

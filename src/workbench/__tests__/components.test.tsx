@@ -512,6 +512,9 @@ describe("the shell, wired to a store", () => {
       const drawn = button(html(<Workbench store={store} onPrompt={noop} checkFiles={failingOnEdits} />));
       expect(drawn).toContain("disabled");
       expect(drawn).toMatch(/title="[^"]*conformance gate fails on the edited files/i);
+      // The reason names the rule and the place — the Gate pane shows Studio's
+      // own verdict, so the tooltip is the only place this error appears.
+      expect(drawn).toMatch(/title="[^"]*FD-G001 server\/subapps\/wc-clock\/manifest\.ts:1 — x[^"]*"/);
     });
 
     it("is disabled while an edit is unsaved", () => {
