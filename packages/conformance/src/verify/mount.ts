@@ -245,6 +245,14 @@ function interpret(probe: ProbeResult, context: MountContext): Finding[] {
     );
   }
 
+  if (shape.declaresContributions) {
+    push(
+      "FD-M008",
+      "contributions",
+      "the manifest object the host would load carries `contributions` at runtime — the host's OS-04 contribution bundle (`/api/state` flags, background work handed the raw db and workspace root, fixed connector rows, a contract's signing state), which the host acts on at boot: app.ts calls assertContributionsUnambiguous, which throws when a second sub-app claims the single-valued `ticketSigning`. A generated mini-app declares no host-surface contributions, however it is attached",
+    );
+  }
+
   if (probe.initSchemaError !== null) {
     push(
       "FD-R003",

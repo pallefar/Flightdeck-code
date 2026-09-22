@@ -18,7 +18,9 @@
  * the host is literal; so is every generated one.
  *
  * The two function members (`initSchema`, `registerRoutes`) are read as
- * presence plus their source text, never evaluated. */
+ * presence plus their source text, never evaluated. A member with no key
+ * this reader can name — a spread, a computed key — is not skipped silently:
+ * it is listed in `unreadable`, because it could carry any member at all. */
 import { matchBrace, type ScannedFile } from "./scan";
 
 export interface ManifestMember {
@@ -31,10 +33,21 @@ export interface ManifestMember {
   readonly literal: { readonly value: unknown } | null;
 }
 
+/** A member at member position with no key this reader can name. */
+export interface UnreadableMember {
+  readonly kind: "spread" | "computed-key";
+  readonly offset: number;
+  /** The member exactly as written, trimmed. */
+  readonly text: string;
+}
+
 export interface ManifestSource {
   readonly constName: string;
   readonly declOffset: number;
   readonly members: readonly ManifestMember[];
+  /** Spreads and computed keys — members whose name, and so whose meaning,
+   * cannot be read without evaluating the file. */
+  readonly unreadable: readonly UnreadableMember[];
   /** The literal members only — what the schema is run against. */
   readonly data: Record<string, unknown>;
   memberAt(key: string): ManifestMember | null;
@@ -68,7 +81,7 @@ export function readManifestSource(scan: ScannedFile): ManifestReadResult {
     return { ok: false, offset: declOffset, reason: "the manifest object literal is never closed" };
   }
 
-  const members = readMembers(scan, open + 1, close);
+  const { members, unreadable } = readMembers(scan, open + 1, close);
   const data: Record<string, unknown> = {};
   for (const member of members) {
     if (member.literal !== null) data[member.key] = member.literal.value;
@@ -80,15 +93,21 @@ export function readManifestSource(scan: ScannedFile): ManifestReadResult {
       constName: chosen[1] ?? "(anonymous)",
       declOffset,
       members,
+      unreadable,
       data,
       memberAt: (key: string) => members.find((m) => m.key === key) ?? null,
     },
   };
 }
 
-function readMembers(scan: ScannedFile, from: number, to: number): ManifestMember[] {
+function readMembers(
+  scan: ScannedFile,
+  from: number,
+  to: number,
+): { members: ManifestMember[]; unreadable: UnreadableMember[] } {
   const { code, skeleton } = scan;
   const members: ManifestMember[] = [];
+  const unreadable: UnreadableMember[] = [];
   let i = from;
 
   while (i < to) {
@@ -103,9 +122,16 @@ function readMembers(scan: ScannedFile, from: number, to: number): ManifestMembe
     const key = readKey(code, skeleton, i, to);
     if (key === null) {
       // Something that is not `key:` at member position — a spread, a
-      // computed key. Skip the whole member; the schema check then reports
-      // the field as missing, which is the honest outcome.
-      i = endOfMember(skeleton, i, to);
+      // computed key. It is not read as data (the schema check then reports
+      // a field it should have carried as missing), and it is LISTED, because
+      // what it carries cannot be known without evaluating it.
+      const end = endOfMember(skeleton, i, to);
+      unreadable.push({
+        kind: skeleton.startsWith("...", i) ? "spread" : "computed-key",
+        offset: i,
+        text: code.slice(i, end).trim(),
+      });
+      i = end;
       continue;
     }
     i = key.end;
@@ -130,7 +156,7 @@ function readMembers(scan: ScannedFile, from: number, to: number): ManifestMembe
     i = valueEnd;
   }
 
-  return members;
+  return { members, unreadable };
 }
 
 function skipTrivia(skeleton: string, i: number, to: number): number {
