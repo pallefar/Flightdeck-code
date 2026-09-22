@@ -10,6 +10,8 @@
  * gate through the real store, and fail on exactly that change. */
 import { describe, expect, it } from "vitest";
 import { runConformanceGate } from "@conformance/gate";
+import { contractRunSpec } from "@codegen/fixtures/specs";
+import { SpecRejectedError } from "@codegen/pure";
 import wcClockSpec from "../../fixtures/wc-clock.spec.json";
 import { candidateFrom, checkFiles } from "../wiring";
 import { downloadReadiness, runFileGate } from "../workbench/download";
@@ -98,5 +100,32 @@ describe("⭐ the shipped gate adapter decides the Download button", () => {
     const candidate = candidateFrom(wcClockSpec);
     expect(candidate.rulesRun).toContain("FD-M003");
     expect(candidate.rulesRun).not.toContain("manifest");
+  });
+});
+
+/** Owner ruling 2026-09-22 (8) on the workbench's own path in: `candidateFrom` takes
+ * any @codegen spec, and a review listed it beside `promote.sh` as a way round the
+ * catalogue. There is no candidate — so no download — for a spec whose proposal
+ * fields came from no approved template. */
+describe("⛔ the workbench gets no candidate from an invented proposal", () => {
+  it("candidateFrom refuses a propose route that matches no approved template, naming the ruling", () => {
+    const spec = structuredClone(contractRunSpec) as unknown as { domains: Array<{ name: string; routes: Array<Record<string, unknown>> }> };
+    const flag = spec.domains.find((d) => d.name === "handoffs")?.routes.find((r) => r["path"] === "/flag");
+    if (flag === undefined) throw new Error("contractRunSpec has no /flag route");
+    flag["operation"] = {
+      kind: "propose",
+      proposalKind: "pay-change",
+      ticketField: "ticket",
+      auditEvent: "contract-run.pay-change-proposed",
+      fields: [
+        { name: "ticket", type: "string" },
+        { name: "salary", type: "number" },
+        { name: "reason", type: "string" },
+      ],
+    };
+    expect(() => candidateFrom(spec)).toThrow(SpecRejectedError);
+    expect(() => candidateFrom(spec)).toThrow(/owner ruling 2026-09-22 \(8\)/);
+    // The unedited fixture, which files through the approved templates, still builds.
+    expect(candidateFrom(contractRunSpec).files.length).toBeGreaterThan(0);
   });
 });

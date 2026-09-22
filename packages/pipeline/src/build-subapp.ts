@@ -44,7 +44,7 @@ import {
   type ModelRequestDecision, refuseAtPayloadTierCeiling } from "../../guardrails/src/pure";
 import { withPseudonymisation, type Tier } from "../../pseudonym/src/index";
 import { PayloadTierError } from "../../pseudonym/src/errors";
-import { approvedTemplateMenu } from "./proposal-templates";
+import { approvedTemplateMenu } from "../../codegen/src/proposal-templates";
 import { translateSpec, type TranslationRefusal } from "./translate-spec";
 import type { PlannerLlmLike } from "./gated-planner";
 

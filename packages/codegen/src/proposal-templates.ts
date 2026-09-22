@@ -25,13 +25,30 @@
  * shape as `guardrails/src/approval-pure.ts`'s `Approval.contentHash`, and the same named-
  * human rule, imported rather than copied (HANDOVER §5.2).
  *
+ * ── WHERE IT IS ENFORCED: @codegen's plan step, which every path goes through ──────────
+ * This file lived in @pipeline until fix round 2 (2026-09-22), and the catalogue was checked
+ * only where Studio PRODUCES a spec: the prompt path (`pipeline/translate-spec.ts`) and the
+ * workflow conversion. Neither is the way into the host. `scripts/promote.sh` step 3 runs
+ * `codegen/src/cli.ts --spec <file>` on any @codegen spec (`--spec -` exists "for piping a
+ * model's output straight in"), and the workbench's `candidateFrom(spec)` takes any spec. A
+ * review rewrote contract-run's `/flag` to file a `salary-change` with `salary` and
+ * `employeeName`; it planned, emitted, passed the conformance gate and would have reached a
+ * compliance record. So the catalogue now lives HERE, a leaf of @codegen, and `planSubApp`
+ * refuses every `propose` operation that is not exactly `proposeOperation(t, spec.id)` for an
+ * approved template `t` (`proposeOperationProblem` below), and a second route on one template.
+ * The producers keep their own earlier refusals, which answer in their own vocabulary (a
+ * @spec path, a dropped workflow route); this one is the floor under all of them.
+ *
  * ── HOW THE CATALOGUE STAYS CLOSED ───────────────────────────────────────────────────────
  * It is a frozen literal in source. Adding or widening a template is a code change with an
- * approval record a reviewer can read; nothing at runtime can extend it. `translateSpec` and
- * `approvedTemplateMenu` take the catalogue as a parameter only so the refusals can be tested
- * against an unapproved entry (and `convertWorkflow`, so the approved `step` path can be); the
- * production paths (`buildSubAppFromPrompt`, and through it the server, and the conversion)
- * pass none, so they always read this one.
+ * approval record a reviewer can read; nothing at runtime can extend it. `translateSpec`,
+ * `approvedTemplateMenu`, `convertWorkflow` and `generateSubApp` (`proposalCatalogue`) take a
+ * catalogue only so the refusals can be tested against an unapproved entry and the approved
+ * `step` path can be exercised. Every production path passes none — `buildSubAppFromPrompt`
+ * (and through it the server), the conversion, `cli.ts` (and through it `promote.sh`,
+ * `mount-in-host.sh` and `standalone-smoke.sh`) and the workbench's `candidateFrom` — so they
+ * always read this one. `__tests__/propose-from-catalogue.test.ts` pins which non-test files
+ * may even name the override.
  *
  * ── THE SEED ─────────────────────────────────────────────────────────────────────────────
  * Two templates, derived from contract-run's existing `divergence` and `handoff` shapes
@@ -50,10 +67,21 @@
  * on that entry; carving the conversion out of the ruling instead is the owner's call, not
  * this file's (HANDOVER §8).
  */
-import type { FieldSpec, MiniAppSpec as CodegenSpec } from "../../codegen/src/spec-contract";
+// Leaf imports only — `approval-pure`, `hash` and `sha256` import nothing but each other —
+// so @codegen's route-safe closure (`pure.ts`) gains three node-free files and no package that
+// imports @codegen back (`__tests__/pure-closure.test.ts`).
 import { isNamedHuman } from "../../guardrails/src/approval-pure";
-import { contentHashWith, sha256Hex } from "../../guardrails/src/pure";
-import type { ProposalTemplateChoice } from "../../spec/src/templates";
+import { canonicalJson, contentHashWith } from "../../guardrails/src/hash";
+import { sha256Hex } from "../../guardrails/src/sha256";
+import type { FieldSpec, Operation } from "./spec-contract";
+
+/** What the planner is shown of one template: `@spec`'s `ProposalTemplateChoice`, spelled
+ * structurally so @codegen imports nothing from @spec. */
+export interface ProposalTemplateMenuEntry {
+  readonly id: string;
+  readonly summary: string;
+  readonly fields: readonly string[];
+}
 
 export interface TemplateApproval {
   /** A NAMED human — the one rule in `guardrails/src/approval-pure.ts`. */
@@ -183,13 +211,14 @@ export const PROPOSAL_TEMPLATES: readonly ProposalTemplate[] = Object.freeze([
   }),
 ]);
 
-type Operation = CodegenSpec["domains"][number]["routes"][number]["operation"];
+export type ProposeOperation = Extract<Operation, { kind: "propose" }>;
 
 /** The `@codegen` operation an approved template stands for, under THIS app's id —
  * `auditEvent` must be namespaced by the sub-app, and the template only carries the
  * suffix. The one place a template becomes an operation: `translate-spec.ts` (the model's
- * path) and the workflow conversion both build their proposing routes through it. */
-export function proposeOperation(template: ProposalTemplate, appId: string): Operation {
+ * path) and the workflow conversion both build their proposing routes through it, and
+ * `proposeOperationProblem` compares against it. */
+export function proposeOperation(template: ProposalTemplate, appId: string): ProposeOperation {
   return {
     kind: "propose",
     proposalKind: template.proposalKind,
@@ -197,6 +226,58 @@ export function proposeOperation(template: ProposalTemplate, appId: string): Ope
     fields: template.fields.map((field) => ({ ...field, ...(field.values === undefined ? {} : { values: [...field.values] }) })),
     auditEvent: `${appId}.${template.auditEventSuffix}`,
   };
+}
+
+/** Why an approval does not hold, as the end of a sentence about a template. */
+const APPROVAL_PROBLEM: Readonly<Record<TemplateApprovalProblem, string>> = {
+  unapproved: "has no approval record, and generation refuses an unapproved template",
+  "unnamed-approver": "carries an approval that does not name a named human",
+  "undated-approval": "carries an approval without a real ISO date",
+  "content-changed-since-approval":
+    "has changed since it was approved, so its approval no longer covers what it writes",
+};
+
+/** The parts of a `propose` operation a template fixes, in the order they are reported. */
+const TEMPLATE_PARTS = ["proposalKind", "ticketField", "fields", "auditEvent"] as const;
+
+/**
+ * `null` when `operation` is EXACTLY what an approved template stands for under `appId`;
+ * otherwise why not, as a clause for `planSubApp`'s refusal. Exact, not "at most": a template
+ * with a field dropped or a bound loosened is a different template nobody approved. Compared
+ * as canonical JSON, so key order in a hand-written spec does not matter; field ORDER does,
+ * because it is the order the form and the body schema are emitted in.
+ *
+ * ⛔ Echoes nothing from `operation`. A proposal kind or a field name the catalogue does not
+ * hold may be a person's name (`anna-sorensen-salary`), and a refusal is printed and logged;
+ * it names templates and the parts that differ, the same rule `translate-spec.ts` follows.
+ */
+export function proposeOperationProblem(
+  operation: ProposeOperation,
+  appId: string,
+  catalogue: readonly ProposalTemplate[] = PROPOSAL_TEMPLATES,
+): string | null {
+  const same = (a: unknown, b: unknown): boolean => canonicalJson(a) === canonicalJson(b);
+  const sameKind = catalogue.filter((t) => t.proposalKind === operation.proposalKind);
+  const exact = sameKind.find((t) => same(proposeOperation(t, appId), operation));
+  if (exact !== undefined) {
+    const problem = checkTemplateApproval(exact);
+    return problem === null ? null : `it is template "${exact.id}", which ${APPROVAL_PROBLEM[problem]}`;
+  }
+  const approved = catalogue.filter((t) => checkTemplateApproval(t) === null).map((t) => `"${t.id}"`);
+  const offered = approved.length === 0 ? "no template is approved" : `approved: ${approved.join(", ")}`;
+  const closest = sameKind[0];
+  if (closest === undefined) {
+    return `its proposalKind is not one any template in the catalogue files (${offered})`;
+  }
+  const expected = proposeOperation(closest, appId);
+  const differs = TEMPLATE_PARTS.filter((part) => !same(expected[part], operation[part]));
+  const problem = checkTemplateApproval(closest);
+  return (
+    `it files template "${closest.id}"'s proposalKind but differs from that template in ${differs.join(", ")} ` +
+    `— use the template's operation exactly (auditEvent "${expected.auditEvent}")` +
+    (problem === null ? "" : `, and that template ${APPROVAL_PROBLEM[problem]}`) +
+    `, or have the owner approve a new template in codegen/src/proposal-templates.ts (${offered})`
+  );
 }
 
 /** A template the model named, if it is in the catalogue AND approved. */
@@ -213,7 +294,7 @@ export function resolveProposalTemplate(
 /** What the planner is offered: approved templates only, and their field NAMES only. */
 export function approvedTemplateMenu(
   catalogue: readonly ProposalTemplate[] = PROPOSAL_TEMPLATES,
-): ProposalTemplateChoice[] {
+): ProposalTemplateMenuEntry[] {
   return catalogue
     .filter((template) => checkTemplateApproval(template) === null)
     .map((template) => ({ id: template.id, summary: template.summary, fields: template.fields.map((f) => f.name) }));

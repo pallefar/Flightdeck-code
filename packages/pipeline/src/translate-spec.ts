@@ -30,7 +30,7 @@
  *
  * ⭐ OWNER RULING 2026-09-22 (8) CLOSES THIS WITHOUT INVENTING ANYTHING.
  * Proposing apps are generated only from a closed catalogue of proposal
- * templates the owner approved (`proposal-templates.ts`). A `@spec` propose
+ * templates the owner approved (`codegen/src/proposal-templates.ts`). A `@spec` propose
  * route names a template id — the only thing the model says about what a
  * proposal writes — and THIS is where that id becomes the template's
  * `proposalKind`, `ticketField`, `fields` and namespaced `auditEvent`. A
@@ -38,6 +38,9 @@
  * approval does not hold (none, an unnamed approver, no real date, or
  * content changed since it was approved) is refused by name, and so is a
  * second route filing the same template. READ-ONLY MINI-APPS ARE UNCHANGED.
+ * @codegen's `planSubApp` refuses the same things again on the spec this
+ * produces; this file's refusals come first because they can point at the
+ * @spec path a person has to change.
  */
 import { CAPABILITY_SCOPES, type MiniAppSpec as CodegenSpec } from "../../codegen/src/spec-contract";
 import type { MiniAppSpec as SpecSpec, SpecRoute } from "../../spec/src/schema";
@@ -48,7 +51,7 @@ import {
   resolveProposalTemplate,
   type ProposalTemplate,
   type TemplateResolution,
-} from "./proposal-templates";
+} from "../../codegen/src/proposal-templates";
 
 export interface TranslationRefusal {
   /** Where in the `@spec` document the problem is — a path, never a value. */

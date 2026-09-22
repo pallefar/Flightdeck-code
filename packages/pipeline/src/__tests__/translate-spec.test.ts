@@ -9,7 +9,7 @@ import { describe, expect, it } from "vitest";
 
 import type { MiniAppSpec as SpecSpec } from "../../../spec/src/schema";
 import { generateSubApp } from "../../../codegen/src/pure";
-import { PROPOSAL_TEMPLATES } from "../proposal-templates";
+import { PROPOSAL_TEMPLATES } from "../../../codegen/src/proposal-templates";
 import { translateSpec } from "../translate-spec";
 
 const BASE: SpecSpec = {

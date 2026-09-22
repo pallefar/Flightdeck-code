@@ -283,12 +283,16 @@ describe("warnings", () => {
             {
               method: "POST",
               path: "/flag",
+              // The approved `divergence` template, exactly — ruling 8 refuses any other.
               operation: {
                 kind: "propose",
-                proposalKind: "flag",
+                proposalKind: "divergence",
                 ticketField: "ticket",
-                auditEvent: "blind-flag.flag-proposed",
-                fields: [{ name: "ticket", type: "string" }],
+                auditEvent: "blind-flag.divergence-proposed",
+                fields: [
+                  { name: "ticket", type: "string" },
+                  { name: "note", type: "string", maxLength: 500, optional: true },
+                ],
               },
             },
           ],

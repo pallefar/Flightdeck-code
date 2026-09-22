@@ -37,6 +37,7 @@ import { HOST_VERSION } from "./spec-contract";
 import { tableRefusalReason, type Profile } from "./profile";
 import { assertManifestWouldBoot, type SubAppManifestData } from "./manifest-rules";
 import * as names from "./naming";
+import { PROPOSAL_TEMPLATES, proposeOperationProblem, type ProposalTemplate } from "./proposal-templates";
 
 export class SpecRejectedError extends Error {
   constructor(message: string, readonly issues: readonly string[]) {
@@ -185,9 +186,18 @@ const FIELD_COLUMN_TYPES = {
   number: "REAL",
 } as const;
 
+export interface PlanOptions {
+  /** The proposal-template catalogue. ⛔ TESTS ONLY — so the refusals can be run against
+   * an unapproved entry and the approved-`step` path exercised without the production
+   * catalogue approving anything. Every production caller passes nothing and gets
+   * `PROPOSAL_TEMPLATES`; `__tests__/propose-from-catalogue.test.ts` pins which non-test
+   * files may name this. Never read from a spec: it is a parameter, not a field. */
+  readonly proposalCatalogue?: readonly ProposalTemplate[];
+}
+
 /** Parses, resolves and cross-checks. Throws `SpecRejectedError` listing
  * every problem found — never a partial plan. */
-export function planSubApp(input: unknown): SubAppPlan {
+export function planSubApp(input: unknown, options: PlanOptions = {}): SubAppPlan {
   const parsed = miniAppSpecSchema.safeParse(input);
   if (!parsed.success) {
     throw new SpecRejectedError(
@@ -224,6 +234,7 @@ export function planSubApp(input: unknown): SubAppPlan {
   const domains = planDomains(spec, profile, tablesByBare, issues, warnings);
 
   checkRouteUniqueness(domains, issues);
+  checkProposalTemplates(spec, domains, options.proposalCatalogue ?? PROPOSAL_TEMPLATES, issues);
   checkCapabilityLeastPrivilege(spec, domains, issues);
   checkTablesAreUsed(tables, domains, warnings);
   const workflow = planWorkflow(spec, domains, issues, warnings);
@@ -555,6 +566,47 @@ function checkRouteUniqueness(domains: readonly PlannedDomain[], issues: string[
         continue;
       }
       seen.set(key, domain.name);
+    }
+  }
+}
+
+/** ⭐ Owner ruling 2026-09-22 (8), at the one step every path goes through: "proposing apps
+ * are generated only from a closed catalogue of proposal templates the owner approves …
+ * generation refuses an unapproved one."
+ *
+ * The prompt path and the workflow conversion already build their proposing routes from
+ * the catalogue. What they cannot cover is a @codegen spec that never went through them:
+ * `cli.ts --spec <file|->`, which is `scripts/promote.sh`'s way into the host, and the
+ * workbench's `candidateFrom(spec)`. So a `propose` operation is generated only when it is
+ * EXACTLY an approved template's operation under this app's id, and only one route may file
+ * each template — two would write proposals with the same `<app>-<kind>-` prefix, which the
+ * step rail could not tell apart. */
+function checkProposalTemplates(
+  spec: MiniAppSpec,
+  domains: readonly PlannedDomain[],
+  catalogue: readonly ProposalTemplate[],
+  issues: string[],
+): void {
+  const filed = new Set<string>();
+  for (const domain of domains) {
+    for (const route of domain.routes) {
+      const op = route.operation;
+      if (op.kind !== "propose") continue;
+      const where = `${domain.name} ${route.method} ${route.subPath}`;
+      const problem = proposeOperationProblem(op, spec.id, catalogue);
+      if (problem !== null) {
+        issues.push(
+          `${where}: a proposing route is generated only from an approved proposal template, exactly as the catalogue holds it (owner ruling 2026-09-22 (8)) — ${problem}`,
+        );
+        continue;
+      }
+      if (filed.has(op.proposalKind)) {
+        issues.push(
+          `${where}: one route per proposal template — another route already files this one, and two routes sharing a template file proposals indistinguishable by filename (<app>-<kind>-<ticket>)`,
+        );
+        continue;
+      }
+      filed.add(op.proposalKind);
     }
   }
 }

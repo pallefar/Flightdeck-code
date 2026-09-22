@@ -55,19 +55,17 @@ import {
 } from "@spec/index";
 import {
   CodegenInvariantError,
+  PROPOSAL_TEMPLATES,
   RESERVED_SUBAPP_IDS,
   SpecRejectedError,
   generateSubApp,
-} from "@codegen/pure";
-import { runConformanceGate } from "@conformance/gate";
-import type { Finding } from "@conformance/finding";
-import {
-  PROPOSAL_TEMPLATES,
   proposeOperation,
   resolveProposalTemplate,
   type ProposalTemplate,
   type TemplateResolution,
-} from "../../../pipeline/src/proposal-templates.js";
+} from "@codegen/pure";
+import { runConformanceGate } from "@conformance/gate";
+import type { Finding } from "@conformance/finding";
 import { STUDIO_BUNDLE_SCHEMA, type StudioBundle } from "../server/subapps/studio/service/bundle.js";
 
 /** The one domain a converted workflow emits. Every generated route lives in
@@ -547,7 +545,13 @@ export function convertWorkflow(input: StudioConversionInput, options: StudioCon
 
   let generated: ReturnType<typeof generateSubApp>;
   try {
-    generated = generateSubApp(translation.spec);
+    // The same catalogue the translation resolved against, so @codegen's own ruling-8
+    // check (`planSubApp`) agrees with it. `undefined` in production: codegen then reads
+    // `PROPOSAL_TEMPLATES` itself, and a test's catalogue never reaches a real run.
+    generated = generateSubApp(
+      translation.spec,
+      options.catalogue === undefined ? {} : { proposalCatalogue: options.catalogue },
+    );
   } catch (err) {
     if (err instanceof SpecRejectedError) {
       return { status: "rejected", issues: err.issues.length > 0 ? err.issues : [err.message] };

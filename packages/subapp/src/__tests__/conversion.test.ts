@@ -25,7 +25,7 @@ import {
   PROPOSAL_TEMPLATES,
   templateContentHash,
   type ProposalTemplate,
-} from "../../../pipeline/src/proposal-templates.js";
+} from "@codegen/pure";
 import { ANSWERS, AUTO_ADVANCING_WORKFLOW, CONVERTIBLE_WORKFLOW } from "./support.js";
 
 const ready = convertWorkflow({ workflow: CONVERTIBLE_WORKFLOW, answers: ANSWERS, source: "skills/wc/SKILL.md" });

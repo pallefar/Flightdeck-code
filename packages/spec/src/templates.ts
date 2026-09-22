@@ -5,8 +5,8 @@
  * is not the model's to decide: it comes from a closed catalogue of templates the owner
  * approved, and the model's only choice is WHICH one. @spec holds none of the catalogue
  * itself — the fields, the approval records and the check that refuses an unapproved
- * template live in @pipeline (`proposal-templates.ts`), beside the @codegen types they are
- * written in. What reaches this package is the MENU: an id to pick, a line saying what it is
+ * template live in @codegen (`codegen/src/proposal-templates.ts`), where every path to a
+ * generated app meets. What reaches this package is the MENU: an id to pick, a line saying what it is
  * for, and the names of the fields it writes, so the model can choose well without ever
  * being handed something it could edit.
  *

@@ -7,8 +7,8 @@
  */
 import { describe, expect, it } from "vitest";
 
-import { contractRunSpec } from "../../../codegen/src/fixtures/specs";
-import { fieldSpecSchema, type MiniAppSpec as CodegenSpec } from "../../../codegen/src/spec-contract";
+import { contractRunSpec } from "../fixtures/specs";
+import { fieldSpecSchema, type MiniAppSpec as CodegenSpec } from "../spec-contract";
 import { isNamedHuman } from "../../../guardrails/src/approval-pure";
 import {
   PROPOSAL_TEMPLATES,
