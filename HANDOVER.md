@@ -7,7 +7,7 @@ and says why.
 - **Repo:** `https://github.com/pallefar/Flightdeck-code`
 - **Branch:** `claude/gauntlet-loop-install-hp490e` — the only branch. There is no
   `main` on origin, so clone and stay on this one.
-- **State:** 2253 tests, 0 skipped, 112 files, all passing against `project-contract`
+- **State:** 2309 tests, 0 skipped, 115 files, all passing against `project-contract`
   at `integration/unified-2026-09-22`; `tsc --noEmit` clean (2026-09-22, Mac).
   The one host-dependent failure is closed: the host's docusign manifest declares
   `contributions: docusignContributions` (host 42b0f308, OS-04), a member of
@@ -114,7 +114,7 @@ cd Flightdeck-code
 git checkout claude/gauntlet-loop-install-hp490e
 npm ci                 # package-lock.json is committed
 npm run typecheck      # expect: clean
-npm test               # expect: 2240 passed, 0 skipped  — see the warning below
+npm test               # expect: 2309 passed, 0 skipped  — see the warning below
 ```
 
 > ⚠ **`npm test` FAILS if the host checkout is missing**, with a named reason.
@@ -256,7 +256,7 @@ curl -s localhost:8787/api/studio/build \
 
 | Command | What it does | Works here? |
 |---|---|---|
-| `npm test` | 2240 tests | ✅ |
+| `npm test` | 2309 tests | ✅ |
 | `npm run typecheck` | `tsc --noEmit` | ✅ |
 | `npm run dev` | Vite, the workbench | ✅ |
 | `npm run build` | `tsc -b` + Vite build → `dist/` | ✅ 553 kB bundle, 1.7s |
@@ -375,12 +375,23 @@ These are load-bearing. Each is a property something else depends on.
   is outside the catalogue. Bringing it under would need a `step` template that
   the owner has not approved, so it is an open question for the owner, not
   something to fold in quietly.
-- **The workbench has no "export bundle" affordance.** It renders real generated
-  source and a real gate verdict, and nothing leaves the browser. There IS a
-  `Save` button in the editor pane (`components/EditorPane.tsx:155`) — do not be
-  misled by it: it commits an in-editor edit to the in-memory draft. It does not
-  write a file. Getting a candidate onto disk goes through the CLI or
-  `npm run mount`.
+- **The workbench has a browser-only "Download candidate" (closed 2026-09-22,
+  owner ruling 9, see §8).** It sits in the tab strip. It is enabled only when
+  the conformance gate passes on the EDITED files (the saved overlay, re-gated
+  in the browser) and nothing is unsaved or in conflict; the tooltip on the
+  disabled button says which of those is the reason. It saves one JSON document,
+  `studio-candidate-download/1`, holding the files as edited, the list of edited
+  paths, and the gate verdict over exactly those bytes. The document says it is
+  not a compliance record. It writes nothing on the server (a test scans
+  `download.ts` for any request API), and it never writes into the host repo:
+  `scripts/promote.sh` plus a compliance record remain the only path. The
+  editor's `Save` is now labelled "Save in workbench", and its tooltip says it
+  writes no file.
+  ⚠ What is NOT there: `promote.sh` still regenerates from a SPEC, so a
+  hand-edited candidate cannot yet be promoted as edited. The download is for
+  review. Separately, the Gate tab still shows the verdict on Studio's own
+  text; the verdict on the edited files appears only in the download button's
+  tooltip and in the downloaded file.
 
 ---
 
@@ -460,3 +471,32 @@ orchestrator adds the D-entries at merge.
 - **Approval recorded on the two seeds:** `approvedBy: "Karsten Haldan"`,
   `approvedAt: "2026-09-22"`. The owner approved seeding these by accepting the
   recommendation.
+
+### Ruling 9: getting the edited files out of the workbench
+
+- **Question (restated):** the workbench shows real generated source and a real
+  gate verdict, but nothing can leave the browser. Its `Save` button reads like a
+  disk write and only updates the in-memory draft. Should the workbench be able
+  to export a candidate, and if so, how?
+- **Recommendation accepted:** a browser-only "Download candidate" button. It is
+  enabled only when the conformance gate passes on the edited files, it writes
+  nothing on the server, and it never writes into the host repo (`promote.sh` plus
+  a compliance record remain the only path). `Save`'s label and tooltip are
+  clarified.
+- **Owner's reply, verbatim:** "take your recommendations"
+- **Implemented:** `src/workbench/download.ts` decides readiness, builds the
+  document and does the browser save. `Workbench.tsx` takes the gate as an
+  injected `checkFiles` prop and shows the button, and `main.tsx` wires in
+  `runConformanceGate`. `EditorPane.tsx` has the Save relabel. Tests:
+  `src/workbench/__tests__/download.test.ts` plus the new blocks in
+  `components.test.tsx`. Also checked in headless Chromium against the dev
+  server: the download fires with no network request; an unsaved edit disables
+  the button; a saved edit that breaks the manifest (`navSection: "Mini apps"`,
+  FD-M003) disables it with "The conformance gate fails on the edited files
+  (1 error)".
+- **Choices made inside the ruling, stated so they can be vetoed:**
+  - The download is JSON, not a tree of files. A tree rooted at
+    `server/subapps/<id>/` would be one `tar -x` away from a hand-install into
+    the host.
+  - It is also disabled while an edit is unsaved or a conflict is open. In
+    either state the download would silently differ from what the panes show.

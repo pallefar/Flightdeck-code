@@ -23,6 +23,7 @@ import { FileTreePane } from "./components/FileTreePane";
 import { GatePane } from "./components/GatePane";
 import { PreviewPane } from "./components/PreviewPane";
 import { RunPane } from "./components/RunPane";
+import { candidateDownload, downloadReadiness, runFileGate, saveInBrowser, type FileGate } from "./download";
 import { buildPreview } from "./preview/state";
 import {
   activeRun,
@@ -64,9 +65,15 @@ export interface WorkbenchProps {
    * stop button that leaves the round running would be the one lie this
    * pane cannot afford. */
   readonly onStop?: (turnId: string) => void;
+  /** The conformance gate, handed in — owner ruling 2026-09-22 (9). The
+   * workbench runs it over the EDITED files (the saved overlay) to decide
+   * whether "Download candidate" may be pressed; the candidate's own
+   * findings describe Studio's text and cannot answer that. Absent means no
+   * button, rather than a dead one. See `download.ts`. */
+  readonly checkFiles?: FileGate;
 }
 
-export function Workbench({ store, onPrompt, onStop }: WorkbenchProps) {
+export function Workbench({ store, onPrompt, onStop, checkFiles }: WorkbenchProps) {
   const state = useSyncExternalStore(store.subscribe, store.getState, store.getState);
 
   const round = currentRound(state);
@@ -103,6 +110,21 @@ export function Workbench({ store, onPrompt, onStop }: WorkbenchProps) {
   const running = activeRun(state);
   const steps = progress(state);
   const edited = edits(state);
+
+  // The gate over what would actually leave the browser. Keyed on the
+  // candidate, whose identity moves on a save and not on a keystroke — so
+  // typing does not re-run it, and the unsaved check below covers typing.
+  const verdict = useMemo(
+    () => (checkFiles === undefined || candidate === null ? null : runFileGate(checkFiles, candidate.files)),
+    [checkFiles, candidate],
+  );
+  const download = downloadReadiness({ candidate, edits: edited, verdict });
+  const handleDownload = () => {
+    if (!download.ready || candidate === null || round === null) return;
+    saveInBrowser(
+      candidateDownload({ candidate, generated: round.candidate.files, verdict: download.verdict, round: round.ordinal }),
+    );
+  };
   const latest = state.rounds[state.rounds.length - 1] ?? null;
   const historical = latest !== null && latest.id !== state.selectedRoundId;
 
@@ -180,6 +202,25 @@ export function Workbench({ store, onPrompt, onStop }: WorkbenchProps) {
           {edited.dirty > 0 && <span className="fd-tabs__edits">{edited.dirty} unsaved</span>}
           {edited.saved > 0 && <span className="fd-tabs__edits">{edited.saved} edited</span>}
           {edited.locked > 0 && <span className="fd-tabs__edits">{edited.locked} locked</span>}
+          {checkFiles !== undefined && (
+            <button
+              type="button"
+              className={download.ready ? "fd-save" : "fd-lockbtn"}
+              disabled={!download.ready}
+              // Inline, not in theme.ts (the reskin owns that file): the
+              // theme's `.fd-wb button` reset outranks `.fd-save`, so without
+              // this the enabled and disabled states look the same.
+              style={download.ready ? { whiteSpace: "nowrap" } : { whiteSpace: "nowrap", opacity: 0.5, cursor: "not-allowed" }}
+              title={
+                download.ready
+                  ? "Save these files, as edited, with the conformance gate's verdict over them, as one JSON file on this computer. Nothing is sent to the server and nothing is written into the host repo — scripts/promote.sh with a compliance record is the only way in."
+                  : download.reason
+              }
+              onClick={handleDownload}
+            >
+              Download candidate
+            </button>
+          )}
           {round !== null && (
             <span className="fd-tabs__id">
               round #{round.ordinal} · {round.candidate.manifest.id} · {round.candidate.manifest.envVar}

@@ -26,6 +26,7 @@ import { generateSubApp } from "@codegen/pure";
 import { runConformanceGate } from "@conformance/gate";
 
 import { Workbench } from "./workbench/Workbench";
+import type { FileGate } from "./workbench/download";
 import { createStore } from "./workbench/store";
 import type { Candidate, GeneratedFile } from "./workbench/types";
 import wcClockSpec from "../fixtures/wc-clock.spec.json";
@@ -73,6 +74,15 @@ function candidateFrom(spec: unknown): Candidate {
     notes: generated.warnings,
   };
 }
+
+/** The conformance gate over whatever file set the workbench hands it — the
+ * EDITED files, for "Download candidate" (owner ruling 2026-09-22 (9)). The
+ * same pure gate `candidateFrom` runs over Studio's own output, run in the
+ * browser; nothing here reaches a server. */
+const checkFiles: FileGate = (files) => {
+  const report = runConformanceGate({ files: files.map((f) => ({ path: f.path, contents: f.contents })) });
+  return { ok: report.ok, findings: report.findings, rulesRun: report.rules };
+};
 
 /** A scripted session, reporting the work the way a driver would. */
 async function drive(turnId: string, text: string): Promise<void> {
@@ -155,7 +165,9 @@ function App() {
     if (turnId !== null) void drive(turnId, "Track the statutory consultation window for a contract folder.");
   }, []);
 
-  return <Workbench store={store} onPrompt={onPrompt} onStop={(turnId) => store.abort(turnId)} />;
+  return (
+    <Workbench store={store} onPrompt={onPrompt} onStop={(turnId) => store.abort(turnId)} checkFiles={checkFiles} />
+  );
 }
 
 const host = document.getElementById("root");
