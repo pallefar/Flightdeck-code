@@ -7,7 +7,7 @@ and says why.
 - **Repo:** `https://github.com/pallefar/Flightdeck-code`
 - **Branch:** `claude/gauntlet-loop-install-hp490e` — the only branch. There is no
   `main` on origin, so clone and stay on this one.
-- **State:** 2353 tests, 0 skipped, 118 files, all passing against `project-contract`
+- **State:** 2368 tests, 0 skipped, 119 files, all passing against `project-contract`
   at `integration/unified-2026-09-22`; `tsc --noEmit` clean (2026-09-22, Mac).
   The one host-dependent failure is closed: the host's docusign manifest declares
   `contributions: docusignContributions` (host 42b0f308, OS-04), a member of
@@ -120,7 +120,7 @@ cd Flightdeck-code
 git checkout claude/gauntlet-loop-install-hp490e
 npm ci                 # package-lock.json is committed
 npm run typecheck      # expect: clean
-npm test               # expect: 2353 passed, 0 skipped  — see the warning below
+npm test               # expect: 2368 passed, 0 skipped  — see the warning below
 ```
 
 > ⚠ **`npm test` FAILS if the host checkout is missing**, with a named reason.
@@ -262,7 +262,7 @@ curl -s localhost:8787/api/studio/build \
 
 | Command | What it does | Works here? |
 |---|---|---|
-| `npm test` | 2353 tests | ✅ |
+| `npm test` | 2368 tests | ✅ |
 | `npm run typecheck` | `tsc --noEmit` | ✅ |
 | `npm run dev` | Vite, the workbench | ✅ |
 | `npm run build` | `tsc -b` + Vite build → `dist/` | ✅ 553 kB bundle, 1.7s |
@@ -371,7 +371,8 @@ These are load-bearing. Each is a property something else depends on.
   translator turns the id into the template's `proposalKind`/`ticketField`/
   `fields`/namespaced `auditEvent` and refuses a missing, unknown or unapproved
   template, or a second route on the same one. The catalogue
-  (`pipeline/src/proposal-templates.ts`) is seeded with `divergence` and
+  (`codegen/src/proposal-templates.ts`, moved from `pipeline/` in fix round 2) is
+  seeded with `divergence` and
   `handoff`, taken from `contractRunSpec` and tested against it field for field.
   Each carries `approvedBy`/`approvedAt` plus a content hash, so editing a
   template after approval invalidates it. Read-only mini-apps are unchanged.
@@ -385,6 +386,51 @@ These are load-bearing. Each is a property something else depends on.
   without an action, and a workflow whose every route would file a proposal is
   `rejected` by name. Approving `step` restores the previous output byte for
   byte (checked: same files, same warnings). See §8 for the choice.
+  **Fix round 2: the catalogue is now enforced where every path meets,
+  @codegen's `planSubApp`.** Before, it was checked only where Studio PRODUCES a
+  spec (the prompt path and the conversion). The way into the host is neither:
+  `scripts/promote.sh` step 3 runs `codegen/src/cli.ts --spec "$SPEC"` on any
+  @codegen spec (`--spec -` is documented "for piping a model's output straight
+  in"), and the workbench's `candidateFrom(spec)` takes any spec. A review took
+  `contractRunSpec`, rewrote `/flag` to file a `salary-change` with `salary:
+  number` and `employeeName`, and got exit 0, 8 planned files, `gate ok: true`,
+  so a `studio-compliance-record/1` was within reach with no template approved.
+  Reproduced here before the fix, then refused after it: the CLI now exits 2
+  naming ruling 8, `generateSubApp` throws `SpecRejectedError`, and
+  `candidateFrom` throws, so there is no candidate and no download. A `propose`
+  operation is generated only when it is EXACTLY `proposeOperation(t, spec.id)`
+  for an approved template `t` (same `proposalKind`, `ticketField`, `fields`,
+  including bounds and order, and `<id>.<suffix>` `auditEvent`), and only one
+  route may file each template. The refusal names the templates and the parts
+  that differ and echoes nothing invented. Tests:
+  `codegen/src/__tests__/propose-from-catalogue.test.ts` (both review probes,
+  widened, narrowed, loosened, wrong audit event, unapproved `step`, duplicate
+  template, and the test-only override), two CLI cases in `cli.test.ts` (file
+  and stdin), and one `candidateFrom` case in `src/__tests__/wiring.test.ts`.
+  A fence test pins which non-test files may pass the override
+  (`proposalCatalogue`): `generate.ts`, `plan.ts`, and the conversion forwarding
+  its own tests-only option.
+  ⚠ Consequence: the table-backed `wcClockSpec` TS fixture filed its own `flag`
+  kind (`ticket` plus optional `note`, the same two fields as `divergence`). It
+  now files the approved `divergence` template, so its proposals are named
+  `wc-clock-divergence-<ticket>-…` instead of `wc-clock-flag-…`. The JSON
+  fixtures that `promote.sh`, `mount-in-host.sh` and `standalone-smoke.sh` read
+  already matched the catalogue (wc-clock and shift-notes are read-only,
+  contract-run uses `divergence`/`handoff` exactly). Checked: all three still
+  dry-run with exit 0, and the red-team is still `7/7`.
+  ⚠ What this does NOT cover, stated so nobody reads more into it:
+  - **Hand edits in the workbench.** The conformance gate reads emitted TEXT and
+    has no rule about proposal fields. A saved edit that adds a field to a
+    generated propose route still passes the gate on the edited files, so the
+    ruling-9 download can carry it with `gate.ok: true`. That download is for
+    review only, and `promote.sh` regenerates from a SPEC, which is now checked.
+    But the edited file itself is not re-checked against the catalogue.
+  - **`shipSubApp` binds its record to a spec hash, not to the files.**
+    `admitComplianceRecord` checks the record against the `specSha256` the
+    CALLER passes. Nothing checks that `candidate.files` were generated from
+    that spec. Today there is no production caller of `shipSubApp` (only tests
+    and a doc example), so no path uses this. Whoever wires one should have it
+    regenerate from the spec, or compare the files with a regeneration. See §8.
 - **The workbench has a browser-only "Download candidate" (closed 2026-09-22,
   owner ruling 9, see §8).** It sits in the tab strip. It is enabled only when
   the conformance gate passes on the EDITED files (the saved overlay, re-gated
@@ -474,12 +520,12 @@ orchestrator adds the D-entries at merge.
   Each template carries an approval record (`approvedBy`/`approvedAt`), and generation
   refuses an unapproved one. Read-only mini-apps are unaffected.
 - **Owner's reply, verbatim:** "take your recommendations"
-- **Implemented:** `packages/pipeline/src/proposal-templates.ts` holds the catalogue
-  and the approval check. `packages/spec/src/templates.ts` defines the menu the planner
+- **Implemented:** `packages/codegen/src/proposal-templates.ts` holds the catalogue
+  and the approval check (it was in `packages/pipeline/src/` until fix round 2). `packages/spec/src/templates.ts` defines the menu the planner
   is shown; the draft route gets a `template` field, the gates and prompt use it.
   `packages/pipeline/src/translate-spec.ts` resolves the template id into the operation
   and is where generation refuses. Tests:
-  `pipeline/src/__tests__/proposal-templates.test.ts`, `spec/src/templates.test.ts`,
+  `codegen/src/__tests__/proposal-templates.test.ts` (moved with the module), `spec/src/templates.test.ts`,
   and the new blocks in `translate-spec.test.ts` and `build-subapp.test.ts`.
 - **One addition beyond the letter of the ruling, stated so it can be vetoed:** each
   approval record also carries the sha256 of the template it approved. A name and a
@@ -519,6 +565,60 @@ orchestrator adds the D-entries at merge.
     block in `subapp/src/__tests__/conversion.test.ts`, which also proves an
     approved `step` builds the route FROM the template and a widened one is
     refused.
+- **Fix round 2: one reading, applied everywhere, which means @codegen.**
+  - **Question (restated, as fix round 2 put it):** round 1 applied ruling 8 to
+    the conversion by its literal text. Read the same way, does it also cover a
+    @codegen spec that never went through Studio's producers? That is
+    `scripts/promote.sh` → `codegen/src/cli.ts --spec` (also `--spec -`,
+    documented "for piping a model's output straight in"), and the workbench's
+    `candidateFrom(spec)`. Or does ruling 8 cover model-authored generation
+    only?
+  - **Ruling applied (the same ruling; no new one was sought):** "proposing apps
+    are generated only from a closed catalogue of proposal templates the owner
+    approves … generation refuses an unapproved one." **Owner's reply,
+    verbatim:** "take your recommendations"
+  - **Reading chosen: the literal one**, the reading round 1 used for the
+    conversion. Two reasons. First, one rule read two ways is how the conversion
+    ended up outside the catalogue in the first place. Second, the narrower
+    reading does not close this path either: `--spec -` exists to take a
+    model's output, so the CLI is a model-driven path under either reading.
+  - **Where:** `planSubApp` (`codegen/src/plan.ts`, `checkProposalTemplates`),
+    because every path goes through it: `buildSubAppFromPrompt`, the
+    conversion, `cli.ts` (and so `promote.sh`, `mount-in-host.sh` and
+    `standalone-smoke.sh`) and `candidateFrom`. The catalogue moved into
+    @codegen as a leaf module. It imports only `guardrails/src/approval-pure`,
+    `hash` and `sha256`, which import nothing that imports @codegen, and
+    `pure-closure.test.ts` is still green with `zod` as the only bare specifier.
+    @pipeline and the conversion import it from there.
+  - **Choices made inside the ruling, stated so they can be vetoed:**
+    - **Exact match, not "at most".** A route with a template's `proposalKind`
+      but one field fewer, or a looser bound, is refused. A narrowed template
+      is still a template nobody approved.
+    - **One route per template, at codegen too.** The translator already refused
+      this. Two routes on one template write proposals with the same
+      `<app>-<kind>-` prefix, which the step rail cannot tell apart.
+    - **`wcClockSpec` rebound to `divergence`.** It is a test fixture for the
+      table path, not something Studio ships. Its `flag` route carried
+      `divergence`'s exact fields under its own kind, so it now files the
+      approved template. No new template was added or approved to keep `flag`:
+      approving one is the owner's call.
+    - **The override stays, tests only** (`GenerateOptions.proposalCatalogue`,
+      `PlanOptions.proposalCatalogue`). It is the same pattern as
+      `translateSpec`'s and `convertWorkflow`'s `catalogue` parameter, and it is
+      needed so the approved-`step` conversion test can generate. A fence test
+      pins the non-test files that may name it.
+  - **Two open items for the owner, not decided here:**
+    1. **Hand edits in the workbench are not checked against the catalogue.**
+       The conformance gate reads emitted text and has no proposal-field rule.
+       So the ruling-9 download can carry a hand-added field with `gate.ok:
+       true`. It does not reach the host, because `promote.sh` regenerates from
+       a spec. Should a person's hand edit to a proposal route count as
+       "generation" under ruling 8, which would need a gate rule, or is that a
+       review matter?
+    2. **`shipSubApp` does not bind the files to the spec its record names**
+       (§6). There is no production caller today. Deciding how a future caller
+       proves "these files came from that spec" is outside ruling 8, but it is
+       the other way an unapproved proposal could reach the host.
 
 ### Ruling 9: getting the edited files out of the workbench
 
