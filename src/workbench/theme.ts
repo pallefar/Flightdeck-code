@@ -80,6 +80,9 @@ const LIGHT = {
   /** `.metric-label` and its corner icon, measured. */
   metricLabel: "#5e7482",
   metricIcon: "#6a8494",
+  /** `.metric > span`, the caption under the number — the label's grey in
+   * light (`te-theme.css:192-195`), its own in dark. */
+  metricCap: "#5e7482",
   accent: "#e98300",
   /** Dark text on orange. */
   accentInk: "#21180d",
@@ -122,7 +125,8 @@ const DARK: Palette = {
   ink: "#eef2f7",
   muted: "#a7b6c3",
   faint: "#7f91a0",
-  eyebrow: "#a7b6c3",
+  /** Atlas's dark `.eyebrow`, measured rgb(154,161,170). */
+  eyebrow: "#9aa1aa",
   brand: "#eef2f7",
   line: "#304553",
   lineStrong: "#405665",
@@ -137,6 +141,8 @@ const DARK: Palette = {
   modeActive: "#29404f",
   metricLabel: "#98a2ae",
   metricIcon: "#747f89",
+  /** Measured rgb(144,153,164) — NOT the label's rgb(152,162,174). */
+  metricCap: "#9099a4",
   accent: "#e98300",
   accentInk: "#15100e",
   accentText: "#ffb34f",
@@ -560,7 +566,7 @@ ${declare(TOKENS.dark)}
   font-size: 12px; font-weight: 600; color: var(--metric-label); text-transform: uppercase; letter-spacing: 0.85px;
 }
 .fd-stat__k svg { color: var(--metric-icon); }
-.fd-stat__cap { font-size: 12px; color: var(--muted); line-height: 1.5; }
+.fd-stat__cap { font-size: 12px; color: var(--metric-cap); line-height: 1.5; }
 .fd-gate .fd-note { margin: 10px 0; }
 
 .fd-finding {
@@ -811,6 +817,19 @@ ${declare(TOKENS.dark)}
   .fd-tree, .fd-changes, .fd-preview__side { width: auto; max-height: 40%; border-right: 0; border-left: 0; border-bottom: 1px solid var(--line); }
   .fd-preview__side { border-bottom: 0; border-top: 1px solid var(--line); }
   .fd-source__head { flex-wrap: wrap; }
+  /* Atlas's phone tier for the stat tiles and the filter, measured at 390
+     (te-theme.css:488-500, globals.css:1286-1288, 1640-1643, 1667-1669):
+     12px tile padding, a 26px number on 5px 0 0, no corner icon, no
+     caption, an untracked label — a 177x81 tile, not 166x157 — and filter
+     options at 12px on 7px, 32px tall. The gate takes .dashboard's 17px
+     gutter so two tiles split 356px as Atlas's do. */
+  .fd-gate { padding: 24px 17px; }
+  .fd-stat { padding: 12px; }
+  .fd-wb .fd-stat__n { font-size: 26px; margin: 5px 0 0; }
+  .fd-stat__k { letter-spacing: normal; }
+  .fd-stat__k svg { display: none; }
+  .fd-stat__cap { display: none; }
+  .fd-filter button { font-size: 12px; padding: 7px; }
 }
 `;
 

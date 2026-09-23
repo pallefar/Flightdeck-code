@@ -362,10 +362,10 @@ describe("5. the gate stat tiles follow Atlas's `.metric`", () => {
     for (const tile of tiles) expect(svgs(tile)[0]).toContain('width="15"');
   });
 
-  it("puts a caption line under every number, as `.metric > span` does — 12px, muted", () => {
+  it("puts a caption line under every number, as `.metric > span` does — 12px, in its own grey", () => {
     const body = rule(".fd-stat__cap");
     expect(body).toMatch(/font-size:\s*12px/);
-    expect(body).toMatch(/color:\s*var\(--muted\)/);
+    expect(body).toMatch(/color:\s*var\(--metric-cap\)/);
     const out = gate();
     expect((out.match(/class="fd-stat__cap"/g) ?? []).length).toBe(4);
   });
@@ -615,6 +615,60 @@ describe("7. the stat tile's label and corner icon, in Atlas's own greys", () =>
     expect(TOKENS.dark.metricLabel).toBe("#98a2ae");
     expect(TOKENS.light.metricIcon).toBe("#6a8494");
     expect(TOKENS.dark.metricIcon).toBe("#747f89");
+  });
+});
+
+// ── WHAT A BLIND RE-MEASURE OF b063d6e FOUND STILL OPEN ─────────────
+// Every value below was read off the running Atlas on :5173 (dashboard,
+// both themes, 390 and 1440) with getComputedStyle — see
+// .shots/verify2/tiles-filter/atlas-dash-*.json — and traced to the rule
+// that sets it: te-theme.css:470-500 and globals.css:1244-1288, 1626-1672.
+
+describe("8. the stat tiles take Atlas's phone tier at 540px and under", () => {
+  it("pads the tile 12px, as `.metric` does under 540px (te-theme.css:491)", () => {
+    expect(mediaRule("(max-width: 540px)", ".fd-stat")).toMatch(/padding:\s*12px\s*;/);
+  });
+
+  it("steps the number to 26px on a 5px 0 0 margin (te-theme.css:494-497)", () => {
+    const n = mediaRule("(max-width: 540px)", ".fd-wb .fd-stat__n");
+    expect(n).toMatch(/font-size:\s*26px/);
+    expect(n).toMatch(/margin:\s*5px 0 0\s*;/);
+  });
+
+  it("hides the corner icon and the caption, as `.metric-label svg` and `.metric > span` are", () => {
+    expect(mediaRule("(max-width: 540px)", ".fd-stat__k svg")).toMatch(/display:\s*none/);
+    expect(mediaRule("(max-width: 540px)", ".fd-stat__cap")).toMatch(/display:\s*none/);
+  });
+
+  it("drops the label's tracking, as `.metric-label` does under 540px (globals.css:1667-1669)", () => {
+    expect(mediaRule("(max-width: 540px)", ".fd-stat__k")).toMatch(/letter-spacing:\s*normal/);
+  });
+
+  it("gives the gate Atlas's 17px phone gutter, so two tiles are 177px wide, not 166px", () => {
+    expect(mediaRule("(max-width: 540px)", ".fd-gate")).toMatch(/padding:\s*\d+px 17px\s*;/);
+  });
+});
+
+describe("8. the stat tile's caption, in `.metric > span`'s own grey", () => {
+  it("colours the caption with its own token — rgb(94,116,130) light, rgb(144,153,164) dark", () => {
+    expect(rule(".fd-stat__cap")).toMatch(/color:\s*var\(--metric-cap\)/);
+    expect(TOKENS.light.metricCap).toBe("#5e7482");
+    expect(TOKENS.dark.metricCap).toBe("#9099a4");
+  });
+});
+
+describe("8. the gate filter at a phone width", () => {
+  it("sets its options in Atlas's phone `.filter-tabs button`: 12px, padding 7px (globals.css:1640-1643)", () => {
+    const option = mediaRule("(max-width: 540px)", ".fd-filter button");
+    expect(option).toMatch(/font-size:\s*12px/);
+    expect(option).toMatch(/padding:\s*7px\s*;/);
+  });
+});
+
+describe("8. the page-header eyebrow in dark", () => {
+  it("takes Atlas's dark `.eyebrow` ink, rgb(154,161,170)", () => {
+    expect(rule(".fd-pagehead__eyebrow")).toMatch(/color:\s*var\(--eyebrow\)/);
+    expect(TOKENS.dark.eyebrow).toBe("#9aa1aa");
   });
 });
 
