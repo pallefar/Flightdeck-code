@@ -54,11 +54,13 @@ import {
   type IdentityDirectory,
 } from "../packages/approvals/src/index";
 import { isNamedHuman } from "../packages/guardrails/src/approval-pure";
+import { HARNESS_MODE_ENV, harnessProvider, resolveMode, type HarnessMode } from "../packages/harness/src/index";
 import { buildSubAppFromPrompt } from "../packages/pipeline/src/build-subapp";
 import { AnthropicProvider } from "../packages/providers/src/anthropic";
 import { anthropicConfigFromEnv, type ProviderConfigInput } from "../packages/providers/src/config";
 import { DEFAULT_MODEL } from "../packages/providers/src/models";
 import { plannerLlm } from "../packages/providers/src/planner-bridge";
+import type { ModelProvider } from "../packages/providers/src/types";
 
 /** SHA-256 over UTF-8 — the Node half, so `node:crypto` is allowed here.
  * Injected rather than imported by the packages, which is what lets them
@@ -155,6 +157,68 @@ export function grantsFileFromEnv(
 }
 
 /**
+ * ⭐ WHERE RECORDINGS LIVE — committed, and anchored to the checkout like the
+ * grants file, so `playback` reads the same fixtures from any cwd.
+ */
+export const HARNESS_FIXTURES_DIR: string = path.join(STUDIO_ROOT, "fixtures", "harness");
+
+/** `off` is the server's own mode: no harness at all. */
+export type StudioHarnessMode = "off" | HarnessMode;
+
+/**
+ * ⭐ THE SERVER'S DEFAULT IS OFF, NOT THE HARNESS'S DEFAULT.
+ *
+ * `resolveMode` defaults to `playback`, which is right for a test suite and
+ * wrong for a running Studio: an operator who set nothing would get every build
+ * refused with a cache miss. And `live` through the harness WRITES every
+ * prompt to disk, which this server otherwise refuses to do (see the
+ * `logger: false` note below) — so recording is something an operator turns on
+ * by name, never something they get by leaving a variable unset.
+ *
+ * A set value goes to `resolveMode`, so the spellings and the refusal of a typo
+ * are the harness's, not a second copy of them.
+ */
+export function harnessModeFromEnv(
+  env: Readonly<Record<string, string | undefined>>,
+): { readonly mode: StudioHarnessMode } | { readonly problem: string } {
+  const raw = env[HARNESS_MODE_ENV];
+  if (raw === undefined || raw.trim() === "") return { mode: "off" };
+  try {
+    return { mode: resolveMode(env) };
+  } catch (error) {
+    return { problem: (error as Error).message };
+  }
+}
+
+/**
+ * The provider the planner is handed, per `FLIGHTDECK_HARNESS_MODE`.
+ *
+ *   off       `live()` itself — exactly what this server did before the harness
+ *   live      `live()` wrapped: every call recorded into `fixturesDir`
+ *   playback  the recordings only. `live` is never called, so a replaying
+ *             server needs no key and cannot reach the network by accident.
+ *
+ * `model` is what stands behind a request that names none; the harness keys on
+ * it (see `providers-adapter.ts`).
+ */
+export function modelProviderFromEnv(
+  env: Readonly<Record<string, string | undefined>>,
+  options: { readonly live: () => ModelProvider; readonly fixturesDir: string; readonly model: string },
+): ModelProvider {
+  const read = harnessModeFromEnv(env);
+  if ("problem" in read) throw new Error(`studio: refusing to start — ${read.problem}`);
+  const { fixturesDir, model } = options;
+  switch (read.mode) {
+    case "off":
+      return options.live();
+    case "live":
+      return harnessProvider({ mode: "live", provider: options.live(), model, fixturesDir });
+    case "playback":
+      return harnessProvider({ mode: "playback", model, fixturesDir });
+  }
+}
+
+/**
  * ⭐ EVERYTHING THE BOOT REFUSES, collected rather than first-wins, so one
  * restart fixes all of it.
  *
@@ -172,6 +236,8 @@ export function bootProblems(env: Readonly<Record<string, string | undefined>>):
   const grants = grantsFileFromEnv(env);
   if ("problem" in grants) problems.push(grants.problem);
   problems.push(...anthropicConfigFromEnv(env).ignored);
+  const harness = harnessModeFromEnv(env);
+  if ("problem" in harness) problems.push(harness.problem);
   return problems;
 }
 
@@ -224,6 +290,9 @@ export interface ServerOptions {
   readonly store?: GrantStore;
   /** Who the subject ids resolve to. Defaults to the operator, alone. */
   readonly directory?: IdentityDirectory;
+  /** Where `FLIGHTDECK_HARNESS_MODE` records and replays. Defaults to
+   * `HARNESS_FIXTURES_DIR`. Ignored when `llm` is injected. */
+  readonly harnessFixturesDir?: string;
 }
 
 /**
@@ -237,10 +306,30 @@ function providerConfigOrThrow(env: Readonly<Record<string, string | undefined>>
   return config;
 }
 
+/** The real provider — behind the record/playback harness when one is asked for. */
+function studioProvider(fixturesDir: string): ModelProvider {
+  // Validated up front in every mode, playback included: a typo'd effort is a
+  // refusal whether or not this run will spend it.
+  const config = providerConfigOrThrow(process.env);
+  return modelProviderFromEnv(process.env, {
+    live: () => new AnthropicProvider(config),
+    fixturesDir,
+    model: config.model ?? DEFAULT_MODEL,
+  });
+}
+
 function grantsFileOrThrow(env: Readonly<Record<string, string | undefined>>): string {
   const grants = grantsFileFromEnv(env);
   if ("problem" in grants) throw new Error(`studio: refusing to start — ${grants.problem}`);
   return grants.file;
+}
+
+/** What health reports: `injected` when a caller supplied the llm, since the
+ * env then decides nothing. */
+function harnessModeLabel(options: ServerOptions): StudioHarnessMode | "injected" | null {
+  if (options.llm !== undefined) return "injected";
+  const read = harnessModeFromEnv(process.env);
+  return "mode" in read ? read.mode : null;
 }
 
 export function createServer(options: ServerOptions): ReturnType<typeof Fastify> {
@@ -262,7 +351,7 @@ export function createServer(options: ServerOptions): ReturnType<typeof Fastify>
     // gates the INPUT boundary instead, before the planner builds anything,
     // and its own tests assert the model is never called on a refusal. So the
     // raw bridge is correct here, and double-gating would break the path.
-    plannerLlm(new AnthropicProvider(providerConfigOrThrow(process.env)));
+    plannerLlm(studioProvider(options.harnessFixturesDir ?? HARNESS_FIXTURES_DIR));
 
   // ⭐ ONE OPERATOR, AND THE DIRECTORY SAYS SO.
   //
@@ -291,6 +380,9 @@ export function createServer(options: ServerOptions): ReturnType<typeof Fastify>
     model: anthropicConfigFromEnv().config.model ?? DEFAULT_MODEL,
     // Whether a key EXISTS, never anything about it.
     modelKeyConfigured: (process.env["ANTHROPIC_API_KEY"] ?? "").length > 0,
+    // `playback` answers from fixtures, not the model — say so, or a replaying
+    // server is indistinguishable from a live one from the outside.
+    harnessMode: harnessModeLabel(options),
   }));
 
   app.post("/api/studio/build", async (request, reply) => {

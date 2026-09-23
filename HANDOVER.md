@@ -253,7 +253,7 @@ curl -s localhost:8787/api/studio/build \
 | `FLIGHTDECK_EFFORT` | no | `high` | `low\|medium\|high\|xhigh\|max`, case-sensitive. Anything else is refused at boot (`studio: refusing to start — FLIGHTDECK_EFFORT=turbo is not one of …`, exit 1), and `createServer` throws on it whenever it builds the real provider. Unset or empty takes the default. |
 | `FLIGHTDECK_HOST_ROOT` | no | `/home/user/project-contract` | **Set this on the Mac.** |
 | `FLIGHTDECK_HOST_ABSENT_ACKNOWLEDGED` | no | — | Exact string `unverified-lists-accepted`. Only while the host repo is absent. |
-| `FLIGHTDECK_HARNESS_MODE` | no | — | `live` records fixtures, `playback` replays and fails on a miss. |
+| `FLIGHTDECK_HARNESS_MODE` | no | — (off) | Unset or empty: the server calls the provider directly and records nothing. `live`/`record`: calls the provider and records each call into `fixtures/harness/` (needs a key and costs money). `playback`/`replay`: answers only from `fixtures/harness/`, needs no key, and a miss fails with `HarnessCacheMiss`, reported as an `invalid_draft` issue. Any other value stops the server at boot. `/api/studio/health` reports the mode as `harnessMode`. See `fixtures/harness/README.md`. |
 | `HOST_REPO` / `REPO` / `SANDBOX` / `SPEC` / `RECORD` | no | Linux paths | Used by `scripts/*.sh`. |
 | `SUBAPP_<ID>_ENABLED` | per sub-app | — | Generated kill switch; `"true"` exactly. |
 | `CODEGEN_DEBUG=1` | no | — | Stack traces from the codegen CLI. |
