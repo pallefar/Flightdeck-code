@@ -105,7 +105,9 @@ export async function drive(
 
   store.stream(
     turnId,
-    `Emitted ${candidate.files.length} files for **${candidate.manifest.label}**.\n\n` +
+    // Plain text: the chat draws no markdown (unseen#88), and the round
+    // chip under this turn already carries the label.
+    `Emitted ${candidate.files.length} files for ${candidate.manifest.label}.\n\n` +
       // Say what it found, not what is convenient. The first version of this
       // line read "found nothing" while the Gate tab carried a warning badge —
       // the chat contradicting the pane two inches to its right.

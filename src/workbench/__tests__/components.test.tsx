@@ -83,18 +83,17 @@ describe("ChatPane", () => {
     expect(out).toContain("1 blocking");
   });
 
-  // unseen#88: the scripted session streams `for **Works Council Clock**`
-  // and the pane printed the asterisks. The real driver, the real store.
-  it("renders the driver's **label** as bold, with no literal asterisks", async () => {
+  // unseen#88: the scripted session streamed `for **Works Council Clock**`
+  // and the pane printed the asterisks. Chat text is plain text: the Studio
+  // turn quotes the person's prompt and can carry error text, so markup in
+  // it cannot be told apart from what somebody typed. The real driver, the
+  // real store.
+  async function driven(text: string): Promise<string> {
     const store = createStore();
-    const text = "Track the statutory consultation window for a contract folder.";
     const turnId = store.prompt(text) ?? "";
     await drive(store, turnId, text, wcClockSpec, { tickMs: 0 });
     const state = store.getState();
-    const studio = state.turns.find((t) => t.role === "studio");
-    expect(studio?.text).toContain("**Works Council Clock**");
-
-    const out = html(
+    return html(
       <ChatPane
         turns={state.turns}
         rounds={state.rounds}
@@ -104,31 +103,38 @@ describe("ChatPane", () => {
         onSelectRound={noop}
       />,
     );
+  }
+
+  it("names the driver's label without literal asterisks", async () => {
+    const out = await driven("Track the statutory consultation window for a contract folder.");
     expect(out).not.toContain("**");
-    expect(out).toContain("<strong>Works Council Clock</strong>");
+    expect(out).toContain("files for Works Council Clock.");
   });
 
-  it("bold is a text renderer, never HTML: markup inside ** stays escaped", () => {
+  it("quotes a prompt with one ** verbatim, and the label stays clean", async () => {
+    const out = await driven("Track 2**3 windows for a folder");
+    expect(out).toContain("Reading &quot;Track 2**3 windows for a folder&quot; as a mini-app spec.");
+    expect(out).toContain("files for Works Council Clock.");
+    expect(out).not.toContain("Works Council Clock**");
+    expect(out).not.toContain("<strong>");
+  });
+
+  it("quotes a prompt with paired ** verbatim, never restyled", async () => {
+    const out = await driven("make it **loud** please");
+    expect(out).toContain("Reading &quot;make it **loud** please&quot; as a mini-app spec.");
+    expect(out).not.toContain("<strong>");
+  });
+
+  it("Studio text is never parsed as markup: globs and HTML stay as written", () => {
     const store = createStore();
     const turnId = store.prompt("x") ?? "";
-    store.stream(turnId, "for **<img src=x onerror=alert(1)>** done");
+    store.stream(turnId, "tsc failed on src/**/*.ts and **<img src=x onerror=alert(1)>**");
     const state = store.getState();
     const out = html(
       <ChatPane turns={state.turns} rounds={[]} selectedRoundId={null} busy onSubmit={noop} onSelectRound={noop} />,
     );
-    expect(out).toContain("<strong>&lt;img src=x onerror=alert(1)&gt;</strong>");
+    expect(out).toContain("tsc failed on src/**/*.ts and **&lt;img src=x onerror=alert(1)&gt;**");
     expect(out).not.toContain("<img");
-  });
-
-  it("an unclosed ** mid-stream stays literal until its pair arrives", () => {
-    const store = createStore();
-    const turnId = store.prompt("x") ?? "";
-    store.stream(turnId, "Emitted 5 files for **Works Coun");
-    const state = store.getState();
-    const out = html(
-      <ChatPane turns={state.turns} rounds={[]} selectedRoundId={null} busy onSubmit={noop} onSelectRound={noop} />,
-    );
-    expect(out).toContain("**Works Coun");
     expect(out).not.toContain("<strong>");
   });
 
