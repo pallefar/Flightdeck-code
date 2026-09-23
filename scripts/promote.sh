@@ -21,13 +21,15 @@
 #    possible." A promotion record that hides a skipped stack is worse than no
 #    record, because someone signs it.
 #
-# NEVER writes to the host checkout. The sandbox is a clone of the host's
-# HEAD commit — tracked files only, with a real .git, because the host gate's
-# PII stack needs git and must never see gitignored person data or secrets
-# (scripts/sandbox-lib.sh says why). The whole repo, not just flightdeck/:
+# NEVER writes to the host checkout. The sandbox is the host's HEAD commit as
+# a history-free, single-commit git checkout — tracked files only, with a real
+# .git, because the host gate's PII stack needs git, and must never see
+# gitignored person data, secrets, or the person data still in the host's
+# history (scripts/sandbox-lib.sh says why). The whole repo, not just flightdeck/:
 # tests reach above flightdeck/ into processes/ and engine/. node_modules is
 # symlinked; flightdeck/.env.supabase is the one ignored file brought in, mode
-# 600, only for the host gate step, and removed again right after it.
+# 600, only for the host gate step, and removed again right after it
+# (sandbox_run_host_gate; FLIGHTDECK_GATE_POSTGRES=0 keeps it out entirely).
 #
 # Usage: HOST_REPO=/path/to/project-contract SPEC=fixtures/x.spec.json \
 #        bash scripts/promote.sh
@@ -120,14 +122,10 @@ fi
 
 echo "==> [5/6] THE HOST'S OWN GATE — scripts/gate.sh, all five stacks"
 # This is the load-bearing stack. Everything above is Studio checking itself.
-# Its Postgres tier reads flightdeck/.env.supabase, which is gitignored and so
-# not in the sandbox: bring in that one file for this step only, unless the
-# tier is opted out. The trap is the backstop for an interrupted run.
-trap 'rm -f "$SANDBOX/.env.supabase"' EXIT
-[ "${FLIGHTDECK_GATE_POSTGRES:-1}" = "0" ] || sandbox_add_pg_env "$REPO" "$ROOT"
-( cd "$ROOT" && bash scripts/gate.sh >"$ROOT/host-gate.log" 2>&1 )
+# sandbox_run_host_gate brings in flightdeck/.env.supabase for this step only
+# (its Postgres tier reads it) and removes it again; see scripts/sandbox-lib.sh.
+sandbox_run_host_gate "$REPO" "$ROOT" "$ROOT/host-gate.log"
 HOST_GATE_RC=$?
-rm -f "$SANDBOX/.env.supabase"
 if grep -q '^SKIPPED STACKS:' "$ROOT/host-gate.log"; then
   note_skip "host-gate-partial" "$(grep '^SKIPPED STACKS:' "$ROOT/host-gate.log")"
 fi

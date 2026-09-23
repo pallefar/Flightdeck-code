@@ -17,11 +17,12 @@
 # reproduced all six — but a harness that fails six files for its own reasons
 # cannot tell you whether the seventh is yours. So the sandbox mirrors the repo.
 #
-# It NEVER writes to the host checkout: the sandbox is a CLONE of the host's
-# HEAD commit — tracked files only, with a real .git (scripts/sandbox-lib.sh
-# says why: the host's PII tests need git, and gitignored person data and
-# secrets must never reach /tmp). Only node_modules — 1.1G, absurd to copy — is
-# symlinked. A test that writes, writes into the clone.
+# It NEVER writes to the host checkout: the sandbox is the host's HEAD commit
+# as a history-free, single-commit git checkout — tracked files only, with a
+# real .git (scripts/sandbox-lib.sh says why: the host's PII tests need git, and
+# neither gitignored person data and secrets nor the person data still in the
+# host's history may reach /tmp). Only node_modules — 1.1G, absurd to copy — is
+# symlinked. A test that writes, writes into the sandbox.
 set -euo pipefail
 
 REPO="${REPO:-/home/user/project-contract}"
@@ -36,7 +37,7 @@ STUDIO="$(cd "$(dirname "$0")/.." && pwd)"
 [ "$(ls "$REPO/$HOST_REL/node_modules" 2>/dev/null | wc -l)" -gt 10 ] || {
   echo "host deps missing — run: (cd $REPO/$HOST_REL && npm install)" >&2; exit 2; }
 
-echo "==> sandbox: cloning the whole repo at HEAD (tracked files only)"
+echo "==> sandbox: the whole repo at HEAD, one commit (tracked files only)"
 sandbox_from_tracked "$REPO" "$ROOT"
 ln -s "$REPO/$HOST_REL/node_modules" "$SANDBOX/node_modules"
 

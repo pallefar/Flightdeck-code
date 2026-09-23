@@ -20,7 +20,13 @@
  * points that matter. Each script is run for real against it and stops right
  * after building its sandbox (promote.sh: host deps missing, exit 2;
  * mount-in-host.sh: the fixture's build:web fails, exit 1), which leaves the
- * sandbox on disk to be inspected. */
+ * sandbox on disk to be inspected.
+ *
+ * 3. A full `git clone` of the host would be no better: it copies the host's
+ *    whole object store, and the real host's history still holds person-bearing
+ *    contracts that were committed once and removed later. The fixture host
+ *    does the same (HISTORY_PII_FILE), and the sandbox must hold ONE commit and
+ *    none of that history's blobs. */
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -30,8 +36,11 @@ import { afterAll, describe, expect, it } from "vitest";
 const STUDIO = path.resolve(__dirname, "..", "..");
 const SECRET = "fixture-secret-must-never-be-printed";
 const PII_FILE = "contracts/2026-07-15 Kowalski Jan New Hire contract.docx";
+const HISTORY_PII_FILE = "contracts/2026-06-01 Nowak Anna New Hire contract.docx";
+const HISTORY_PII_BODY = "person data committed once, removed later";
 
-const work = fs.mkdtempSync(path.join(os.tmpdir(), "studio-sandbox-test-"));
+// A space in the path, like the real host's "FlightDeck OS".
+const work = fs.mkdtempSync(path.join(os.tmpdir(), "studio sandbox test-"));
 afterAll(() => fs.rmSync(work, { recursive: true, force: true }));
 
 function git(cwd: string, ...args: string[]): string {
@@ -49,16 +58,22 @@ function write(root: string, rel: string, body: string, mode?: number): void {
   if (mode !== undefined) fs.chmodSync(p, mode);
 }
 
-/** A host repo: tracked template + registry, ignored PII contract and secrets. */
-function makeHost(name: string, withNodeModules: boolean): string {
+/** A host repo: tracked template + registry, ignored PII contract and secrets,
+ * and a PII contract that sits in HISTORY only (committed, then removed). */
+function makeHost(name: string, withNodeModules: boolean, gateSh = "#!/usr/bin/env bash\nexit 0\n"): string {
   const host = path.join(work, name);
   fs.mkdirSync(host);
   git(host, "init", "-q", "-b", "main");
+  write(host, HISTORY_PII_FILE, HISTORY_PII_BODY);
+  git(host, "add", "-f", HISTORY_PII_FILE);
+  git(host, "commit", "-q", "-m", "baseline that carried a person's contract");
+  git(host, "rm", "-q", HISTORY_PII_FILE);
+  git(host, "commit", "-q", "-m", "remove it again");
   write(host, ".gitignore", "node_modules\ncontracts/*\n!contracts/_TEMPLATE/\n.env\n.env.*\n");
   write(host, "contracts/_TEMPLATE/manifest.json", "{}\n");
   write(host, "flightdeck/server/subapps/registry.ts", "export const SUBAPP_MANIFESTS = [];\n");
   write(host, "flightdeck/package.json", '{ "name": "fixture-host", "private": true, "scripts": { "build:web": "exit 7" } }\n');
-  write(host, "scripts/gate.sh", "#!/usr/bin/env bash\nexit 0\n");
+  write(host, "scripts/gate.sh", gateSh);
   git(host, "add", ".gitignore", "contracts/_TEMPLATE/manifest.json", "flightdeck", "scripts");
   git(host, "commit", "-q", "-m", "fixture host");
   // Present on disk, never tracked — exactly the files the old tar copied.
@@ -103,6 +118,16 @@ function expectTrackedOnly(root: string): void {
   expect(fs.statSync(root).mode & 0o077).toBe(0);
   // 4. The sandbox cannot push back into the host.
   expect(git(root, "remote")).toBe("");
+  // 5. No history: one commit, and the blob of the contract that was committed
+  //    once and removed later is NOT in the sandbox's object store.
+  expect(git(root, "rev-list", "--all", "--count").trim()).toBe("1");
+  expect(() => git(root, "cat-file", "-e", historyBlob())).toThrow();
+}
+
+/** The blob id of the history-only PII contract (content-addressed, so the
+ * same in every fixture host). */
+function historyBlob(): string {
+  return execFileSync("git", ["hash-object", "--stdin"], { input: HISTORY_PII_BODY, encoding: "utf8" }).trim();
 }
 
 describe("scripts/promote.sh sandbox", () => {
@@ -154,5 +179,66 @@ describe("sandbox_add_pg_env (scripts/sandbox-lib.sh)", () => {
     expect(fs.readFileSync(dst, "utf8")).toBe(`POSTGRES_PASSWORD=${SECRET}\n`);
     expect(fs.existsSync(path.join(root, "flightdeck/.env"))).toBe(false);
     expect(fs.existsSync(path.join(root, PII_FILE))).toBe(false);
+  });
+});
+
+describe("sandbox_run_host_gate (scripts/sandbox-lib.sh)", () => {
+  // The fixture gate records what it can see of flightdeck/.env.supabase while
+  // it runs, then exits with a code the caller must get back.
+  const probeGate = [
+    "#!/usr/bin/env bash",
+    'f=flightdeck/.env.supabase',
+    'if [ -f "$f" ]; then echo "present $(ls -l "$f" | cut -c1-10)" >"$GATE_PROBE"; else echo absent >"$GATE_PROBE"; fi',
+    "exit 3",
+    "",
+  ].join("\n");
+  const lib = path.join(STUDIO, "scripts", "sandbox-lib.sh");
+
+  function gateRun(name: string, env: Record<string, string>, body: string) {
+    const host = makeHost(`${name}-host`, false, probeGate);
+    const root = path.join(work, `${name}-root`);
+    const probe = path.join(work, `${name}.probe`);
+    const r = spawnSync("bash", ["-c", `set -uo pipefail; . "$1"; sandbox_from_tracked "$2" "$3" >/dev/null || exit 90; ${body}`, "_", lib, host, root], {
+      encoding: "utf8",
+      env: { ...process.env, GATE_PROBE: probe, ...env },
+    });
+    return { r, root, probe, out: `${r.stdout}${r.stderr}` };
+  }
+
+  it("brings .env.supabase in at mode 600 for the gate only, returns the gate's code, and removes it", () => {
+    const { r, root, probe, out } = gateRun("gate-on", {}, 'sandbox_run_host_gate "$2" "$3" "$3/host-gate.log"; echo "rc=$?"');
+    expect(r.status, r.stderr).toBe(0);
+    expect(fs.readFileSync(probe, "utf8")).toBe("present -rw-------\n");
+    expect(out).toContain("rc=3");
+    expect(fs.existsSync(path.join(root, "flightdeck/.env.supabase"))).toBe(false);
+    expect(out).not.toContain(SECRET);
+  });
+
+  it("never brings it in when FLIGHTDECK_GATE_POSTGRES=0", () => {
+    const { r, root, probe, out } = gateRun("gate-off", { FLIGHTDECK_GATE_POSTGRES: "0" }, 'sandbox_run_host_gate "$2" "$3" "$3/host-gate.log"; echo "rc=$?"');
+    expect(r.status, r.stderr).toBe(0);
+    expect(fs.readFileSync(probe, "utf8")).toBe("absent\n");
+    expect(out).toContain("rc=3");
+    expect(fs.existsSync(path.join(root, "flightdeck/.env.supabase"))).toBe(false);
+  });
+
+  it("removes it on exit (the trap) even when the caller dies before the explicit rm", () => {
+    // sandbox_add_pg_env has run and the trap is armed, then the caller exits
+    // early — what an interrupted promote.sh does.
+    const { r, root } = gateRun("gate-trap", {}, 'sandbox_arm_pg_env_cleanup "$3"; sandbox_add_pg_env "$2" "$3"; [ -f "$3/flightdeck/.env.supabase" ] || exit 91; exit 5');
+    expect(r.status, r.stderr).toBe(5);
+    expect(fs.existsSync(path.join(root, "flightdeck/.env.supabase"))).toBe(false);
+  });
+});
+
+describe("scripts/promote.sh host-gate step", () => {
+  it("runs the host gate only through sandbox_run_host_gate, never directly", () => {
+    // The integration case above stops at step 0; this pins that step 5 uses
+    // the helper the three cases above exercise, so its env handling is covered.
+    const src = fs.readFileSync(path.join(STUDIO, "scripts", "promote.sh"), "utf8");
+    const code = src.split("\n").filter((l) => !l.trimStart().startsWith("#")).join("\n");
+    expect(code).toMatch(/^sandbox_run_host_gate "\$REPO" "\$ROOT" "\$ROOT\/host-gate\.log"\nHOST_GATE_RC=\$\?$/m);
+    expect(code).not.toMatch(/bash[^\n]*scripts\/gate\.sh/);
+    expect(code).not.toMatch(/\.env\.supabase/);
   });
 });
