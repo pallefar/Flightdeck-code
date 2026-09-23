@@ -518,8 +518,8 @@ describe("the shell, wired to a store", () => {
       const drawn = button(html(<Workbench store={store} onPrompt={noop} checkFiles={failingOnEdits} />));
       expect(drawn).toContain("disabled");
       expect(drawn).toMatch(/title="[^"]*conformance gate fails on the edited files/i);
-      // The reason names the rule and the place — the Gate pane shows Studio's
-      // own verdict, so the tooltip is the only place this error appears.
+      // The reason names the rule and the place, so the tooltip is enough on
+      // its own, without switching to the Gate tab.
       expect(drawn).toMatch(/title="[^"]*FD-G001 server\/subapps\/wc-clock\/manifest\.ts:1 — x[^"]*"/);
     });
 
@@ -534,6 +534,97 @@ describe("the shell, wired to a store", () => {
     it("is disabled before any round has landed", () => {
       const drawn = button(html(<Workbench store={createStore()} onPrompt={noop} checkFiles={passing} />));
       expect(drawn).toContain("disabled");
+    });
+  });
+
+  // ⭐ The Gate tab used to render `gateSummary(candidate)` — Studio's own
+  // verdict on Studio's text, from before the person touched anything —
+  // while the verdict over the EDITED files fed only the Download button.
+  // A saved edit that breaks the host's schema left the Gate tab clean and
+  // the button disabled, with the only explanation in a tooltip.
+  describe("the Gate tab after a saved edit", () => {
+    const MANIFEST = "server/subapps/wc-clock/manifest.ts";
+    const UNKNOWN_SECTION = `navSection: "Mini apps"`;
+    const fd003 = finding("FD-M003", MANIFEST, 36, "navSection is not one of the host's five sections");
+    /** Stands in for the real gate (`src/wiring.ts`, run for real in
+     * `src/__tests__/wiring.test.ts`): FD-M003 when the manifest names a
+     * section the host does not have. */
+    const gate = (files: readonly { path: string; contents: string }[]) =>
+      files.some((f) => f.path === MANIFEST && f.contents.includes(UNKNOWN_SECTION))
+        ? { ok: false, findings: [fd003], rulesRun: ["FD-M001", "FD-M003"] }
+        : { ok: true, findings: [], rulesRun: ["FD-M001", "FD-M003"] };
+    const button = (out: string) =>
+      /<button(?:(?!<button)[\s\S])*?Download candidate<\/button>/.exec(out)?.[0] ?? null;
+    const gatePane = (out: string) => out.slice(Math.max(0, out.indexOf('class="fd-gate"')));
+    const gateTab = (out: string) =>
+      /<button[^>]*role="tab"(?:(?!<button)[\s\S])*?Gate(?:(?!<button)[\s\S])*?<\/button>/.exec(out)?.[0] ?? null;
+
+    function onGate() {
+      const store = createStore();
+      store.settle(store.prompt("build it") ?? "", candidate());
+      store.setView("gate");
+      return store;
+    }
+
+    function saveNavSection(store: ReturnType<typeof createStore>) {
+      const text = wcClockFiles().find((f) => f.path === MANIFEST)?.contents ?? "";
+      const edited = text.replace(`navSection: "Contract pipeline"`, UNKNOWN_SECTION);
+      expect(edited).not.toBe(text);
+      store.editFile(MANIFEST, edited);
+      store.saveFile(MANIFEST);
+    }
+
+    it("⭐ shows FD-M003 from the edited files, blocking, as the Download button is", () => {
+      const store = onGate();
+      saveNavSection(store);
+      const out = html(<Workbench store={store} onPrompt={noop} checkFiles={gate} />);
+
+      // The Download button is disabled by the edited-files verdict …
+      expect(button(out)).toContain("disabled");
+      // … and the Gate pane now says the same thing, first, under its own
+      // name. (Scoped to the pane: the button's tooltip names FD-M003 too.)
+      const pane = gatePane(out);
+      expect(pane).toContain("FD-M003");
+      expect(pane).toContain("Your edited files");
+      expect(pane).toContain("navSection is not one of the host&#x27;s five sections");
+      const yours = pane.slice(pane.indexOf("Your edited files"), pane.indexOf("Studio&#x27;s generation"));
+      expect(yours).toContain("FD-M003");
+      expect(yours).toContain("would refuse the download");
+      // Studio's own verdict is still there, second, and still clean.
+      expect(pane.indexOf("Studio&#x27;s generation")).toBeGreaterThan(pane.indexOf("Your edited files"));
+      // The Gate tab's badge follows the verdict the pane leads with.
+      expect(gateTab(out)).toContain("fd-tab__count--error");
+    });
+
+    it("says the edited files are clean when the gate passes on them, and the button is ready", () => {
+      const store = onGate();
+      store.editFile(MANIFEST, "// mine, still conformant\n");
+      store.saveFile(MANIFEST);
+      const out = html(<Workbench store={store} onPrompt={noop} checkFiles={gate} />);
+      expect(button(out)).not.toContain("disabled");
+      expect(out).toContain("Your edited files");
+      expect(out).not.toContain("would refuse the download");
+      expect(gateTab(out)).not.toContain("fd-tab__count");
+    });
+
+    it("fails closed in the pane when the gate cannot run on the edited files", () => {
+      const store = onGate();
+      saveNavSection(store);
+      const throwing = () => {
+        throw new Error("gate crashed");
+      };
+      const out = html(<Workbench store={store} onPrompt={noop} checkFiles={throwing} />);
+      expect(button(out)).toContain("disabled");
+      expect(out).toContain("Your edited files");
+      expect(out).toContain("could not run on your edited files");
+    });
+
+    it("shows the single verdict, as before, when nothing is edited", () => {
+      const store = onGate();
+      const out = html(<Workbench store={store} onPrompt={noop} checkFiles={gate} />);
+      expect(out).not.toContain("Your edited files");
+      expect(out).not.toContain("Studio&#x27;s generation");
+      expect(out).toContain("rules ran and found nothing");
     });
   });
 });

@@ -71,9 +71,8 @@ describe("when the button is enabled", () => {
     if (readiness.ready) return;
     expect(readiness.reason).toMatch(/conformance gate fails on the edited files/i);
     expect(readiness.reason).toContain("1 error");
-    // ⭐ It names what fails and where. The Gate pane shows Studio's own
-    // verdict, not this one, so a reason that only counted errors would send
-    // the person looking for an error that is on no screen.
+    // ⭐ It names what fails and where. A reason that only counted errors
+    // would send the person away from the button to look for them.
     expect(readiness.reason).toContain(`FD-G001 ${MANIFEST}:1 — guard is not first`);
     expect(readiness.reason).toMatch(/Fix it first\./);
     expect(readiness.reason).not.toMatch(/Fix them first/);

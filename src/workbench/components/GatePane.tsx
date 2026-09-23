@@ -9,14 +9,29 @@
  * rules that ran and came back clean, and says so when it cannot. */
 import { useRef } from "react";
 import { useArriveInserted } from "../../motion/useMotion";
+import type { FileGateVerdict } from "../download";
 import type { GateSummary } from "../selectors";
 import type { Candidate, Finding, Severity } from "../types";
 import { LineIcon, type LineIconName } from "./LineIcon";
 import { Note } from "./Note";
 
+/** The gate over the files as the person SAVED them — the verdict the
+ * "Download candidate" button follows. `verdict: null` is a gate that could
+ * not run. */
+export interface EditedGate {
+  readonly verdict: FileGateVerdict | null;
+  readonly summary: GateSummary;
+}
+
 interface Props {
   readonly candidate: Candidate | null;
+  /** Studio's own verdict, on the text it generated. */
   readonly summary: GateSummary;
+  /** Present only when saved edits change the file set. It then leads the
+   * pane, and Studio's verdict follows it as a second section — before this
+   * the pane showed Studio's verdict alone, so a saved edit that broke the
+   * host's schema left this tab clean while the Download button refused. */
+  readonly edited?: EditedGate | undefined;
   readonly filter: Severity | "all";
   readonly focusedRule: string | null;
   readonly onFilter: (filter: Severity | "all") => void;
@@ -27,6 +42,7 @@ interface Props {
 export function GatePane({
   candidate,
   summary,
+  edited,
   filter,
   focusedRule,
   onFilter,
@@ -42,16 +58,80 @@ export function GatePane({
     return <div className="fd-empty">No round selected.</div>;
   }
 
-  const sorted = shownFindings(candidate.findings, filter);
+  const shared = { filter, focusedRule, onFilter, onFocusRule, onReveal };
+  const studio = (
+    <Verdict whose="studio" findings={candidate.findings} summary={summary} notes={candidate.notes} {...shared} />
+  );
+
+  if (edited === undefined) {
+    return (
+      <div className="fd-gate" ref={gateRef}>
+        {studio}
+      </div>
+    );
+  }
 
   return (
     <div className="fd-gate" ref={gateRef}>
+      <section aria-label="Your edited files">
+        <h2 className="fd-side__h">Your edited files</h2>
+        <p className="fd-ledger__note">
+          The gate, run again over the files as you saved them. This is the verdict "Download candidate" follows.
+        </p>
+        {edited.verdict === null ? (
+          <Note warn>
+            The conformance gate could not run on your edited files. That is not a pass — treat them as blocking;
+            nothing can be downloaded until it runs.
+          </Note>
+        ) : (
+          <Verdict whose="edited" findings={edited.verdict.findings} summary={edited.summary} notes={[]} {...shared} />
+        )}
+      </section>
+      <section aria-label="Studio's generation">
+        <h2 className="fd-side__h">Studio&apos;s generation</h2>
+        <p className="fd-ledger__note">Studio&apos;s own verdict on the text it generated this round, before your edits.</p>
+        {studio}
+      </section>
+    </div>
+  );
+}
+
+/** One verdict: the tiles, what they mean, the filter and the findings.
+ * `whose` changes only the words — what a blocking finding refuses, and
+ * whose files the gate ran over. The filter is one state for the pane, so
+ * with two sections it filters both. */
+function Verdict({
+  whose,
+  findings,
+  summary,
+  notes,
+  filter,
+  focusedRule,
+  onFilter,
+  onFocusRule,
+  onReveal,
+}: {
+  readonly whose: "studio" | "edited";
+  readonly findings: readonly Finding[];
+  readonly summary: GateSummary;
+  readonly notes: readonly string[];
+  readonly filter: Severity | "all";
+  readonly focusedRule: string | null;
+  readonly onFilter: (filter: Severity | "all") => void;
+  readonly onFocusRule: (rule: string | null) => void;
+  readonly onReveal: (path: string) => void;
+}) {
+  const sorted = shownFindings(findings, filter);
+  const refused = whose === "edited" ? "the download" : "this write";
+
+  return (
+    <>
       <div className="fd-gate__summary">
         <Stat
           n={summary.errors}
           k="blocking"
           tone={summary.errors > 0 ? "error" : "ok"}
-          caption="Findings that would refuse this write"
+          caption={whose === "edited" ? "Findings that block the download" : "Findings that would refuse this write"}
         />
         <Stat
           n={summary.warnings}
@@ -75,28 +155,34 @@ export function GatePane({
         </Note>
       ) : (
         <Note warn>
-          {summary.errors} finding{summary.errors === 1 ? "" : "s"} would refuse this write. A generated
+          {summary.errors} finding{summary.errors === 1 ? "" : "s"} would refuse {refused}. A generated
           manifest that breaks the host's schema takes the whole server down at boot, by design — which is why
           these block rather than warn.
         </Note>
       )}
 
-      {candidate.notes.map((note, i) => (
+      {notes.map((note, i) => (
         <Note key={i}>{note}</Note>
       ))}
 
-      <div className="fd-filter" role="group" aria-label="Filter findings by severity">
+      <div
+        className="fd-filter"
+        role="group"
+        aria-label={whose === "edited" ? "Filter the findings on your edited files by severity" : "Filter findings by severity"}
+      >
         {(["all", "error", "warning"] as const).map((value) => (
           <button key={value} type="button" aria-pressed={filter === value} onClick={() => onFilter(value)}>
-            {value === "all" ? `All (${candidate.findings.length})` : value === "error" ? `Blocking (${summary.errors})` : `Warnings (${summary.warnings})`}
+            {value === "all" ? `All (${findings.length})` : value === "error" ? `Blocking (${summary.errors})` : `Warnings (${summary.warnings})`}
           </button>
         ))}
       </div>
 
       {sorted.length === 0 && (
         <p className="fd-ledger__note">
-          {candidate.findings.length === 0
-            ? "The gate raised nothing on this candidate."
+          {findings.length === 0
+            ? whose === "edited"
+              ? "The gate raised nothing on your edited files."
+              : "The gate raised nothing on this candidate."
             : "No findings at this severity."}
         </p>
       )}
@@ -110,7 +196,7 @@ export function GatePane({
           onReveal={onReveal}
         />
       ))}
-    </div>
+    </>
   );
 }
 

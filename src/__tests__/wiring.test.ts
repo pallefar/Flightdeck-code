@@ -8,6 +8,8 @@
  * the conformance gate passes on the edited files" rested on one manual
  * headless-browser check. These cases run the real generator and the real
  * gate through the real store, and fail on exactly that change. */
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { runConformanceGate } from "@conformance/gate";
 import { contractRunSpec } from "@codegen/fixtures/specs";
@@ -17,6 +19,7 @@ import { candidateFrom, checkFiles } from "../wiring";
 import { downloadReadiness, runFileGate } from "../workbench/download";
 import { currentCandidate, edits } from "../workbench/selectors";
 import { createStore } from "../workbench/store";
+import { Workbench } from "../workbench/Workbench";
 
 const MANIFEST = "server/subapps/wc-clock/manifest.ts";
 
@@ -85,6 +88,20 @@ describe("⭐ the shipped gate adapter decides the Download button", () => {
     expect(readiness.ready).toBe(false);
     if (readiness.ready) return;
     expect(readiness.reason).toContain("FD-M008");
+  });
+
+  it("⭐ the Gate tab shows that FD-M003, from the edited files, where the button is disabled", () => {
+    // The pane used to render Studio's generation-time findings only, so this
+    // edit left it clean while the button refused. Rendered with the SHIPPED
+    // adapter, as `main.tsx` passes it.
+    const store = settled();
+    saveManifest(store, (text) => text.replace(`navSection: "Contract pipeline"`, `navSection: "Mini apps"`));
+    store.setView("gate");
+    const out = renderToStaticMarkup(createElement(Workbench, { store, onPrompt: () => {}, checkFiles }));
+    const pane = out.slice(out.indexOf('class="fd-gate"'));
+    expect(pane).toContain("Your edited files");
+    expect(pane.slice(0, pane.indexOf("Studio&#x27;s generation"))).toContain("FD-M003");
+    expect(readinessOf(store).ready).toBe(false);
   });
 
   it("reports the gate's RULES as rulesRun, not its checks", () => {

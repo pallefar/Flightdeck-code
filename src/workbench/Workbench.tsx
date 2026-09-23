@@ -43,6 +43,7 @@ import {
   findingsByPath,
   gateSummary,
   generatedFileAt,
+  verdictSummary,
   progress,
   treeNodes,
   visibleRun,
@@ -183,6 +184,18 @@ export function Workbench({ store, onPrompt, onStop, theme = DEFAULT_THEME, onTh
     [checkFiles, candidate],
   );
   const download = downloadReadiness({ candidate, edits: edited, verdict });
+  // The Gate tab leads with the verdict the button follows once saved edits
+  // change the file set — `currentCandidate` hands back the round's own
+  // candidate, by identity, until they do. Without a gate there is no
+  // edited verdict to show, and the pane shows Studio's alone, as before.
+  const editedGate = useMemo(
+    () =>
+      checkFiles === undefined || candidate === null || round === null || candidate === round.candidate
+        ? undefined
+        : { verdict, summary: verdictSummary(verdict) },
+    [checkFiles, candidate, round, verdict],
+  );
+  const gateBadge = editedGate?.summary ?? summary;
   const handleDownload = () => {
     if (!download.ready || candidate === null || round === null) return;
     saveInBrowser(
@@ -215,8 +228,8 @@ export function Workbench({ store, onPrompt, onStop, theme = DEFAULT_THEME, onTh
     {
       id: "gate",
       label: "Gate",
-      count: summary.errors + summary.warnings || undefined,
-      ...(summary.errors > 0 ? { tone: "error" as const } : summary.warnings > 0 ? { tone: "warn" as const } : {}),
+      count: gateBadge.errors + gateBadge.warnings || undefined,
+      ...(gateBadge.errors > 0 ? { tone: "error" as const } : gateBadge.warnings > 0 ? { tone: "warn" as const } : {}),
     },
   ];
 
@@ -368,6 +381,7 @@ export function Workbench({ store, onPrompt, onStop, theme = DEFAULT_THEME, onTh
             <GatePane
               candidate={candidate}
               summary={summary}
+              edited={editedGate}
               filter={state.severityFilter}
               focusedRule={state.focusedRule}
               onFilter={(filter) => store.setSeverityFilter(filter)}
