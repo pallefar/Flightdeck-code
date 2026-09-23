@@ -28,18 +28,17 @@
 # under $ROOT, and there is no remote to push back to. The host's git-based PII
 # checks need no history (check-ignore, ls-files, diff --cached).
 #
-# ⚠ KNOWN, UNRESOLVED: the host gate STILL CANNOT PASS in this sandbox, so
-#   promote.sh still cannot write readyForProduction: true. The host's
-#   flightdeck/tests/piiGitBoundary.test.ts (gate stack 2, `npm test`) also
-#   asserts that gitignored files EXIST on disk — contracts/INDEX.json,
-#   app/data/status.js and the five loose real-person contracts under
-#   contracts/ ("... still exists in the working tree"). A PII-free sandbox
-#   leaves exactly those out, by design; measured against host 9d25a078 it
-#   fails 6 of 40. Copying the PII in is forbidden, and making those host
-#   assertions conditional would weaken a PII gate, so the way out is an owner
-#   decision (e.g. a host-side split: existence checks run read-only against
-#   the real host checkout, the rest in the sandbox). Until then step [5/6]
-#   records host-gate as FAIL, which is the honest result.
+# The host gate's flightdeck/tests/piiGitBoundary.test.ts also asserts that
+# gitignored files EXIST on disk — contracts/INDEX.json, app/data/status.js and
+# the five loose real-person contracts under contracts/. A PII-free sandbox
+# leaves exactly those out, by design (measured against host 9d25a078: 6 of 40
+# failed). CLOSED by option (c), keeping both the gate and the fence at full
+# strength: sandbox_run_host_gate hands the gate FLIGHTDECK_PII_HOST_ROOT, the
+# real host checkout this sandbox was built from, and the host test reads those
+# existence checks there, read-only; its tracked-ness checks still run against
+# the sandbox. Nothing ignored is copied in for it. This needs the host side
+# (OS item os-pii-boundary-host-root): a host that predates it ignores the
+# variable, and step [5/6] then still records host-gate FAIL, honestly.
 
 # sandbox_from_tracked REPO ROOT — ROOT becomes a mode-700 git repo holding
 # REPO's HEAD commit and nothing older, checked out detached. Uncommitted host
@@ -82,11 +81,16 @@ sandbox_arm_pg_env_cleanup() {
 # flightdeck/.env.supabase, gitignored and so not in the sandbox: that one file
 # is brought in for this step only (unless FLIGHTDECK_GATE_POSTGRES=0 opts the
 # tier out) and removed again straight after, with the EXIT trap as backstop.
+# FLIGHTDECK_PII_HOST_ROOT is ALWAYS the host checkout the sandbox was built
+# from (a value the caller had set is overridden), for the gate's process only.
+# If it cannot be resolved the gate does not run and this returns non-zero.
 sandbox_run_host_gate() {
-  local repo="$1" root="$2" log="$3" rc
+  local repo="$1" root="$2" log="$3" rc host_root
+  host_root="$(git -C "$repo" rev-parse --show-toplevel)" && [ -n "$host_root" ] || {
+    echo "could not resolve the host checkout $repo; host gate not run" >&2; return 2; }
   sandbox_arm_pg_env_cleanup "$root"
   [ "${FLIGHTDECK_GATE_POSTGRES:-1}" = "0" ] || sandbox_add_pg_env "$repo" "$root"
-  ( cd "$root" && bash scripts/gate.sh >"$log" 2>&1 )
+  ( cd "$root" && FLIGHTDECK_PII_HOST_ROOT="$host_root" bash scripts/gate.sh >"$log" 2>&1 )
   rc=$?
   rm -f "$root/flightdeck/.env.supabase"
   return "$rc"

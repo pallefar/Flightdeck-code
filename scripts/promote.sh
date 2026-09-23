@@ -25,14 +25,16 @@
 # a history-free, single-commit git checkout — tracked files only, with a real
 # .git, because the host gate's PII stack needs git, and must never see
 # gitignored person data, secrets, or the person data still in the host's
-# history (scripts/sandbox-lib.sh says why). ⚠ That does NOT yet let the host
-# gate pass: its piiGitBoundary.test.ts also asserts the gitignored PII files
-# exist on disk, which a PII-free sandbox never satisfies, so step [5/6] still
-# records host-gate FAIL pending an owner decision (sandbox-lib.sh, KNOWN). The whole repo, not just flightdeck/:
-# tests reach above flightdeck/ into processes/ and engine/. node_modules is
-# symlinked; flightdeck/.env.supabase is the one ignored file brought in, mode
-# 600, only for the host gate step, and removed again right after it
-# (sandbox_run_host_gate; FLIGHTDECK_GATE_POSTGRES=0 keeps it out entirely).
+# history (scripts/sandbox-lib.sh says why). The host's piiGitBoundary.test.ts
+# also asserts the gitignored PII files exist on disk, which a PII-free sandbox
+# never satisfies, so step [5/6] hands the gate FLIGHTDECK_PII_HOST_ROOT=$REPO
+# and those checks read the real host checkout, read-only; a host that predates
+# that variable still records host-gate FAIL. The whole repo, not just
+# flightdeck/: tests reach above flightdeck/ into processes/ and engine/.
+# node_modules is symlinked; flightdeck/.env.supabase is the one ignored file
+# brought in, mode 600, only for the host gate step, and removed again right
+# after it (sandbox_run_host_gate; FLIGHTDECK_GATE_POSTGRES=0 keeps it out
+# entirely).
 #
 # Usage: HOST_REPO=/path/to/project-contract SPEC=fixtures/x.spec.json \
 #        bash scripts/promote.sh
@@ -135,7 +137,8 @@ fi
 echo "==> [5/6] THE HOST'S OWN GATE — scripts/gate.sh, all five stacks"
 # This is the load-bearing stack. Everything above is Studio checking itself.
 # sandbox_run_host_gate brings in flightdeck/.env.supabase for this step only
-# (its Postgres tier reads it) and removes it again; see scripts/sandbox-lib.sh.
+# (its Postgres tier reads it) and removes it again, and hands the gate
+# FLIGHTDECK_PII_HOST_ROOT (this host, read-only); see scripts/sandbox-lib.sh.
 sandbox_run_host_gate "$REPO" "$ROOT" "$ROOT/host-gate.log"
 HOST_GATE_RC=$?
 if grep -q '^SKIPPED STACKS:' "$ROOT/host-gate.log"; then
