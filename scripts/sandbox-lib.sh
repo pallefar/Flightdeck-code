@@ -7,10 +7,10 @@
 # Both scripts used to build it with
 #   tar -C "$REPO" --exclude=.git --exclude=node_modules -cf - . | tar -C "$ROOT" -xf -
 # which was wrong in both directions at once:
-#   1. It stripped .git, so the host gate could NEVER pass in the sandbox:
-#      tests/piiGitBoundary.test.ts refuses to run outside a real git checkout,
-#      and check-contracts-boundary.sh --tracked lists `git ls-files`. promote.sh
-#      could therefore never write readyForProduction: true.
+#   1. It stripped .git, so the host's git-based PII checks could not run in
+#      the sandbox: tests/piiGitBoundary.test.ts refuses to run outside a real
+#      git checkout, and check-contracts-boundary.sh --tracked lists
+#      `git ls-files`.
 #   2. It copied everything .gitignore exists to keep out — the loose
 #      person-bearing contracts under contracts/, flightdeck/.env and
 #      flightdeck/.env.supabase — into /tmp, world-readable.
@@ -25,9 +25,21 @@
 # Its own repo, not `git worktree add`: a worktree registers itself in the
 # HOST's .git and shares its object store, so a sandbox commit or gc would write
 # into the host. `git init` + a depth-1 fetch reads the host and writes only
-# under $ROOT, and there is no remote to push back to. Nothing in the host gate
-# needs history (piiGitBoundary.test.ts and check-contracts-boundary.sh
-# --tracked use check-ignore, ls-files and diff --cached).
+# under $ROOT, and there is no remote to push back to. The host's git-based PII
+# checks need no history (check-ignore, ls-files, diff --cached).
+#
+# ⚠ KNOWN, UNRESOLVED: the host gate STILL CANNOT PASS in this sandbox, so
+#   promote.sh still cannot write readyForProduction: true. The host's
+#   flightdeck/tests/piiGitBoundary.test.ts (gate stack 2, `npm test`) also
+#   asserts that gitignored files EXIST on disk — contracts/INDEX.json,
+#   app/data/status.js and the five loose real-person contracts under
+#   contracts/ ("... still exists in the working tree"). A PII-free sandbox
+#   leaves exactly those out, by design; measured against host 9d25a078 it
+#   fails 6 of 40. Copying the PII in is forbidden, and making those host
+#   assertions conditional would weaken a PII gate, so the way out is an owner
+#   decision (e.g. a host-side split: existence checks run read-only against
+#   the real host checkout, the rest in the sandbox). Until then step [5/6]
+#   records host-gate as FAIL, which is the honest result.
 
 # sandbox_from_tracked REPO ROOT — ROOT becomes a mode-700 git repo holding
 # REPO's HEAD commit and nothing older, checked out detached. Uncommitted host

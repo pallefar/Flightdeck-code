@@ -7,10 +7,12 @@
  *
  * which was wrong in both directions at once:
  *
- * 1. It STRIPPED `.git`, so the host gate could never pass in the sandbox:
- *    `tests/piiGitBoundary.test.ts` refuses to run without `git rev-parse`, and
- *    `scripts/check-contracts-boundary.sh --tracked` lists `git ls-files`.
- *    `readyForProduction` could therefore never be true.
+ * 1. It STRIPPED `.git`, so the host's git-based PII checks could not run in
+ *    the sandbox: `tests/piiGitBoundary.test.ts` refuses to run without
+ *    `git rev-parse`, and `scripts/check-contracts-boundary.sh --tracked` lists
+ *    `git ls-files`. (The host gate still cannot pass in the new sandbox either:
+ *    that test also asserts the gitignored PII files exist on disk. Open, owner
+ *    decision — see the KNOWN note in scripts/sandbox-lib.sh.)
  * 2. It COPIED EVERYTHING ELSE, including what `.gitignore` exists to keep
  *    out: the loose person-bearing contracts under `contracts/`, and the
  *    secrets in `flightdeck/.env` and `flightdeck/.env.supabase` — into /tmp,
@@ -80,7 +82,9 @@ function makeHost(name: string, withNodeModules: boolean, gateSh = "#!/usr/bin/e
   write(host, PII_FILE, "person data");
   write(host, "contracts/INDEX.json", "[]\n");
   write(host, "flightdeck/.env", "AUTH_REQUIRED=true\n", 0o600);
-  write(host, "flightdeck/.env.supabase", `POSTGRES_PASSWORD=${SECRET}\n`, 0o600);
+  // 0644 on purpose: cp keeps the source's mode, so a 0600 source would make
+  // the "mode 600" assertions below pass even with no umask/chmod hardening.
+  write(host, "flightdeck/.env.supabase", `POSTGRES_PASSWORD=${SECRET}\n`, 0o644);
   if (withNodeModules) {
     for (let i = 0; i < 12; i++) fs.mkdirSync(path.join(host, "flightdeck/node_modules", `pkg${i}`), { recursive: true });
   }
@@ -206,10 +210,17 @@ describe("sandbox_run_host_gate (scripts/sandbox-lib.sh)", () => {
   }
 
   it("brings .env.supabase in at mode 600 for the gate only, returns the gate's code, and removes it", () => {
-    const { r, root, probe, out } = gateRun("gate-on", {}, 'sandbox_run_host_gate "$2" "$3" "$3/host-gate.log"; echo "rc=$?"');
+    // Checked INSIDE the same shell, before it exits: after exit the EXIT trap
+    // would have removed the file anyway and hide a missing explicit rm.
+    const { r, root, probe, out } = gateRun(
+      "gate-on",
+      {},
+      'sandbox_run_host_gate "$2" "$3" "$3/host-gate.log"; echo "rc=$?"; [ -e "$3/flightdeck/.env.supabase" ] && echo STILL_PRESENT; true',
+    );
     expect(r.status, r.stderr).toBe(0);
     expect(fs.readFileSync(probe, "utf8")).toBe("present -rw-------\n");
     expect(out).toContain("rc=3");
+    expect(out).not.toContain("STILL_PRESENT");
     expect(fs.existsSync(path.join(root, "flightdeck/.env.supabase"))).toBe(false);
     expect(out).not.toContain(SECRET);
   });

@@ -25,7 +25,10 @@
 # a history-free, single-commit git checkout — tracked files only, with a real
 # .git, because the host gate's PII stack needs git, and must never see
 # gitignored person data, secrets, or the person data still in the host's
-# history (scripts/sandbox-lib.sh says why). The whole repo, not just flightdeck/:
+# history (scripts/sandbox-lib.sh says why). ⚠ That does NOT yet let the host
+# gate pass: its piiGitBoundary.test.ts also asserts the gitignored PII files
+# exist on disk, which a PII-free sandbox never satisfies, so step [5/6] still
+# records host-gate FAIL pending an owner decision (sandbox-lib.sh, KNOWN). The whole repo, not just flightdeck/:
 # tests reach above flightdeck/ into processes/ and engine/. node_modules is
 # symlinked; flightdeck/.env.supabase is the one ignored file brought in, mode
 # 600, only for the host gate step, and removed again right after it
