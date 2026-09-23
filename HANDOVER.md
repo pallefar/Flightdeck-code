@@ -1,15 +1,21 @@
 # Flightdeck Studio — handover
 
-Everything below was **verified by running it** in the container this was built in,
-unless a line says otherwise. Where something cannot be verified here, it says so
-and says why.
+The move to the Mac is done. The header and §1–§3 were re-measured on the Mac
+on 2026-09-24. A line that still reports a Linux container result says so.
+Where something could not be verified, the line says so and says why.
 
 - **Repo:** `https://github.com/pallefar/Flightdeck-code`
-- **Branch:** `claude/gauntlet-loop-install-hp490e` — the only branch. There is no
-  `main` on origin, so clone and stay on this one.
-- **State:** 2368 tests, 0 skipped, 119 files, all passing against `project-contract`
-  at `integration/unified-2026-09-22`; `tsc --noEmit` clean (2026-09-22, Mac).
-  The one host-dependent failure is closed: the host's docusign manifest declares
+- **Branch:** `integration/studio-2026-09-22` (at `f943916` when measured). This
+  is the Studio integration branch; fixes land on `fix/studio-*` branches and
+  are merged into it. The older `claude/gauntlet-loop-install-hp490e` is still
+  on origin and is an ancestor of it; do not build on it. There is no `main` on
+  origin.
+- **State (Mac, 2026-09-24):** 2528 tests in 129 files, all passing, 0 skipped,
+  with `FLIGHTDECK_HOST_ROOT` pointed at either host checkout (§2.3):
+  `project-contract` at `9d25a078` and `wt-integration` at `25d5094d`, both
+  commits on the host's `integration/unified-2026-09-22`. `tsc --noEmit` clean.
+  Without a host checkout the suite fails on purpose (§2.2).
+- **Closed earlier (2026-09-22):** the one host-dependent failure: the host's docusign manifest declares
   `contributions: docusignContributions` (host 42b0f308, OS-04), a member of
   `SubAppManifest` that `subAppManifestSchema` never validates — like
   `initSchema`/`registerRoutes`. Codegen's test-only manifest reader now sets
@@ -26,26 +32,55 @@ and says why.
 
 ---
 
-## 1. Why you are moving this to the Mac
+## 1. Where this stands on the Mac
 
-One reason only: **the host's compliance gate cannot pass in this container.**
-Studio itself does not need a database — the only mention of Postgres in this
-repo is a *denylist* of imports a generated mini-app may not use
+The move happened because **the host's compliance gate could not pass in the
+Linux container** the first half was built in. Studio itself does not need a
+database. The only mention of Postgres in this repo is a *denylist* of imports
+a generated mini-app may not use
 (`packages/conformance/src/checks/capability-escape.ts:40`).
 
-What that blocks, precisely: `scripts/promote.sh` runs Flightdeck's own
-`scripts/gate.sh` with a generated candidate mounted, and writes a
-`studio-compliance-record/1`. `shipSubApp` refuses to write into the host repo
-without a passing record for that exact spec. So today nothing can be promoted
-from this container — not because the code is wrong, but because the gate cannot
-pass here.
+What that blocks: `scripts/promote.sh` runs Flightdeck's own `scripts/gate.sh`
+with a generated candidate mounted, and writes a `studio-compliance-record/1`.
+`shipSubApp` refuses to write into the host repo without a passing record for
+that exact spec. Nothing is promotable until the host gate passes.
 
-**What was actually established here — including where my first reading of it
-was too confident.**
+**Measured on the Mac (2026-09-24, Studio `f943916`):**
 
-The gate was run three times: with the candidate mounted, on a clean host with
-nothing mounted, and again after installing the missing Python packages. The
-current state of a clean host in this container is:
+| What | Result |
+|---|---|
+| `npm test` with `FLIGHTDECK_HOST_ROOT` set | 2528 passed, 0 skipped, 129 files |
+| `npm run typecheck` | clean |
+| `npm run redteam` | `9/9` planted violations blocked |
+| `npm run build` | clean; one 638.74 kB JS chunk |
+| `npm run standalone` | `STANDALONE WORKS` for `contract-run`, `shift-notes` and `wc-clock`, with `PLAYWRIGHT_MODULE` set (§2.2) |
+
+**Not yet run on the Mac:** `npm run mount` and `npm run promote`. The only
+results for them are still the Linux container's, below. Running both on the
+Mac against the clean integration worktree is an open item. Until it lands,
+treat the container numbers as the last known result, not as the Mac's.
+
+**The host gate on the Mac has not been re-measured here.** Two things are
+known without running it:
+
+1. **`run_eval` needs two Python packages.** In the container it went green
+   after `python3 -m pip install python-docx openpyxl` (§2.4). On this Mac the
+   default `python3` (3.14.7) has neither (`import docx` and `import openpyxl`
+   both fail, checked 2026-09-24), so expect that stack to fail until they are
+   installed.
+2. **`postgres-tier` wants a credentials file, not a local Postgres.** It skips
+   unless `flightdeck/.env.supabase` exists. That file is gitignored. On this
+   Mac it exists in `project-contract` and not in `wt-integration`.
+
+Take your own baseline before attributing anything to Studio, in the checkout
+you will promote into:
+
+```bash
+cd "/Users/karstenhome/FlightDeck OS/wt-integration" && bash scripts/gate.sh
+```
+
+**Last container results (Linux, 2026-09-22), kept for comparison.** The clean
+host gate there read:
 
 ```
 PASS: contracts/ PII boundary
@@ -57,46 +92,23 @@ FAILED STACKS: vitest
 EXIT=1
 ```
 
-Three separate things, and they are not the same kind of problem:
+Several of those `vitest` failures came from how the container sandbox was
+built rather than from the host: the copy excluded `.git`, `web/dist` was never
+built, and `contracts/INDEX.json` (a derived artifact) was not copied. The rest
+pointed at a missing `soffice` (LibreOffice) and at Supabase. The sandbox is
+now its own git repo holding the host's tracked files at `HEAD`
+(`scripts/sandbox-lib.sh`), so gitignored derived files are still absent.
 
-1. **`run_eval` is solved.** It needed `python-docx` and `openpyxl`. Verified,
-   not predicted — it now passes inside the gate as well as standalone.
-
-2. **`postgres-tier` does not need you to install Postgres.** It skips because
-   **`flightdeck/.env.supabase` is missing**, and that file is gitignored. You
-   need the credentials file, not a local database. (I had written "install
-   Postgres" here before reading the skip reason. It is Supabase.)
-
-3. **The `vitest` stack's failures are not yet attributable.** Several are
-   artefacts of how I built the sandbox rather than facts about the host: the
-   copy excluded `.git`, so `piiGitBoundary.test.ts` refuses to run
-   ("requires a real git repository"); `web/dist` was never built, so a test
-   that says "run `npm run build:web` — this test measures the real bundle"
-   fails; `contracts/INDEX.json` is a derived artifact that was not in the
-   copy. The rest point at a missing `soffice` (LibreOffice) and at Supabase.
-
-   So **do not carry my numbers over.** Establish your own baseline on the Mac,
-   in a real checkout, before attributing anything to Studio:
-
-   ```bash
-   cd /Users/you/project-contract && bash scripts/gate.sh
-   ```
-
-   That is the number to compare against.
-
-**The one properly-controlled experiment, and it is the good news.**
-`npm run mount` copies the host, runs its suite, mounts a generated sub-app,
-and runs the same suite again — same sandbox, one variable:
+`npm run mount` in the container (same sandbox, one variable: the mounted
+sub-app):
 
 ```
 before: Tests  1 failed | 2719 passed | 21 skipped (2741)
 after:  Tests  1 failed | 2729 passed | 21 skipped (2751)
 ```
 
-**Mounting added 10 passing tests and no failures.** The single failure is
-present in BOTH runs — a real docx→PDF conversion that does not succeed in this
-container — so it is not ours. This is the evidence I should have led with:
-unlike the gate comparison above, it holds everything else fixed.
+Mounting added 10 passing tests and no failures. The single failure was in both
+runs (a real docx→PDF conversion that did not succeed in the container).
 
 ---
 
@@ -104,69 +116,88 @@ unlike the gate comparison above, it holds everything else fixed.
 
 ### 2.1 Prerequisites
 
-| Need | Why | Check |
+| Need | Why | On this Mac (2026-09-24) |
 |---|---|---|
-| Node ≥ 20 | declared in `package.json` `engines` | `node -v` |
-| Python 3.11+ | the host's engine + `run_eval.py` | `python3 --version` |
-| `flightdeck/.env.supabase` | the host gate's `postgres-tier` stack — it wants CREDENTIALS, not a local install | `ls flightdeck/.env.supabase` |
-| LibreOffice (`soffice`) | some host docx→PDF tests | `soffice --version` |
-| The host repo | guardrails compare against it; promote mounts into it | see §2.3 |
+| Node ≥ 20 | declared in `package.json` `engines` | `v26.9.0` |
+| The host repo | guardrails compare against it; mount and promote copy it | two checkouts, §2.3 |
+| Playwright + Chrome | the browser half of `npm run standalone` | not a dependency of this repo; point `PLAYWRIGHT_MODULE` at an installed copy, §2.2 |
+| Python 3.11+ with `python-docx`, `openpyxl` | the host gate's `run_eval.py` | `python3` 3.14.7, neither package installed |
+| `flightdeck/.env.supabase` | the host gate's `postgres-tier` stack. It wants CREDENTIALS, not a local install | present in `project-contract`, absent in `wt-integration` |
+| LibreOffice (`soffice`) | some host docx→PDF tests | not installed |
 
 ### 2.2 Studio
 
 ```bash
 git clone https://github.com/pallefar/Flightdeck-code
 cd Flightdeck-code
-git checkout claude/gauntlet-loop-install-hp490e
+git checkout integration/studio-2026-09-22
 npm ci                 # package-lock.json is committed
 npm run typecheck      # expect: clean
-npm test               # expect: 2368 passed, 0 skipped  — see the warning below
+FLIGHTDECK_HOST_ROOT="/Users/karstenhome/FlightDeck OS/project-contract" npm test
+                       # expect: 2528 passed, 0 skipped, 129 files
 ```
 
 > ⚠ **`npm test` FAILS if the host checkout is missing**, with a named reason.
 > That is deliberate: a divergence test that silently skips is indistinguishable
-> from one that passed. Verified both ways here:
+> from one that passed. Measured on the Mac, 2026-09-24:
 >
 > ```
-> FLIGHTDECK_HOST_ROOT=/nonexistent npm test          → 1 failed, 8 skipped
+> npm test   (FLIGHTDECK_HOST_ROOT unset)     → 2 failed | 2484 passed | 42 skipped
 > FLIGHTDECK_HOST_ROOT=/nonexistent \
 >   FLIGHTDECK_HOST_ABSENT_ACKNOWLEDGED=unverified-lists-accepted npm test
->                                                     → 7 passed, 8 skipped
+>                                             → 2486 passed | 42 skipped
 > ```
 >
 > The acknowledgement is a deliberately non-obvious exact string, because `=1` is
 > what people set by reflex to make red go away. Use it only until you have the
 > host repo cloned.
 
+`npm run standalone` needs Playwright from somewhere else on the machine
+(`scripts/playwright-resolve.mjs`). Without it the browser half exits 2 with
+"Playwright is not importable here". Measured with the Atlas checkout's copy:
+
+```bash
+PLAYWRIGHT_MODULE="/Users/karstenhome/FlightDeck OS/flightdeck-atlas/node_modules/playwright/index.mjs" \
+  npm run standalone          # installed Chrome, headless; PW_CHROMIUM_PATH overrides
+```
+
 ### 2.3 The host repo
 
 Everything that points at the host is an **environment variable with a Linux
-default** — there are no hardcoded paths to edit. (That sentence was FALSE when
-first written: three host-comparison test files hardcoded the Linux path and
-ignored `FLIGHTDECK_HOST_ROOT`, so on a Mac they would have skipped silently on
-every run. Fixed; the variable is now honoured, verified by pointing it
-elsewhere and watching 12 tests move from passing to skipped.)
+default** (`/home/user/project-contract`). There are no hardcoded paths to
+edit. On the Mac, always set them. The paths contain a space, so quote them.
+
+There are two host checkouts on this Mac, and they are not interchangeable:
+
+| Checkout | What it is | Use it for |
+|---|---|---|
+| `/Users/karstenhome/FlightDeck OS/project-contract` | the LIVE OS (serves `:4173`); detached at `9d25a078`; holds loose gitignored files, including PII | `FLIGHTDECK_HOST_ROOT` only. The Studio suite only reads it |
+| `/Users/karstenhome/FlightDeck OS/wt-integration` | a clean worktree of `integration/unified-2026-09-22` | `REPO` / `HOST_REPO` for mount and promote, and `FLIGHTDECK_HOST_ROOT` |
 
 ```bash
-export FLIGHTDECK_HOST_ROOT=/Users/you/project-contract   # guardrails read this
-export HOST_REPO=/Users/you/project-contract              # scripts/promote.sh
-export REPO=/Users/you/project-contract                   # scripts/mount-in-host.sh
-(cd "$FLIGHTDECK_HOST_ROOT/flightdeck" && npm install)     # promote.sh requires this
+export FLIGHTDECK_HOST_ROOT="/Users/karstenhome/FlightDeck OS/wt-integration"  # guardrails read this
+export HOST_REPO="/Users/karstenhome/FlightDeck OS/wt-integration"             # scripts/promote.sh
+export REPO="/Users/karstenhome/FlightDeck OS/wt-integration"                  # scripts/mount-in-host.sh
 ```
 
-### 2.4 What the host gate needs that this container lacks
+`promote.sh` passes `FLIGHTDECK_HOST_ROOT` to its Studio-suite step, defaulting
+to `HOST_REPO`. Both scripts need the host's `flightdeck/node_modules`. It is
+installed in both checkouts above.
+
+### 2.4 What the host gate needs
 
 ```bash
-# ⭐ VERIFIED — these two, and the eval stack goes GREEN.
+# ⭐ VERIFIED IN THE CONTAINER — these two, and the eval stack went GREEN.
 #
 # Not guessed from the error message: the host's third-party Python imports
 # were enumerated (`docx` and `openpyxl`; everything else is stdlib or one of
-# the host's own modules). Both were missing here. After installing them:
+# the host's own modules). After installing them:
 #
 #   $ PYTHONUTF8=1 python3 processes/contracts-de/engine/eval/run_eval.py
 #   OVERALL: regressions 120/120 · gates 4/4 · wc-xlsx 21/21 · cases 4 · GREEN
 #   EXIT=0
 #
+# Not yet installed on this Mac (§2.1).
 python3 -m pip install python-docx openpyxl
 
 # ⚠ NOT a local Postgres install. The postgres-tier stack skips with:
@@ -175,17 +206,13 @@ python3 -m pip install python-docx openpyxl
 #         (it is gitignored — expected in CI and in a fresh worktree)
 #
 # So what it wants is the CREDENTIALS FILE, which is deliberately not in the
-# repo. Put your `flightdeck/.env.supabase` in place; read gate.sh's
-# postgres-tier block for the variables it expects. This is the one thing in
-# this document that could not be verified here, because there is no such
-# file and no database in this container to verify it against.
+# repo. Read gate.sh's postgres-tier block for the variables it expects.
 ```
 
 Then read `$FLIGHTDECK_HOST_ROOT/scripts/gate.sh` for the exact connection
-variables it expects — **do not guess them from this document.** It was not
-possible to verify the Postgres configuration here, because there is no database
-in this container to verify it against. That is the one section of this handover
-written from reading rather than from running.
+variables it expects — **do not guess them from this document.** The Postgres
+configuration has not been verified from Studio, on the Mac or in the
+container.
 
 ---
 
@@ -260,17 +287,19 @@ curl -s localhost:8787/api/studio/build \
 
 ### 3.3 Scripts
 
-| Command | What it does | Works here? |
+Measured on the Mac, 2026-09-24, unless the row says otherwise.
+
+| Command | What it does | On the Mac |
 |---|---|---|
-| `npm test` | 2368 tests | ✅ |
+| `npm test` | the suite (needs `FLIGHTDECK_HOST_ROOT`, §2.2) | ✅ 2528 passed, 129 files |
 | `npm run typecheck` | `tsc --noEmit` | ✅ |
-| `npm run dev` | Vite, the workbench | ✅ |
-| `npm run build` | `tsc -b` + Vite build → `dist/` | ✅ 553 kB bundle, 1.7s |
-| `npm run dev:server` | the composition root | ✅ |
-| `npm run redteam` | plants violations, all must block | ✅ `7/7` |
-| `npm run standalone` | builds and smoke-tests each standalone fixture | ✅ |
-| `npm run mount` | mounts a candidate into a host sandbox and diffs the suite before/after | ✅ +10 passing, +0 failing |
-| `npm run promote` | **the production gate** | ❌ blocked — §1 |
+| `npm run dev` | Vite, the workbench | not re-run on the Mac |
+| `npm run build` | `tsc -b` + Vite build → `dist/` | ✅ one 638.74 kB JS chunk |
+| `npm run dev:server` | the composition root | not re-run on the Mac |
+| `npm run redteam` | plants violations, all must block | ✅ `9/9` |
+| `npm run standalone` | builds and smoke-tests each standalone fixture | ✅ all three fixtures, with `PLAYWRIGHT_MODULE` set (§2.2); exits 2 without it |
+| `npm run mount` | mounts a candidate into a host sandbox and diffs the suite before/after | ⚠ not yet run on the Mac. Container: +10 passing, +0 failing (§1) |
+| `npm run promote` | **the production gate** | ⚠ not yet run on the Mac. Container: ❌ blocked on the host gate (§1, §4) |
 
 ---
 
