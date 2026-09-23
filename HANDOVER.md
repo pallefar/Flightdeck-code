@@ -98,6 +98,72 @@ present in BOTH runs — a real docx→PDF conversion that does not succeed in t
 container — so it is not ours. This is the evidence I should have led with:
 unlike the gate comparison above, it holds everything else fixed.
 
+### 1.1 The first end-to-end run on the Mac (2026-09-24) — both scripts are red, for named reasons
+
+Run on the owner's Mac against the OS integration tip `c44d665b`
+(`integration/unified-2026-09-22`, a clean worktree — not `project-contract`,
+which holds loose PII files). Postgres tier opted out on purpose
+(`FLIGHTDECK_GATE_POSTGRES=0`: the Mac's only database is the live one).
+
+```bash
+REPO=<clean OS worktree> npm run mount
+HOST_REPO=<clean OS worktree> FLIGHTDECK_GATE_POSTGRES=0 PYTHON_BIN=<a venv with processes/contracts-de/engine/requirements.txt> npm run promote
+```
+
+**`npm run mount` — EXIT 1, MOUNT FAILED** (host sub-app suite, same sandbox):
+
+```
+before: Tests  3394 passed | 1 expected fail | 24 skipped (3419)
+after:  Tests  1 failed | 3405 passed | 1 expected fail | 24 skipped (3431)
+failing only with the sub-app mounted:
+  tests/subapps/launcherSubappDefaults.test.ts > ⛔ every registered sub-app not on the exclusion list is defaulted ON
+```
+
+Mounting added 11 passing tests and **one failure that is the candidate's**:
+the host requires every registered sub-app to be switched on in
+`scripts/start-postgres.sh` or listed, with a reason, as off by default.
+Codegen emits neither. Which side a generated mini-app belongs on is a
+decision, not a fix (see §6). Before this run the script printed this
+comparison and exited 0 whatever the result. It now fails when mounting adds a
+failure or adds no passing test, or when either run has no summary. It also
+runs the suite behind the same `POSTGRES_*` unset and `AUTH_REQUIRED=false`
+`WORKSPACES_ENABLED=false` fence that `gate.sh` uses (`scripts/__tests__/sandbox.test.ts`).
+
+**`npm run promote` — EXIT 1, BLOCKED.** Record:
+
+```json
+{ "passed": ["conformance-redteam","generate-and-mount","build-web"],
+  "failed": ["studio-suite","host-gate"],
+  "skipped": ["host-gate-partial"],
+  "readyForProduction": false, "verdict": "BLOCKED — stacks failed" }
+```
+
+- `studio-suite`: 2 of 2534 failed. One was a test that inherited
+  `FLIGHTDECK_GATE_POSTGRES=0` from promote's environment. It is fixed and
+  now pins the variable. The other is
+  `harness.test.ts › re-recording an unchanged call rewrites the same bytes`,
+  a wall-clock `durationMs` flake (0 vs 1 ms). It is not fixed here and passed
+  on the rerun (2534/2534).
+- red-team: `9/9 planted violations produced a BLOCKING finding`.
+- host gate (`gate.sh` in the sandbox): PII boundary PASS · typecheck PASS ·
+  `run_eval.py` PASS (`regressions 120/120 · gates 4/4 · wc-xlsx 21/21 · GREEN`) ·
+  Postgres tier SKIPPED (opted out) · **vitest FAIL, 11 of 8299**:
+  - 6 × `piiGitBoundary.test.ts` (the untracked index files and the five loose
+    Pudzianowski files "still exist"). These stay red in ANY PII-free sandbox
+    until a person moves the files or rules on the split (`scripts/sandbox-lib.sh`, KNOWN).
+  - 3 × `contracts/INDEX.json` readers (`api`, `contracts-read`, `readers`).
+    `INDEX.json` is gitignored, so it is never in the sandbox.
+  - 1 × `launcherSubappDefaults.test.ts`: the candidate (as above).
+  - 1 × `atlasCategoricalPalette.test.ts`: **the candidate.** Codegen's web
+    module hard-codes four pre-Atlas hex colours
+    (`web/src/subapps/wc-clock/index.tsx → #ff8200 #2fd472 #ffc24b #ff5b4d`).
+    `npm run mount` cannot see this because it runs `tests/subapps/` only.
+
+`run_eval` passes only because `PYTHON_BIN` pointed at a venv. The sandbox is
+tracked files only, so it never has the host's `.venv`. `sandbox_run_host_gate`
+now hands the gate the host's `.venv/bin/python` when `PYTHON_BIN` is unset.
+With neither, a PEP 668 Homebrew `python3` fails `run_eval` on `import docx`.
+
 ---
 
 ## 2. Setup on the Mac
@@ -269,8 +335,8 @@ curl -s localhost:8787/api/studio/build \
 | `npm run dev:server` | the composition root | ✅ |
 | `npm run redteam` | plants violations, all must block | ✅ `7/7` |
 | `npm run standalone` | builds and smoke-tests each standalone fixture | ✅ |
-| `npm run mount` | mounts a candidate into a host sandbox and diffs the suite before/after | ✅ +10 passing, +0 failing |
-| `npm run promote` | **the production gate** | ❌ blocked — §1 |
+| `npm run mount` | mounts a candidate into a host sandbox and diffs the suite before/after; exits 1 if mounting adds a failure or no passing test | container: +10 passing, +0 failing · Mac (host c44d665b): ❌ +11 passing, **+1 failing** — §1.1 |
+| `npm run promote` | **the production gate** | ❌ blocked — §1, Mac run §1.1 |
 
 ---
 
@@ -353,6 +419,15 @@ These are load-bearing. Each is a property something else depends on.
   only thing standing between this and a promotable build — and per §1, start
   by taking your own baseline, because my sandbox numbers are not a fair
   comparison.
+- **Two host tests fail on every generated candidate** (the Mac run in §1.1).
+  (1) `launcherSubappDefaults.test.ts`: a new sub-app must be switched on in
+  `scripts/start-postgres.sh` or listed as off by default. This is an open
+  decision. Switching generated mini-apps on (layer 2, the per-workspace
+  install, still applies) is not fail-closed. Leaving them off needs an entry
+  in a host test. (2) `atlasCategoricalPalette.test.ts`: the codegen web
+  emitter hard-codes pre-Atlas hex colours. This is a codegen fix. Until both
+  are dealt with, no candidate can pass the host gate, even after the PII files
+  are moved.
 - **Grant rows are versioned (closed 2026-09-22).** A row carries a
   store-assigned `rev`; `putGrantRow(row, expectedRev)` (`null` = create-only)
   throws `GrantRowConflictError` (`code: "grant_row_conflict"`, `status: 409`)

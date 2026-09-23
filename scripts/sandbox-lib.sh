@@ -82,11 +82,22 @@ sandbox_arm_pg_env_cleanup() {
 # flightdeck/.env.supabase, gitignored and so not in the sandbox: that one file
 # is brought in for this step only (unless FLIGHTDECK_GATE_POSTGRES=0 opts the
 # tier out) and removed again straight after, with the EXIT trap as backstop.
+#
+# The gate's run_eval stack prefers $ROOT/.venv/bin/python, else python3. .venv
+# is gitignored, so the sandbox never has one, and on a PEP 668 Mac (Homebrew
+# python3 without python-docx) run_eval failed on an import error in every
+# promote run, for the sandbox's reason rather than the candidate's. So when
+# PYTHON_BIN is not set and the HOST has a venv, the gate is handed the host's
+# interpreter by path. Nothing is copied; an explicit PYTHON_BIN still wins.
 sandbox_run_host_gate() {
-  local repo="$1" root="$2" log="$3" rc
+  local repo="$1" root="$2" log="$3" rc pybin="${PYTHON_BIN:-}"
   sandbox_arm_pg_env_cleanup "$root"
   [ "${FLIGHTDECK_GATE_POSTGRES:-1}" = "0" ] || sandbox_add_pg_env "$repo" "$root"
-  ( cd "$root" && bash scripts/gate.sh >"$log" 2>&1 )
+  if [ -z "$pybin" ]; then
+    if [ -x "$repo/.venv/bin/python" ]; then pybin="$repo/.venv/bin/python"
+    elif [ -x "$repo/.venv/Scripts/python.exe" ]; then pybin="$repo/.venv/Scripts/python.exe"; fi
+  fi
+  ( cd "$root" && { [ -z "$pybin" ] || export PYTHON_BIN="$pybin"; } && bash scripts/gate.sh >"$log" 2>&1 )
   rc=$?
   rm -f "$root/flightdeck/.env.supabase"
   return "$rc"
