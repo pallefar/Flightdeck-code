@@ -7,10 +7,11 @@
  * reached the DOM, the stylesheet the harness emits is actually applied, and
  * the "this is not the host" banner is visible to whoever is looking at it.
  *
- * Playwright and Chromium are preinstalled in this environment; the paths are
- * explicit so nothing is downloaded at check time.
+ * Playwright and Chromium come from the machine, not from this repo:
+ * PLAYWRIGHT_MODULE and PW_CHROMIUM_PATH — see ./playwright-resolve.mjs.
+ * Nothing is downloaded at check time.
  */
-import { chromium } from "/opt/node22/lib/node_modules/playwright/index.mjs";
+import { launchOptions, loadChromium } from "./playwright-resolve.mjs";
 
 const url = process.argv[2];
 if (url === undefined) {
@@ -18,9 +19,14 @@ if (url === undefined) {
   process.exit(2);
 }
 
-const browser = await chromium.launch({
-  executablePath: "/opt/pw-browsers/chromium-1194/chrome-linux/chrome",
-});
+let chromium;
+try {
+  chromium = await loadChromium();
+} catch (err) {
+  process.stderr.write(`${err instanceof Error ? err.message : String(err)}\n`);
+  process.exit(2);
+}
+const browser = await chromium.launch(launchOptions());
 
 const failures = [];
 try {

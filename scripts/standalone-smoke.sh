@@ -105,7 +105,11 @@ fi
 
 step "boot with real data, then drive it with a real browser"
 mkdir -p "$ALONE/data/contracts/TE-4711-acme-gmbh" "$ALONE/data/contracts/TE-4712-globex-ag"
-(cd "$ALONE" && env "$ENV_VAR=true" npx tsx standalone/server.ts --allow-anonymous --port="$PORT" --data="$ALONE/data" > "$WORK/server.log" 2>&1) &
+# `exec`, so $! IS the server's process chain (npm exec → tsx → node) and not
+# a subshell wrapped around it. Without it, cleanup killed only the subshell
+# and left the server listening on $PORT after every run — one orphan per
+# fixture, found the first time this ran on a Mac.
+(cd "$ALONE" && exec env "$ENV_VAR=true" npx tsx standalone/server.ts --allow-anonymous --port="$PORT" --data="$ALONE/data" > "$WORK/server.log" 2>&1) &
 SERVER_PID=$!
 for _ in $(seq 1 30); do
   curl -sf -m 2 "http://127.0.0.1:$PORT/healthz" > /dev/null 2>&1 && break
