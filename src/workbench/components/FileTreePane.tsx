@@ -7,9 +7,10 @@
  * that matter. */
 import type { FileChange } from "../diff";
 import type { DraftState } from "../editing";
-import { TIERS, type TreeNode } from "../tree";
+import { TIERS, type Tier, type TreeNode } from "../tree";
 import type { Finding, GeneratedFile } from "../types";
 import { EditorPane, type EditorPaneProps } from "./EditorPane";
+import { Chevron, LineIcon, type LineIconName } from "./LineIcon";
 
 interface Props {
   readonly nodes: readonly TreeNode[];
@@ -32,11 +33,24 @@ interface Props {
   readonly editor?: Omit<EditorPaneProps, "file" | "findings">;
 }
 
-const MARK: Readonly<Record<DraftState, string>> = {
-  clean: "",
-  dirty: "●",
-  saved: "◆",
-  conflicted: "▲",
+/** What a person's own copy of a file is doing, as a line icon rather
+ * than the Unicode ●/◆/▲ this used to draw. Atlas never renders a status
+ * as a typographic glyph, and at the 9px those needed they were closer to
+ * dust than to a mark. `clean` has no mark at all — an untouched file is
+ * the ordinary case and does not need an annotation. */
+const MARK: Readonly<Record<Exclude<DraftState, "clean">, LineIconName>> = {
+  dirty: "pencil",
+  saved: "check",
+  conflicted: "triangle-alert",
+};
+
+/** The tier's icon: what part of the host this tier drops into. */
+const TIER_ICONS: Readonly<Record<Tier, LineIconName>> = {
+  server: "server",
+  web: "layout-dashboard",
+  tests: "flask-conical",
+  "host-edit": "wrench",
+  other: "folder",
 };
 
 export function FileTreePane({
@@ -69,7 +83,12 @@ export function FileTreePane({
               >
                 <span style={{ display: "block", width: "100%" }}>
                   <span className="fd-tree__tierlabel">
-                    <span className="fd-tree__twisty">{collapsed ? "▸" : "▾"}</span>
+                    <span className="fd-tree__twisty">
+                      <Chevron open={!collapsed} size={14} />
+                    </span>
+                    <span className="fd-tree__icon">
+                      <LineIcon name={TIER_ICONS[node.tier]} size={16} />
+                    </span>
                     {TIERS[node.tier].label}
                     <span className="fd-delta">{node.fileCount}</span>
                   </span>
@@ -90,7 +109,12 @@ export function FileTreePane({
                 onClick={() => onToggle(node.path)}
                 aria-expanded={!collapsed}
               >
-                <span className="fd-tree__twisty">{collapsed ? "▸" : "▾"}</span>
+                <span className="fd-tree__twisty">
+                  <Chevron open={!collapsed} size={14} />
+                </span>
+                <span className="fd-tree__icon">
+                  <LineIcon name={collapsed ? "folder" : "folder-open"} size={16} />
+                </span>
                 <span className="fd-tree__name">{node.name}</span>
                 <span className="fd-delta">{node.fileCount}</span>
               </button>
@@ -112,15 +136,18 @@ export function FileTreePane({
               onClick={() => onSelect(node.path)}
               title={node.path}
             >
+              <span className="fd-tree__icon">
+                <LineIcon name="file-code" size={16} />
+              </span>
               {locked && (
                 <span className="fd-tree__lock" aria-label="locked">
-                  ⌷
+                  <LineIcon name="lock" size={13} />
                 </span>
               )}
               <span className="fd-tree__name">{node.name}</span>
               {draft !== undefined && draft !== "clean" && (
                 <span className={`fd-tree__draft fd-tree__draft--${draft}`} aria-label={draft}>
-                  {MARK[draft]}
+                  <LineIcon name={MARK[draft]} size={13} />
                 </span>
               )}
               {fileFindings.slice(0, 3).map((finding, i) => (

@@ -22,6 +22,8 @@
  *    complaint. */
 import { useState } from "react";
 import { logText, runStatus, stepDuration, type Run, type Step, type StepStatus } from "../run";
+import { Chevron, LineIcon } from "./LineIcon";
+import { Note } from "./Note";
 
 interface Props {
   readonly run: Run | null;
@@ -82,16 +84,17 @@ export function RunPane({ run, busy, onStop }: Props) {
             disabled={run.abortRequested}
             aria-label="Stop this round"
           >
+            <LineIcon name="circle-stop" size={16} />
             {run.abortRequested ? "Stopping…" : "Stop"}
           </button>
         )}
       </header>
 
       {run.steps.length === 0 ? (
-        <p className="fd-note">
+        <Note>
           Studio has not reported any steps for this round. The answer is streaming into the chat; nothing here
           is broken, but nothing here is being measured either.
-        </p>
+        </Note>
       ) : (
         <ol className="fd-steps">
           {run.steps.map((step) => (
@@ -135,7 +138,8 @@ function StepRow({
         {duration !== null && <span className="fd-step__ms mono">{duration} ms</span>}
         {hasLog && (
           <button type="button" className="fd-step__toggle" aria-expanded={open} onClick={onToggle}>
-            {open ? "▾" : "▸"} {step.log.length + step.droppedLines} line
+            <Chevron open={open} size={14} />
+            {step.log.length + step.droppedLines} line
             {step.log.length + step.droppedLines === 1 ? "" : "s"}
           </button>
         )}

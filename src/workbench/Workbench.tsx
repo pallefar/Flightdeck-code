@@ -23,6 +23,7 @@ import { ChatPane } from "./components/ChatPane";
 import { DiffPane } from "./components/DiffPane";
 import { FileTreePane } from "./components/FileTreePane";
 import { GatePane } from "./components/GatePane";
+import { LineIcon, type LineIconName } from "./components/LineIcon";
 import { PreviewPane } from "./components/PreviewPane";
 import { RunPane } from "./components/RunPane";
 import { ThemeToggle } from "./components/ThemeToggle";
@@ -49,6 +50,54 @@ import {
 import type { WorkbenchStore } from "./store";
 import { DEFAULT_THEME, WORKBENCH_CSS, type StudioTheme } from "./theme";
 import type { WorkbenchView } from "./types";
+
+/** The page-header tier Atlas opens every view with: an uppercase tracked
+ * eyebrow over a large heading, with one line of lead under it
+ * (`.page-heading`, `globals.css:277-306`). Studio had none, on any view,
+ * which is most of why a reviewer could tell the two apart at a glance
+ * without being able to name a colour that differed.
+ *
+ * The eyebrow says which PART of the round you are in; the heading says
+ * what the pane in front of you is. Exported so the fence can assert that
+ * all five views have one rather than that some string appears. */
+export const PAGE_HEADS: Readonly<
+  Record<WorkbenchView, { readonly eyebrow: string; readonly heading: string; readonly lead: string }>
+> = {
+  run: {
+    eyebrow: "THE BUILD",
+    heading: "Every step, as it happens",
+    lead: "Plan, emit, invariants, the conformance gate, the typecheck and the mount probe — with whatever each one printed.",
+  },
+  files: {
+    eyebrow: "THE CANDIDATE",
+    heading: "Generated source",
+    lead: "What this round would drop into the host, by tier. Edits live in this browser tab until you download them.",
+  },
+  diff: {
+    eyebrow: "THIS ROUND",
+    heading: "What changed",
+    lead: "Every file this round touched, against the round before it.",
+  },
+  preview: {
+    eyebrow: "THE PAGE",
+    heading: "Rendered against a mocked host",
+    lead: "The generated page, with the contract's three enable layers as switches and a ledger of what is real.",
+  },
+  gate: {
+    eyebrow: "THE CONFORMANCE GATE",
+    heading: "What the gate found",
+    lead: "Blocking findings would refuse the write. The tiles count rules that ran, not only rules that complained.",
+  },
+};
+
+/** The icon Atlas would put on each view tab. */
+const VIEW_ICONS: Readonly<Record<WorkbenchView, LineIconName>> = {
+  run: "play",
+  files: "folder-open",
+  diff: "git-compare",
+  preview: "monitor",
+  gate: "shield-check",
+};
 
 export interface WorkbenchProps {
   readonly store: WorkbenchStore;
@@ -203,6 +252,7 @@ export function Workbench({ store, onPrompt, onStop, theme = DEFAULT_THEME, onTh
                 aria-selected={state.view === tab.id}
                 onClick={() => store.setView(tab.id)}
               >
+                <LineIcon name={VIEW_ICONS[tab.id]} />
                 {tab.label}
                 {tab.count !== undefined && tab.count > 0 && (
                   <span className={`fd-tab__count${tab.tone === "error" ? " fd-tab__count--error" : tab.tone === "warn" ? " fd-tab__count--warn" : ""}`}>
@@ -240,15 +290,28 @@ export function Workbench({ store, onPrompt, onStop, theme = DEFAULT_THEME, onTh
               }
               onClick={handleDownload}
             >
+              <LineIcon name="download" size={16} />
               Download candidate
             </button>
           )}
           {round !== null && (
-            <span className="fd-tabs__id">
+            <span
+              className="fd-tabs__id"
+              title={`round #${round.ordinal} · ${round.candidate.manifest.id} · ${round.candidate.manifest.envVar}`}
+            >
               round #{round.ordinal} · {round.candidate.manifest.id} · {round.candidate.manifest.envVar}
             </span>
           )}
           {onThemeChange !== undefined && <ThemeToggle theme={theme} onChange={onThemeChange} />}
+        </div>
+
+        {/* Atlas's page-header tier, between the tab bar and the content,
+            exactly where Atlas puts `.page-heading`. One per view, so a
+            screenshot of any pane says what it is. */}
+        <div className="fd-pagehead">
+          <span className="fd-pagehead__eyebrow">{PAGE_HEADS[state.view].eyebrow}</span>
+          <h1 className="fd-pagehead__h">{PAGE_HEADS[state.view].heading}</h1>
+          <p className="fd-pagehead__lead">{PAGE_HEADS[state.view].lead}</p>
         </div>
 
         <div className="fd-body" ref={bodyRef}>

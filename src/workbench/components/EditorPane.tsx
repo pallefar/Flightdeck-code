@@ -36,6 +36,8 @@ import { useMemo, useState } from "react";
 import { diffLines } from "../diff";
 import { editability, isDirty, type Draft } from "../editing";
 import type { Finding, GeneratedFile } from "../types";
+import { LineIcon } from "./LineIcon";
+import { Note } from "./Note";
 
 export interface EditorPaneProps {
   /** The file as every other pane sees it — saved edits applied. */
@@ -118,12 +120,15 @@ export function EditorPane({
     <div className="fd-source">
       <header className="fd-source__head">
         <span className="fd-source__path">
-          {file.path.slice(0, file.path.length - name.length)}
-          <b>{name}</b>
+          <LineIcon name="file-code" size={15} />
+          <span>
+            {file.path.slice(0, file.path.length - name.length)}
+            <b>{name}</b>
+          </span>
         </span>
         {dirty && (
           <span className="fd-dirty" title="unsaved changes">
-            ● unsaved
+            unsaved
           </span>
         )}
         {!dirty && draft?.saved != null && draft.saved !== draft.generated && (
@@ -153,6 +158,7 @@ export function EditorPane({
             onClick={() => onToggleLock(file.path)}
             title="A locked file always asks before a new round changes it."
           >
+            <LineIcon name={locked ? "lock-open" : "lock"} size={15} />
             {locked ? "Unlock" : "Lock"}
           </button>
         )}
@@ -163,16 +169,19 @@ export function EditorPane({
             onClick={() => onSave(file.path)}
             title="Makes this text the file every pane reads, in this browser tab only. Nothing is written to disk, the server or the host repo. Download candidate saves the edited files to this computer. (Ctrl/Cmd+S)"
           >
+            <LineIcon name="check" size={15} />
             Save in workbench
           </button>
         )}
         {dirty && onRevert !== undefined && (
           <button type="button" className="fd-revert" onClick={() => onRevert(file.path)}>
+            <LineIcon name="undo-2" size={15} />
             Revert
           </button>
         )}
         {draft !== null && draft.saved !== null && onRestore !== undefined && (
           <button type="button" className="fd-revert" onClick={() => onRestore(file.path)}>
+            <LineIcon name="rotate-ccw" size={15} />
             Restore generated
           </button>
         )}
@@ -192,16 +201,14 @@ export function EditorPane({
         />
       )}
 
-      {conflict === null && reason !== null && !editable && onEdit !== undefined && (
-        <p className="fd-note fd-note--warn">{reason}</p>
-      )}
-      {refused !== null && editable && <p className="fd-note fd-note--warn">{refused}</p>}
+      {conflict === null && reason !== null && !editable && onEdit !== undefined && <Note warn>{reason}</Note>}
+      {refused !== null && editable && <Note warn>{refused}</Note>}
 
       {dirty && findings.length > 0 && (
-        <p className="fd-note">
+        <Note>
           The gate's line numbers below are from the last text Studio saw. You have unsaved changes, so they may
           point at lines that have moved — re-run to re-check.
-        </p>
+        </Note>
       )}
 
       {effectiveMode === "edit" && onEdit !== undefined ? (
@@ -322,9 +329,12 @@ function ConflictBanner({
     <div className="fd-conflict" role="alert">
       <div className="fd-conflict__head">
         <strong>
-          {kind === "removed"
-            ? "This round no longer contains this file."
-            : "Studio rewrote this file while you had your own version of it."}
+          <LineIcon name="triangle-alert" size={16} />
+          <span>
+            {kind === "removed"
+              ? "This round no longer contains this file."
+              : "Studio rewrote this file while you had your own version of it."}
+          </span>
         </strong>
         <span className="fd-conflict__why">
           {fromLock
@@ -348,9 +358,11 @@ function ConflictBanner({
       {onResolve !== undefined && (
         <div className="fd-conflict__acts">
           <button type="button" onClick={() => onResolve(path, "mine")}>
+            <LineIcon name="check" size={15} />
             Keep mine — discard Studio's {kind === "removed" ? "removal" : "rewrite"}
           </button>
           <button type="button" onClick={() => onResolve(path, "studio")}>
+            <LineIcon name="rotate-ccw" size={15} />
             Take Studio's — discard my version
           </button>
         </div>

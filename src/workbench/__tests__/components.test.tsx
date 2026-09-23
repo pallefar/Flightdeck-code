@@ -483,7 +483,12 @@ describe("the shell, wired to a store", () => {
   // ⭐ Owner ruling 2026-09-22 (9): "Download candidate", browser-only, and
   // enabled only when the conformance gate passes on the EDITED files.
   describe("Download candidate", () => {
-    const button = (out: string) => /<button[^>]*>Download candidate<\/button>/.exec(out)?.[0] ?? null;
+    // The label is no longer the button's whole content — Atlas puts a
+    // line icon before it (components/LineIcon.tsx) — so this matches an
+    // opening tag and everything up to the label WITHOUT crossing into
+    // another button.
+    const button = (out: string) =>
+      /<button(?:(?!<button)[\s\S])*?Download candidate<\/button>/.exec(out)?.[0] ?? null;
     const passing = () => ({ ok: true, findings: [], rulesRun: ["FD-M001"] });
     const failingOnEdits = (files: readonly { contents: string }[]) =>
       files.some((f) => f.contents.includes("BROKEN"))

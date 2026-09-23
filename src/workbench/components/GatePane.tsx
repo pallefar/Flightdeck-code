@@ -11,6 +11,8 @@ import { useRef } from "react";
 import { useArriveInserted } from "../../motion/useMotion";
 import type { GateSummary } from "../selectors";
 import type { Candidate, Finding, Severity } from "../types";
+import { LineIcon, type LineIconName } from "./LineIcon";
+import { Note } from "./Note";
 
 interface Props {
   readonly candidate: Candidate | null;
@@ -45,34 +47,42 @@ export function GatePane({
   return (
     <div className="fd-gate" ref={gateRef}>
       <div className="fd-gate__summary">
-        <Stat n={summary.errors} k="blocking" tone={summary.errors > 0 ? "error" : "ok"} />
-        <Stat n={summary.warnings} k="warnings" tone={summary.warnings > 0 ? "warn" : "ok"} />
-        <Stat n={summary.rulesClean} k="rules clean" tone="ok" />
-        <Stat n={summary.rulesRun} k="rules run" tone="plain" />
+        <Stat
+          n={summary.errors}
+          k="blocking"
+          tone={summary.errors > 0 ? "error" : "ok"}
+          caption="Findings that would refuse this write"
+        />
+        <Stat
+          n={summary.warnings}
+          k="warnings"
+          tone={summary.warnings > 0 ? "warn" : "ok"}
+          caption="Raised, but not blocking"
+        />
+        <Stat n={summary.rulesClean} k="rules clean" tone="ok" caption="Ran and found nothing" />
+        <Stat n={summary.rulesRun} k="rules run" tone="plain" caption="Rules the gate executed" />
       </div>
 
       {summary.rulesRun === 0 ? (
-        <p className="fd-note fd-note--warn">
+        <Note warn>
           The gate reported no rules at all. That is not a pass — it means nothing was checked. Treat this
           candidate as unreviewed.
-        </p>
+        </Note>
       ) : summary.shippable ? (
-        <p className="fd-note">
+        <Note>
           Nothing blocking. {summary.rulesClean} of {summary.rulesRun} rules ran and found nothing; the rest
           raised the warnings below.
-        </p>
+        </Note>
       ) : (
-        <p className="fd-note fd-note--warn">
+        <Note warn>
           {summary.errors} finding{summary.errors === 1 ? "" : "s"} would refuse this write. A generated
           manifest that breaks the host's schema takes the whole server down at boot, by design — which is why
           these block rather than warn.
-        </p>
+        </Note>
       )}
 
       {candidate.notes.map((note, i) => (
-        <p className="fd-note" key={i}>
-          {note}
-        </p>
+        <Note key={i}>{note}</Note>
       ))}
 
       <div className="fd-filter" role="group" aria-label="Filter findings by severity">
@@ -135,19 +145,43 @@ export function shownFindings(
     );
 }
 
+/** The corner icon for a tile's tone. It is not decoration: Atlas's
+ * `.metric > strong` takes no colour at all, so the tone that used to be
+ * a green/amber/red NUMBER has to land somewhere, and Atlas's answer is
+ * the icon in the label row. Shape carries it — an octagon for something
+ * that stops you, a triangle for something that warns you, a tick for
+ * something that passed, a checklist for a plain count — which also
+ * survives a monochrome print and a red/green colour deficiency, neither
+ * of which the coloured number did. */
+const TONE_ICONS: Readonly<Record<"error" | "warn" | "ok" | "plain", LineIconName>> = {
+  error: "octagon-alert",
+  warn: "triangle-alert",
+  ok: "circle-check",
+  plain: "list-checks",
+};
+
 function Stat({
   n,
   k,
   tone,
+  caption,
 }: {
   readonly n: number;
   readonly k: string;
   readonly tone: "error" | "warn" | "ok" | "plain";
+  /** The line under the number, as Atlas's `.metric > span` carries. A
+   * tile that says only "45 / rules run" leaves a reader to guess whether
+   * that is a good number. */
+  readonly caption: string;
 }) {
   return (
     <div className={`fd-stat${tone === "plain" ? "" : ` fd-stat--${tone}`}`}>
-      <div className="fd-stat__n mono">{n}</div>
-      <div className="fd-stat__k">{k}</div>
+      <div className="fd-stat__k">
+        {k}
+        <LineIcon name={TONE_ICONS[tone]} size={15} />
+      </div>
+      <div className="fd-stat__n">{n}</div>
+      <div className="fd-stat__cap">{caption}</div>
     </div>
   );
 }
@@ -174,7 +208,10 @@ function FindingCard({
       onFocus={() => onFocus(finding.rule)}
       onBlur={() => onFocus(null)}
     >
-      <span className="fd-finding__rule">{finding.rule}</span>
+      <span className="fd-finding__rule">
+        <LineIcon name={finding.severity === "error" ? "octagon-alert" : "triangle-alert"} size={15} />
+        {finding.rule}
+      </span>
       <span className="fd-finding__msg">{finding.message}</span>
       <span className="fd-finding__where">
         {finding.file}

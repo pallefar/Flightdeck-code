@@ -606,6 +606,13 @@ class DomDocument extends DomNode {
   createElement(tag: string): DomElement {
     return new DomElement(tag, this);
   }
+  /** react-dom calls this the moment a component renders an `<svg>`, and
+   * since the Atlas icon pass every pane does (components/LineIcon.tsx).
+   * Nothing here measures or paints, so an SVG element is the same
+   * DomElement an HTML one is — the namespace buys these tests nothing. */
+  createElementNS(_ns: string, tag: string): DomElement {
+    return new DomElement(tag, this);
+  }
   createTextNode(text: string): DomText {
     return new DomText(text, this);
   }

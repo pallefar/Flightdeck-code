@@ -7,6 +7,7 @@
 import { useEffect, useRef, useState } from "react";
 import { runProgress, type Run } from "../run";
 import type { Round, Turn } from "../types";
+import { LineIcon } from "./LineIcon";
 
 interface Props {
   readonly turns: readonly Turn[];
@@ -84,6 +85,7 @@ export function ChatPane({
                   aria-pressed={round.id === selectedRoundId}
                   onClick={() => onSelectRound(round.id)}
                 >
+                  <LineIcon name="package" size={15} />
                   <span className="fd-roundchip__n">#{round.ordinal}</span>
                   {round.candidate.manifest.label}
                   <Verdict errors={round.candidate.findings.filter((f) => f.severity === "error").length} />
@@ -124,10 +126,12 @@ export function ChatPane({
             disabled={run?.abortRequested ?? false}
             onClick={onStop}
           >
+            <LineIcon name="circle-stop" size={16} />
             {run?.abortRequested === true ? "Stopping…" : "Stop"}
           </button>
         ) : (
           <button type="button" className="fd-composer__send" disabled={busy || draft.trim().length === 0} onClick={send}>
+            <LineIcon name="sparkles" size={16} />
             Build
           </button>
         )}

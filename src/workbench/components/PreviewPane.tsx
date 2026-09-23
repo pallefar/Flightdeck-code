@@ -21,6 +21,7 @@ import type { HostSnapshot } from "../preview/adapter";
 import { countBy, type LedgerRow } from "../preview/fidelity";
 import { findingsFor, findingsOn, type PreviewState } from "../preview/state";
 import { GeneratedPageMirror } from "./GeneratedPageMirror";
+import { LineIcon, type LineIconName } from "./LineIcon";
 import { PreviewFrame } from "./PreviewFrame";
 
 interface Props {
@@ -90,6 +91,7 @@ export function PreviewPane({ state, enable, onEnable, onRevealFile }: Props) {
               refresh();
             }}
           >
+            <LineIcon name="rotate-ccw" size={15} />
             Reset mock
           </button>
         </div>
@@ -217,7 +219,10 @@ function FindingLine({
 }) {
   return (
     <button type="button" className={`fd-finding fd-finding--${finding.severity}`} onClick={() => onReveal(finding.file)}>
-      <span className="fd-finding__rule">{finding.rule}</span>
+      <span className="fd-finding__rule">
+        <LineIcon name={finding.severity === "error" ? "octagon-alert" : "triangle-alert"} size={15} />
+        {finding.rule}
+      </span>
       <span className="fd-finding__msg">{finding.message}</span>
       <span className="fd-finding__where">
         {finding.file}
@@ -245,7 +250,7 @@ function Blocked({
   switch (block.kind) {
     case "no-candidate":
       return (
-        <Shell icon="◷" title="Nothing to preview yet">
+        <Shell icon="clock" title="Nothing to preview yet">
           <p className="fd-blocked__why">
             Describe the mini-app you want in the chat. When a round produces a sub-app, its page renders here
             against a mocked capability adapter.
@@ -255,7 +260,7 @@ function Blocked({
 
     case "no-web-module":
       return (
-        <Shell icon="⃠" title="This sub-app has no page">
+        <Shell icon="ban" title="This sub-app has no page">
           <p className="fd-blocked__why">
             The manifest names a web module, but the candidate contains no file at{" "}
             <code className="mono">{block.expected}</code>. The host globs that exact path and lazy-mounts{" "}
@@ -271,7 +276,7 @@ function Blocked({
 
     case "gate-blocked":
       return (
-        <Shell icon="⚠" title="The gate refused the page itself">
+        <Shell icon="triangle-alert" title="The gate refused the page itself">
           <p className="fd-blocked__why">
             These findings are about the web module's existence or its export, so there is no page to render.
             Every other finding still lets the preview run — only these two do not.
@@ -284,7 +289,7 @@ function Blocked({
 
     case "renderer-drift":
       return (
-        <Shell icon="⚙" title="This preview is out of date, not your app">
+        <Shell icon="settings" title="This preview is out of date, not your app">
           <p className="fd-blocked__why">
             The preview renders the generated page by parsing its descriptor and re-implementing the fixed runtime
             that codegen emits around it. That runtime has changed: the behaviours below are no longer in the
@@ -305,7 +310,7 @@ function Blocked({
 
     case "unparsable":
       return (
-        <Shell icon="⃠" title="The page's descriptor could not be read">
+        <Shell icon="ban" title="The page's descriptor could not be read">
           <p className="fd-blocked__why">
             The preview reads the generated page's <code className="mono">PANELS</code> literal rather than
             executing the file — model-written source must never run in Studio's origin. This one is not a
@@ -325,14 +330,14 @@ function Shell({
   title,
   children,
 }: {
-  readonly icon: string;
+  readonly icon: LineIconName;
   readonly title: string;
   readonly children: React.ReactNode;
 }) {
   return (
     <div className="fd-blocked">
-      <span className="fd-blocked__icon" aria-hidden="true">
-        {icon}
+      <span className="fd-blocked__icon">
+        <LineIcon name={icon} size={26} />
       </span>
       <span className="fd-blocked__title">{title}</span>
       {children}

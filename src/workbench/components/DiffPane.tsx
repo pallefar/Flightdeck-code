@@ -11,6 +11,17 @@
  * file as an addition — an all-green diff implies something was replaced. */
 import { useMemo } from "react";
 import { pairedEdit, segmentPair, toHunks, diffLines, type ChangeSet, type FileChange, type LineOp } from "../diff";
+import { LineIcon, type LineIconName } from "./LineIcon";
+import { Note } from "./Note";
+
+/** What this round did to a file, as a line icon rather than the `+ − ~`
+ * this used to draw. */
+const KIND_ICONS: Readonly<Record<FileChange["kind"], LineIconName>> = {
+  added: "plus",
+  removed: "minus",
+  modified: "pencil",
+  unchanged: "check",
+};
 
 interface Props {
   readonly set: ChangeSet | null;
@@ -45,15 +56,13 @@ export function DiffPane({ set, selectedPath, onSelect }: Props) {
     <div className="fd-files">
       <nav className="fd-changes" aria-label="Files changed this round">
         {set.isFirstRound && (
-          <p className="fd-note">
-            First round — there is no previous version to compare against, so every file is new.
-          </p>
+          <Note>First round — there is no previous version to compare against, so every file is new.</Note>
         )}
-        <p className="fd-note">
+        <Note>
           <span className="fd-delta__add">+{set.added}</span>{" "}
           <span className="fd-delta__del">−{set.removed}</span> across {touched.length} file
           {touched.length === 1 ? "" : "s"}
-        </p>
+        </Note>
         {touched.map((change) => (
           <button
             type="button"
@@ -63,8 +72,8 @@ export function DiffPane({ set, selectedPath, onSelect }: Props) {
             onClick={() => onSelect(change.path)}
             title={change.path}
           >
-            <span className="fd-tree__twisty">
-              {change.kind === "added" ? "+" : change.kind === "removed" ? "−" : "~"}
+            <span className={`fd-tree__twisty fd-delta__${change.kind === "added" ? "add" : change.kind === "removed" ? "del" : "mod"}`}>
+              <LineIcon name={KIND_ICONS[change.kind]} size={14} />
             </span>
             <span className="fd-tree__name">{change.path.split("/").pop()}</span>
             <span className="fd-delta">
@@ -90,6 +99,7 @@ function FileDiff({ change }: { readonly change: FileChange }) {
     <div className="fd-source">
       <header className="fd-source__head">
         <span className="fd-source__path">
+          <LineIcon name="file-code" size={15} />
           <b>{change.path}</b>
         </span>
         <span className="fd-tabs__spacer" />
@@ -99,10 +109,10 @@ function FileDiff({ change }: { readonly change: FileChange }) {
       </header>
 
       {diff.truncated && (
-        <p className="fd-note fd-note--warn">
+        <Note warn>
           This file is too large to align line by line, so it is shown as one replacement rather than a real
           diff. The counts above are exact; the alignment below is not.
-        </p>
+        </Note>
       )}
 
       <div className="fd-code">
