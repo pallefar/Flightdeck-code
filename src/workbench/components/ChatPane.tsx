@@ -75,7 +75,7 @@ export function ChatPane({
             <article key={turn.id} className={`fd-turn fd-turn--${turn.role} fd-turn--${turn.status}`}>
               <span className="fd-turn__who">{turn.role === "you" ? "You" : "Studio"}</span>
               <div className="fd-turn__body">
-                {turn.text}
+                {turn.role === "studio" ? <Prose text={turn.text} /> : turn.text}
                 {turn.status === "streaming" && <span className="fd-turn__caret" aria-label="generating" />}
               </div>
               {round !== null && (
@@ -137,6 +137,26 @@ export function ChatPane({
         )}
       </div>
     </section>
+  );
+}
+
+/** Studio's prose, with `**bold**` drawn as bold — the one piece of
+ * markdown the drivers write (unseen#88: the pane printed the asterisks
+ * around the sub-app's label). Deliberately not a markdown renderer: every
+ * segment is a React text node, so nothing in the text is ever parsed as
+ * HTML, and no dependency is added for one emphasis. A `**` without its pair
+ * stays literal — mid-stream the closing one may simply not have arrived. */
+function Prose({ text }: { readonly text: string }) {
+  const parts = text.split("**");
+  // An even count means the last `**` is unpaired: put it back as text.
+  if (parts.length % 2 === 0) {
+    const tail = parts.pop() ?? "";
+    parts[parts.length - 1] += `**${tail}`;
+  }
+  return (
+    <>
+      {parts.map((part, i) => (i % 2 === 1 ? <strong key={i}>{part}</strong> : part))}
+    </>
   );
 }
 

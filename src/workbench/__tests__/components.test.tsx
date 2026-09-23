@@ -40,6 +40,8 @@ import { createStore } from "../store";
 import { buildTree } from "../tree";
 import { ALL_ENABLED, type Candidate } from "../types";
 import { candidate, finding, wcClockFiles } from "./fixtures";
+import wcClockSpec from "../../../fixtures/wc-clock.spec.json";
+import { drive } from "../../drive";
 
 const noop = () => {};
 const layers = () => ALL_ENABLED;
@@ -79,6 +81,65 @@ describe("ChatPane", () => {
     expect(out).toContain("build a clock");
     expect(out).toContain("Works Council Clock");
     expect(out).toContain("1 blocking");
+  });
+
+  // unseen#88: the scripted session streams `for **Works Council Clock**`
+  // and the pane printed the asterisks. The real driver, the real store.
+  it("renders the driver's **label** as bold, with no literal asterisks", async () => {
+    const store = createStore();
+    const text = "Track the statutory consultation window for a contract folder.";
+    const turnId = store.prompt(text) ?? "";
+    await drive(store, turnId, text, wcClockSpec, { tickMs: 0 });
+    const state = store.getState();
+    const studio = state.turns.find((t) => t.role === "studio");
+    expect(studio?.text).toContain("**Works Council Clock**");
+
+    const out = html(
+      <ChatPane
+        turns={state.turns}
+        rounds={state.rounds}
+        selectedRoundId={state.selectedRoundId}
+        busy={false}
+        onSubmit={noop}
+        onSelectRound={noop}
+      />,
+    );
+    expect(out).not.toContain("**");
+    expect(out).toContain("<strong>Works Council Clock</strong>");
+  });
+
+  it("bold is a text renderer, never HTML: markup inside ** stays escaped", () => {
+    const store = createStore();
+    const turnId = store.prompt("x") ?? "";
+    store.stream(turnId, "for **<img src=x onerror=alert(1)>** done");
+    const state = store.getState();
+    const out = html(
+      <ChatPane turns={state.turns} rounds={[]} selectedRoundId={null} busy onSubmit={noop} onSelectRound={noop} />,
+    );
+    expect(out).toContain("<strong>&lt;img src=x onerror=alert(1)&gt;</strong>");
+    expect(out).not.toContain("<img");
+  });
+
+  it("an unclosed ** mid-stream stays literal until its pair arrives", () => {
+    const store = createStore();
+    const turnId = store.prompt("x") ?? "";
+    store.stream(turnId, "Emitted 5 files for **Works Coun");
+    const state = store.getState();
+    const out = html(
+      <ChatPane turns={state.turns} rounds={[]} selectedRoundId={null} busy onSubmit={noop} onSelectRound={noop} />,
+    );
+    expect(out).toContain("**Works Coun");
+    expect(out).not.toContain("<strong>");
+  });
+
+  it("what a person typed is shown exactly as typed", () => {
+    const store = createStore();
+    store.prompt("make it **loud**");
+    const state = store.getState();
+    const out = html(
+      <ChatPane turns={state.turns} rounds={[]} selectedRoundId={null} busy onSubmit={noop} onSelectRound={noop} />,
+    );
+    expect(out).toContain("make it **loud**");
   });
 
   it("disables the composer while a round is in flight", () => {
