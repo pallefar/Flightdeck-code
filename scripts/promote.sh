@@ -66,7 +66,16 @@ SPEC_HASH="$(sha256sum "$SPEC" | cut -d' ' -f1)"
 echo "spec sha256: $SPEC_HASH"
 
 echo "==> [1/6] Studio typecheck + tests"
-if ( cd "$STUDIO" && npx tsc --noEmit && npx vitest run >"$ROOT/studio-tests.log" 2>&1 ); then
+# The guardrail divergence tests read the host's security lists from
+# FLIGHTDECK_HOST_ROOT (packages/guardrails/src/host-source.ts), which defaults
+# to /home/user/project-contract. This script is told where the host is via
+# HOST_REPO, so it hands that on: without it, on any machine where the host is
+# not at the Linux default (the Mac), the suite checked the lists against a path
+# that does not exist and this stack failed for the script's reasons, not
+# Studio's. An explicitly set FLIGHTDECK_HOST_ROOT still wins.
+HOST_ROOT="${FLIGHTDECK_HOST_ROOT:-$REPO}"
+if ( cd "$STUDIO" && FLIGHTDECK_HOST_ROOT="$HOST_ROOT" npx tsc --noEmit && \
+     FLIGHTDECK_HOST_ROOT="$HOST_ROOT" npx vitest run >"$ROOT/studio-tests.log" 2>&1 ); then
   note_pass "studio-suite"
 else
   note_fail "studio-suite"
