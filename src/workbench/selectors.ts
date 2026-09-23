@@ -19,6 +19,7 @@
  * The cache is bounded and keyed by identity of the inputs, so a store
  * reset or a new round evicts naturally. Pure and DOM-free. */
 import { diffFileSets, type ChangeSet, type FileChange } from "./diff";
+import type { FileGateVerdict } from "./download";
 import {
   applyDrafts,
   draftState,
@@ -210,21 +211,33 @@ export interface GateSummary {
   readonly shippable: boolean;
 }
 
-export function gateSummary(candidate: Candidate | null): GateSummary {
-  if (candidate === null) {
-    return { errors: 0, warnings: 0, rulesRun: 0, rulesClean: 0, shippable: false };
-  }
-  const errors = candidate.findings.filter((f) => f.severity === "error").length;
-  const warnings = candidate.findings.length - errors;
-  const raised = new Set(candidate.findings.map((f) => f.rule));
-  const rulesClean = candidate.rulesRun.filter((rule) => !raised.has(rule)).length;
+const NOTHING_RAN: GateSummary = { errors: 0, warnings: 0, rulesRun: 0, rulesClean: 0, shippable: false };
+
+function summarize(findings: readonly Finding[], rulesRun: readonly string[]): GateSummary {
+  const errors = findings.filter((f) => f.severity === "error").length;
+  const warnings = findings.length - errors;
+  const raised = new Set(findings.map((f) => f.rule));
+  const rulesClean = rulesRun.filter((rule) => !raised.has(rule)).length;
   return {
     errors,
     warnings,
-    rulesRun: candidate.rulesRun.length,
+    rulesRun: rulesRun.length,
     rulesClean,
     shippable: errors === 0,
   };
+}
+
+/** Studio's own verdict, on the text it generated this round. */
+export function gateSummary(candidate: Candidate | null): GateSummary {
+  return candidate === null ? NOTHING_RAN : summarize(candidate.findings, candidate.rulesRun);
+}
+
+/** The verdict over the EDITED files — the one "Download candidate" follows
+ * (`download.ts`). `null` is a gate that could not run, which is not a pass:
+ * `shippable` is false, as the button is disabled. `shippable` is the gate's
+ * own `ok`, never re-derived, so the pane and the button cannot disagree. */
+export function verdictSummary(verdict: FileGateVerdict | null): GateSummary {
+  return verdict === null ? NOTHING_RAN : { ...summarize(verdict.findings, verdict.rulesRun), shippable: verdict.ok };
 }
 
 export function filterBySeverity(

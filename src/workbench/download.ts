@@ -100,10 +100,10 @@ export function downloadReadiness(input: {
     return { ready: false, reason: "The conformance gate could not run on the edited files, so nothing can be downloaded." };
   }
   if (!input.verdict.ok) {
-    // ⭐ NAME THE ERROR, NOT JUST THE COUNT. The Gate pane shows Studio's own
-    // verdict on Studio's text (HANDOVER §6); this verdict is over the edited
-    // files and appears nowhere else on screen. "Fix them first" with no rule,
-    // file or line sent a person looking for an error no pane showed.
+    // ⭐ NAME THE ERROR, NOT JUST THE COUNT. A disabled button's tooltip is
+    // read where the button is, not on the Gate tab (which now leads with
+    // this same verdict once saved edits change the files). "Fix them first"
+    // with no rule, file or line sent a person looking for the error.
     const errors = input.verdict.findings.filter((f) => f.severity === "error");
     const first = errors[0];
     const detail =
