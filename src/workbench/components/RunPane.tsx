@@ -21,7 +21,7 @@
  *    complaints to the other, and merging them loses which half is the
  *    complaint. */
 import { useState } from "react";
-import { logText, runStatus, stepDuration, type Run, type Step, type StepStatus } from "../run";
+import { logText, runStatus, stepDuration, type Run, type RunStatus, type Step, type StepStatus } from "../run";
 import { Chevron, LineIcon } from "./LineIcon";
 import { Note } from "./Note";
 
@@ -35,13 +35,22 @@ interface Props {
   readonly onStop?: (() => void) | undefined;
 }
 
+/** Sentence case, as Atlas writes its status chips ("In progress"): the
+ * CSS no longer uppercases them, so the words carry their own case. */
 const STATUS_LABEL: Readonly<Record<StepStatus, string>> = {
-  queued: "queued",
-  running: "running",
-  succeeded: "ok",
-  failed: "failed",
-  skipped: "skipped",
-  aborted: "stopped",
+  queued: "Queued",
+  running: "Running",
+  succeeded: "OK",
+  failed: "Failed",
+  skipped: "Skipped",
+  aborted: "Stopped",
+};
+
+const RUN_STATUS_LABEL: Readonly<Record<RunStatus, string>> = {
+  running: "Running",
+  succeeded: "Succeeded",
+  failed: "Failed",
+  aborted: "Aborted",
 };
 
 export function RunPane({ run, busy, onStop }: Props) {
@@ -70,7 +79,7 @@ export function RunPane({ run, busy, onStop }: Props) {
   return (
     <div className="fd-run">
       <header className="fd-run__head">
-        <span className={`fd-runstatus fd-runstatus--${status}`}>{status}</span>
+        <span className={`fd-runstatus fd-runstatus--${status}`}>{RUN_STATUS_LABEL[status]}</span>
         <span className="fd-run__count mono">
           {done} / {run.steps.length} step{run.steps.length === 1 ? "" : "s"}
         </span>

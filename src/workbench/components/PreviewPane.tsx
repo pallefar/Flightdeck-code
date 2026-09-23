@@ -18,7 +18,7 @@ import { useCallback, useMemo, useState } from "react";
 import { HOST_FRAME_CSS } from "../theme";
 import type { EnableLayers, Finding } from "../types";
 import type { HostSnapshot } from "../preview/adapter";
-import { countBy, type LedgerRow } from "../preview/fidelity";
+import { countBy, type Fidelity, type LedgerRow } from "../preview/fidelity";
 import { findingsFor, findingsOn, type PreviewState } from "../preview/state";
 import { GeneratedPageMirror } from "./GeneratedPageMirror";
 import { LineIcon, type LineIconName } from "./LineIcon";
@@ -193,12 +193,15 @@ function Switch({
   );
 }
 
+/** Sentence case, as Atlas writes its status chips. */
+const FIDELITY_LABEL: Readonly<Record<Fidelity, string>> = { real: "Real", mocked: "Mocked", absent: "Absent" };
+
 function Ledger({ rows }: { readonly rows: readonly LedgerRow[] }) {
   return (
     <div className="fd-ledger">
       {rows.map((row) => (
         <div className="fd-ledger__row" key={row.aspect}>
-          <span className={`fd-ledger__tag fd-ledger__tag--${row.fidelity}`}>{row.fidelity}</span>
+          <span className={`fd-ledger__tag fd-ledger__tag--${row.fidelity}`}>{FIDELITY_LABEL[row.fidelity]}</span>
           <span>
             <span className="fd-ledger__aspect">{row.aspect}</span>
             <br />

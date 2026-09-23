@@ -66,8 +66,20 @@ const LIGHT = {
   /** Atlas's input border. */
   lineStrong: "#bdcdd6",
   hover: "#f0f4f6",
-  /** The chosen segment of a segmented control. */
+  /** The chosen option of a FILTER (`.filter-tabs .chosen`). */
   segActive: "#ffffff",
+  /** `.filter-tabs`: its track, its border, its resting and chosen ink
+   * (`te-theme.css:203-214`). */
+  segTrack: "#edf3f6",
+  segLine: "#d0dde5",
+  segInk: "#5c7281",
+  segChosenInk: "#2e4957",
+  /** The chosen option of a MODE switch — `.project-layout-switch`'s
+   * `var(--accent)`, measured rgb(229,238,243) (`productivity.css:212-216`). */
+  modeActive: "#e5eef3",
+  /** `.metric-label` and its corner icon, measured. */
+  metricLabel: "#5e7482",
+  metricIcon: "#6a8494",
   accent: "#e98300",
   /** Dark text on orange. */
   accentInk: "#21180d",
@@ -91,6 +103,8 @@ const LIGHT = {
   shadowHover: "0 12px 28px #243f5018, 0 2px 5px #243f500c",
   /** The chosen segment of `.filter-tabs` (`te-theme.css:210-214`). */
   shadowSeg: "0 1px 4px #17384c16",
+  /** `.project-layout-switch button[aria-pressed="true"]`, both themes. */
+  shadowMode: "0 2px 6px #0001",
   /** `.view-tab-indicator` — the selected VIEW tab's lift (`motion.css:62-73`). */
   shadowTab: "0 2px 6px #b9731420",
   shadowXs: "0 1px 2px #233e4d0d",
@@ -113,7 +127,16 @@ const DARK: Palette = {
   line: "#304553",
   lineStrong: "#405665",
   hover: "#1f3240",
-  segActive: "#29404f",
+  /** Atlas's dark `.filter-tabs` is its base rule (`globals.css:447-465`):
+   * NO track fill, a neutral border, a neutral chosen option. */
+  segActive: "#30363d",
+  segTrack: "transparent",
+  segLine: "#2b3037",
+  segInk: "#949da8",
+  segChosenInk: "#e3e7eb",
+  modeActive: "#29404f",
+  metricLabel: "#98a2ae",
+  metricIcon: "#747f89",
   accent: "#e98300",
   accentInk: "#15100e",
   accentText: "#ffb34f",
@@ -133,6 +156,7 @@ const DARK: Palette = {
   shadowHover: "0 14px 28px #0005",
   /** Atlas's own dark value for the same control (`globals.css:461-465`). */
   shadowSeg: "0 2px 4px #0003",
+  shadowMode: "0 2px 6px #0001",
   /** `[data-theme="dark"] .view-tab-indicator` (`motion.css:74-77`). */
   shadowTab: "0 2px 8px #0004",
   shadowXs: "0 1px 2px #0003",
@@ -434,7 +458,7 @@ ${declare(TOKENS.dark)}
   font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 2px;
   color: var(--eyebrow); display: flex; align-items: center; gap: 7px;
 }
-.fd-tree__tierblurb { font-size: 11px; color: var(--muted); padding-top: 3px; line-height: 1.4; }
+.fd-tree__tierblurb { font-size: 12px; color: var(--muted); padding-top: 3px; line-height: 1.4; }
 .fd-tree__tier--edit .fd-tree__tierlabel { color: var(--amber); }
 /* The disclosure chevron and the row's own icon, both lucide nodes now.
    The chevron keeps a fixed box so names stay aligned whichever way it
@@ -442,7 +466,7 @@ ${declare(TOKENS.dark)}
 .fd-tree__twisty { color: var(--muted); display: inline-flex; width: 14px; justify-content: center; }
 .fd-tree__icon { color: var(--muted); display: inline-flex; }
 .fd-tree__row[aria-current="true"] .fd-tree__icon { color: inherit; }
-.fd-delta { font-size: 11px; flex: 0 0 auto; }
+.fd-delta { font-size: 12px; flex: 0 0 auto; }
 .fd-delta__add { color: var(--green); }
 .fd-delta__del { color: var(--red); }
 .fd-delta__mod { color: var(--accent-text); }
@@ -533,9 +557,9 @@ ${declare(TOKENS.dark)}
 }
 .fd-stat__k {
   display: flex; justify-content: space-between; align-items: center; gap: 6px;
-  font-size: 12px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.85px;
+  font-size: 12px; font-weight: 600; color: var(--metric-label); text-transform: uppercase; letter-spacing: 0.85px;
 }
-.fd-stat__k svg { color: var(--faint); }
+.fd-stat__k svg { color: var(--metric-icon); }
 .fd-stat__cap { font-size: 12px; color: var(--muted); line-height: 1.5; }
 .fd-gate .fd-note { margin: 10px 0; }
 
@@ -550,27 +574,27 @@ ${declare(TOKENS.dark)}
 .fd-finding--warning { border-left-color: var(--amber); }
 .fd-finding__rule { font-size: 12px; font-weight: 600; color: var(--muted); display: inline-flex; align-items: center; gap: 6px; }
 .fd-finding__msg { grid-column: 2; }
-.fd-finding__where { grid-column: 2; font-size: 11.5px; color: var(--accent-text); }
+.fd-finding__where { grid-column: 2; font-size: 12px; color: var(--accent-text); }
 .fd-finding__ev {
   grid-column: 1 / -1; font-family: var(--mono); font-size: 11.5px; color: var(--muted);
   background: var(--bg2); border-radius: var(--r-md); padding: 6px 9px; margin-top: 5px;
   overflow-x: auto; white-space: pre;
 }
-/* Atlas's .filter-tabs (globals.css:447-465, te-theme.css:203-214):
-   a TINTED track with a 1px border, 3px of padding and 3px between the
-   options, and the chosen one raised onto white at a 4px radius under
-   the --shadow-seg token. Studio already had this the right way round —
-   the review that called it "inverted" was reading .view-tabs (white
-   track, tinted selection) and quoting a fill that is in neither. What
-   was actually off was the chosen option's radius, its shadow blur and
-   the 1px missing from the gap. */
+/* Atlas's .filter-tabs (globals.css:447-465, te-theme.css:203-214),
+   measured in BOTH themes. Light: a tinted track, a blue-grey border, the
+   chosen option raised onto white. Dark is Atlas's BASE rule, which the
+   light theme overrides — NO track fill at all, a neutral grey border and
+   a neutral grey chosen option — so Studio's tinted dark track was its
+   own. The values are the --seg-* tokens. 3px padding, 3px gap, 14px
+   options at 7px 9px. Atlas's MODE switch is a different control — see
+   .fd-modes. */
 .fd-filter {
   display: inline-flex; gap: 3px; padding: 3px; margin: 16px 0 14px;
-  background: var(--bg2); border: 1px solid var(--line); border-radius: var(--r-md);
+  background: var(--seg-track); border: 1px solid var(--seg-line); border-radius: var(--r-md);
 }
-.fd-filter button { font-size: 13px; color: var(--muted); padding: 5px 12px; border-radius: 4px; }
-.fd-filter button:hover { color: var(--ink); }
-.fd-filter button[aria-pressed="true"] { color: var(--ink); background: var(--seg-active); box-shadow: var(--shadow-seg); border-radius: 4px; }
+.fd-filter button { font-size: 14px; color: var(--seg-ink); padding: 7px 9px; border-radius: 4px; }
+.fd-filter button:hover { color: var(--seg-chosen-ink); }
+.fd-filter button[aria-pressed="true"] { color: var(--seg-chosen-ink); background: var(--seg-active); box-shadow: var(--shadow-seg); border-radius: 4px; }
 
 /* ── preview ──────────────────────────────────────────────────────── */
 .fd-preview { flex: 1; display: flex; min-width: 0; min-height: 0; }
@@ -594,11 +618,12 @@ ${declare(TOKENS.dark)}
 }
 .fd-side__h:first-child { margin-top: 0; }
 .fd-ledger { display: flex; flex-direction: column; gap: 9px; }
-.fd-ledger__row { display: grid; grid-template-columns: 62px 1fr; gap: 10px; align-items: start; }
-/* Atlas's status chip: tinted field, no border. */
+.fd-ledger__row { display: grid; grid-template-columns: 66px 1fr; gap: 10px; align-items: start; }
+/* Atlas's status chip (.status): tinted field, no border, 12px / 400 in
+   sentence case — the label is written that way, not shouted by CSS. */
 .fd-ledger__tag {
-  font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.6px;
-  border-radius: 5px; padding: 3px 7px; text-align: center;
+  font-size: 12px; font-weight: 400;
+  border-radius: 5px; padding: 4px 8px; text-align: center;
 }
 .fd-ledger__tag--real { color: var(--green); background: var(--green-bg); }
 .fd-ledger__tag--mocked { color: var(--amber); background: var(--amber-bg); }
@@ -606,12 +631,15 @@ ${declare(TOKENS.dark)}
 .fd-ledger__aspect { font-weight: 600; }
 .fd-ledger__note { color: var(--muted); font-size: 12px; line-height: 1.45; }
 
-.fd-log { font-family: var(--mono); font-size: 11.5px; display: flex; flex-direction: column; gap: 6px; }
+/* The request log reads as a list of events, not as source: Atlas sets
+   nothing outside code in monospace, and the preview bar's route prefix
+   already left it. Sans, with tabular digits so the status codes align. */
+.fd-log { font-size: 12px; font-variant-numeric: tabular-nums; display: flex; flex-direction: column; gap: 6px; }
 .fd-log__row { display: grid; grid-template-columns: 36px 1fr; gap: 8px; }
 .fd-log__status--ok { color: var(--green); }
 .fd-log__status--refused { color: var(--amber); }
 .fd-log__status--error { color: var(--red); }
-.fd-log__why { grid-column: 2; color: var(--muted); font-family: inherit; font-size: 11px; }
+.fd-log__why { grid-column: 2; color: var(--muted); font-size: 12px; }
 
 .fd-blocked {
   margin: auto; max-width: 520px; padding: 26px;
@@ -634,7 +662,7 @@ ${declare(TOKENS.dark)}
   color: var(--muted); font-size: 12.5px;
 }
 .fd-ticker__n { color: var(--accent-text); font-weight: 600; }
-.fd-ticker__detail { color: var(--faint); font-size: 11.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fd-ticker__detail { color: var(--faint); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 .fd-stop {
   height: 36px; padding: 0 16px; color: var(--red); font-weight: 600;
@@ -645,11 +673,11 @@ ${declare(TOKENS.dark)}
 
 .fd-run { flex: 1; overflow-y: auto; padding: 24px 28px; min-width: 0; }
 .fd-run__head { display: flex; align-items: center; gap: 10px; margin-bottom: 16px; }
-/* Atlas's status chip, with its 4px dot. */
+/* Atlas's status chip, with its dot: 12px / 400, sentence case, 4px 8px. */
 .fd-runstatus {
   display: inline-flex; align-items: center; gap: 6px;
-  font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.6px;
-  border-radius: 5px; padding: 5px 9px; background: var(--bg2); color: var(--muted);
+  font-size: 12px; font-weight: 400;
+  border-radius: 5px; padding: 4px 8px; background: var(--bg2); color: var(--muted);
 }
 .fd-runstatus::before { content: ""; width: 5px; height: 5px; border-radius: 50%; background: currentColor; }
 .fd-runstatus--running { color: var(--accent-text); background: var(--tint); }
@@ -671,8 +699,8 @@ ${declare(TOKENS.dark)}
 .fd-step--aborted { border-left-color: var(--amber); }
 .fd-step__head { display: flex; align-items: center; gap: 10px; min-width: 0; }
 .fd-step__pill {
-  font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.6px;
-  border-radius: 5px; padding: 3px 8px; background: var(--bg2); color: var(--muted);
+  font-size: 12px; font-weight: 400;
+  border-radius: 5px; padding: 4px 8px; background: var(--bg2); color: var(--muted);
   flex: 0 0 auto; min-width: 66px; text-align: center;
 }
 .fd-step__pill--running { color: var(--accent-text); background: var(--tint); }
@@ -680,8 +708,8 @@ ${declare(TOKENS.dark)}
 .fd-step__pill--failed { color: var(--red); background: var(--red-bg); }
 .fd-step__pill--aborted { color: var(--amber); background: var(--amber-bg); }
 .fd-step__label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.fd-step__detail { color: var(--muted); font-size: 11.5px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.fd-step__exit, .fd-step__ms { color: var(--muted); font-size: 11.5px; flex: 0 0 auto; }
+.fd-step__detail { color: var(--muted); font-size: 12px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fd-step__exit, .fd-step__ms { color: var(--muted); font-size: 12px; flex: 0 0 auto; }
 .fd-step__toggle {
   color: var(--muted); font-size: 12px; padding: 3px 8px; flex: 0 0 auto;
   display: inline-flex; align-items: center; gap: 5px;
@@ -697,7 +725,7 @@ ${declare(TOKENS.dark)}
   margin: 0; font-family: var(--mono); font-size: 11.5px; line-height: 1.55;
   white-space: pre-wrap; word-break: break-word; color: var(--log-ink);
 }
-.fd-step__dropped { margin: 0 0 6px; color: var(--amber); font-size: 11.5px; }
+.fd-step__dropped { margin: 0 0 6px; color: var(--amber); font-size: 12px; }
 .fd-out--err { color: var(--red); }
 
 /* ── editing ──────────────────────────────────────────────────────── */
@@ -712,16 +740,21 @@ ${declare(TOKENS.dark)}
 .fd-tree__draft--saved { color: var(--green); }
 .fd-tree__draft--conflicted { color: var(--amber); }
 
-.fd-dirty { color: var(--accent-text); font-size: 11.5px; flex: 0 0 auto; }
-.fd-edited { color: var(--green); font-size: 11.5px; flex: 0 0 auto; }
-.fd-lockmark { color: var(--muted); font-size: 11.5px; flex: 0 0 auto; }
+.fd-dirty { color: var(--accent-text); font-size: 12px; flex: 0 0 auto; }
+.fd-edited { color: var(--green); font-size: 12px; flex: 0 0 auto; }
+.fd-lockmark { color: var(--muted); font-size: 12px; flex: 0 0 auto; }
+/* Read/Edit is a MODE switch, and Atlas's mode switch is
+   .project-layout-switch (Cards/List/Board, productivity.css:197-216), not
+   its filter: a TRANSPARENT track inside a 1px line, and the SELECTED
+   option tinted (--mode-active, Atlas's --accent) under --shadow-mode.
+   Every option is ink, 13px, 6px 11px: 31.5px tall. */
 .fd-modes {
-  display: inline-flex; gap: 2px; padding: 2px;
-  background: var(--bg2); border: 1px solid var(--line); border-radius: var(--r-md);
+  display: inline-flex; gap: 3px; padding: 3px;
+  background: transparent; border: 1px solid var(--line); border-radius: var(--r-md);
 }
-.fd-modes button { font-size: 12px; padding: 3px 10px; color: var(--muted); border-radius: 4px; }
-.fd-modes button:hover { color: var(--ink); }
-.fd-modes button[aria-pressed="true"] { color: var(--ink); background: var(--seg-active); box-shadow: var(--shadow-seg); border-radius: 4px; }
+.fd-modes button { font-size: 13px; padding: 6px 11px; color: var(--ink); border-radius: 4px; }
+.fd-modes button:hover { background: var(--hover); }
+.fd-modes button[aria-pressed="true"] { color: var(--ink); background: var(--mode-active); box-shadow: var(--shadow-mode); border-radius: 4px; }
 .fd-lockbtn, .fd-revert { font-size: 12px; color: var(--muted); padding: 4px 10px; }
 .fd-lockbtn:hover, .fd-revert:hover { color: var(--ink); }
 .fd-lockbtn[aria-pressed="true"] {
@@ -752,6 +785,33 @@ ${declare(TOKENS.dark)}
 .fd-conflict__acts { display: flex; gap: 8px; flex-wrap: wrap; }
 .fd-conflict__acts button { font-size: 12.5px; padding: 5px 12px; }
 .fd-conflict__acts button:first-child { border-color: var(--amber); color: var(--amber); }
+
+/* ── a phone-width window ─────────────────────────────────────────── */
+/* Measured at 390: the two columns collapsed to 300px of chat and 90px of
+   workbench, the h1 wrapped to five lines and a tab click scrolled the
+   overflow:hidden grid 631px sideways, so the heading sat at x = -303.
+   Under Atlas's own 540px breakpoint the chat moves UNDER the work — the
+   DOM order, and so the reading order, stays chat first — the topbar
+   scrolls instead of pushing its controls off the edge, and the heading
+   takes Atlas's mobile step (te-theme.css:474-481): 26px, -1px, the lead
+   paragraph hidden, 17px side gutters as .dashboard's. Each view's
+   fixed-width side column — the 300px tree, the 320px change list, the
+   340px ledger — stacks above or below the work for the same reason.
+   LAST in the sheet on purpose: at equal specificity it has to follow
+   the rules it overrides. */
+@media (max-width: 540px) {
+  .fd-wb { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) minmax(0, 38%); }
+  .fd-main { grid-row: 1; }
+  .fd-chat { grid-row: 2; border-right: 0; border-top: 1px solid var(--line); }
+  .fd-tabs { padding: 0 17px; overflow-x: auto; }
+  .fd-pagehead { padding: 18px 17px 14px; }
+  .fd-pagehead__h { font-size: 26px; letter-spacing: -1px; }
+  .fd-pagehead__lead { display: none; }
+  .fd-files, .fd-preview { flex-direction: column; }
+  .fd-tree, .fd-changes, .fd-preview__side { width: auto; max-height: 40%; border-right: 0; border-left: 0; border-bottom: 1px solid var(--line); }
+  .fd-preview__side { border-bottom: 0; border-top: 1px solid var(--line); }
+  .fd-source__head { flex-wrap: wrap; }
+}
 `;
 
 /** A sober stand-in for the host's `web/src/theme.css`.

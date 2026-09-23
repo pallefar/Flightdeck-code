@@ -379,14 +379,13 @@ describe("5. the gate stat tiles follow Atlas's `.metric`", () => {
 });
 
 // ── 6. THE SEGMENTED CONTROLS ───────────────────────────────────────
-// Measured, because the reviewer's account of this one did not survive
-// contact with Atlas: BOTH of Atlas's segmented controls are built the
-// way Studio already built them (`.view-tabs` tints the selected option
-// on a white track; `.filter-tabs` raises a white option on a tinted
-// track). What was actually wrong was the selected option's radius and
-// its shadow — the `0 2px 6px #b9731420` the reviewer quoted belongs to
-// `.view-tab-indicator`, not to a `rgb(229,238,243)` fill that exists
-// nowhere in Atlas.
+// `.view-tabs` tints the selected option on a white track; `.filter-tabs`
+// raises a white option on a tinted track (in light — see 7 for dark).
+// ⚠ CORRECTED: this block once said Atlas had only those two and that
+// the `rgb(229,238,243)` fill existed nowhere in Atlas. A blind re-measure
+// found a THIRD control, `.project-layout-switch` (Cards/List/Board),
+// whose selected option is exactly that fill. Read/Edit is a mode
+// switch, so it now follows that control — section 7.
 
 describe("6. the selected option, measured against Atlas", () => {
   it("raises the selected view tab on Atlas's 8px radius, not 9px", () => {
@@ -400,7 +399,8 @@ describe("6. the selected option, measured against Atlas", () => {
   });
 
   it("keeps the tinted track and the white chosen option `.filter-tabs` actually has", () => {
-    expect(rule(".fd-filter")).toMatch(/background:\s*var\(--bg2\)/);
+    expect(rule(".fd-filter")).toMatch(/background:\s*var\(--seg-track\)/);
+    expect(TOKENS.light.segTrack).toBe("#edf3f6");
     expect(rule(".fd-filter")).toMatch(/border-radius:\s*var\(--r-md\)/);
     expect(rule(".fd-filter")).toMatch(/gap:\s*3px/);
     expect(rule(".fd-filter")).toMatch(/padding:\s*3px/);
@@ -411,8 +411,9 @@ describe("6. the selected option, measured against Atlas", () => {
   it("puts the chosen option on Atlas's 4px radius and 0 1px 4px #17384c16", () => {
     for (const selector of ['.fd-filter button[aria-pressed="true"]', '.fd-modes button[aria-pressed="true"]']) {
       expect(rule(selector), selector).toMatch(/border-radius:\s*4px/);
-      expect(rule(selector), selector).toMatch(/box-shadow:\s*var\(--shadow-seg\)/);
     }
+    // The FILTER's chosen option. The mode switch has its own lift — see 7.
+    expect(rule('.fd-filter button[aria-pressed="true"]')).toMatch(/box-shadow:\s*var\(--shadow-seg\)/);
     expect(TOKENS.light.shadowSeg).toBe("0 1px 4px #17384c16");
     // Atlas's own dark value for the same control (`globals.css:461-465`).
     expect(TOKENS.dark.shadowSeg).toBe("0 2px 4px #0003");
@@ -420,6 +421,200 @@ describe("6. the selected option, measured against Atlas", () => {
 
   it("matches Atlas's 9px icon-to-label gap on a view tab", () => {
     expect(rule(".fd-tabs .fd-tab")).toMatch(/gap:\s*9px/);
+  });
+});
+
+// ── 7. WHAT A BLIND CRITIC MEASURED STILL OPEN ──────────────────────
+// Measured off the running Atlas on :5173 at 1440 and 390, BOTH themes,
+// with getComputedStyle (.shots/verify/type-icons-2/atlas-dash-*.json):
+//
+//   .project-layout-switch   transparent track, 1px var(--border), 7px,
+//                            padding 3px, gap 3px (productivity.css:197-216)
+//     button                 13px, 6px 11px, 4px, ink — 31.5px tall
+//     [aria-pressed="true"]  rgb(229,238,243) light / rgb(41,64,79) dark,
+//                            0 2px 6px #0001 in both
+//   .filter-tabs (dark)      TRANSPARENT track, 1px #2b3037, chosen #30363d
+//                            on #e3e7eb, the rest #949da8 (globals.css:447-465)
+//   .filter-tabs (light)     #edf3f6 track, 1px #d0dde5, chosen #fff on
+//                            #2e4957, the rest #5c7281 (te-theme.css:203-214)
+//     button                 14px, 7px 9px (globals.css:1543, 1578)
+//   .status                  12px / 400 / no tracking / SENTENCE case,
+//                            padding 4px 8px, 5px radius ("In progress")
+//   .metric > span           the caption scale: 12px
+//   .metric-label            rgb(94,116,130) light / rgb(152,162,174) dark
+//   .metric-label svg        rgb(106,132,148) light / rgb(116,127,137) dark
+//   .page-heading h1 @≤540px 26px / -1px (te-theme.css:474-481); the lead
+//                            paragraph is hidden
+
+/** The body of `selector` inside the `@media (…)` block for `query`. */
+function mediaRule(query: string, selector: string): string {
+  const start = WORKBENCH_CSS.indexOf(`@media ${query} {`);
+  expect(start, `no @media ${query} block`).toBeGreaterThanOrEqual(0);
+  let depth = 0;
+  let end = start;
+  for (let i = WORKBENCH_CSS.indexOf("{", start); i < WORKBENCH_CSS.length; i += 1) {
+    if (WORKBENCH_CSS[i] === "{") depth += 1;
+    if (WORKBENCH_CSS[i] === "}") depth -= 1;
+    if (depth === 0) {
+      end = i;
+      break;
+    }
+  }
+  const block = WORKBENCH_CSS.slice(WORKBENCH_CSS.indexOf("{", start) + 1, end);
+  const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const match = new RegExp(`(?:^|[},])\\s*${escaped}\\s*\\{([^}]*)\\}`, "m").exec(block);
+  expect(match, `no rule for \`${selector}\` in @media ${query}`).not.toBeNull();
+  return match![1]!;
+}
+
+describe("7. the mode switch is Atlas's `.project-layout-switch`, not its filter", () => {
+  it("draws Read/Edit on a TRANSPARENT track with a 1px line, 3px padding and 3px gap", () => {
+    const track = rule(".fd-modes");
+    expect(track).toMatch(/background:\s*transparent/);
+    expect(track).toMatch(/border:\s*1px solid var\(--line\)/);
+    expect(track).toMatch(/border-radius:\s*var\(--r-md\)/);
+    expect(track).toMatch(/padding:\s*3px/);
+    expect(track).toMatch(/gap:\s*3px/);
+  });
+
+  it("sizes each option as Atlas does: 13px, 6px 11px, ink, 4px radius", () => {
+    const option = rule(".fd-modes button");
+    expect(option).toMatch(/font-size:\s*13px/);
+    expect(option).toMatch(/padding:\s*6px 11px/);
+    expect(option).toMatch(/color:\s*var\(--ink\)/);
+    expect(option).toMatch(/border-radius:\s*4px/);
+  });
+
+  it("TINTS the selected option — rgb(229,238,243) light, rgb(41,64,79) dark — under 0 2px 6px #0001", () => {
+    const chosen = rule('.fd-modes button[aria-pressed="true"]');
+    expect(chosen).toMatch(/background:\s*var\(--mode-active\)/);
+    expect(chosen).toMatch(/box-shadow:\s*var\(--shadow-mode\)/);
+    expect(TOKENS.light.modeActive).toBe("#e5eef3");
+    expect(TOKENS.dark.modeActive).toBe("#29404f");
+    expect(TOKENS.light.shadowMode).toBe("0 2px 6px #0001");
+    expect(TOKENS.dark.shadowMode).toBe("0 2px 6px #0001");
+  });
+});
+
+describe("7. the filter's dark track and its type", () => {
+  it("drops the dark track's fill, as `.filter-tabs` does, and takes its border", () => {
+    const track = rule(".fd-filter");
+    expect(track).toMatch(/background:\s*var\(--seg-track\)/);
+    expect(track).toMatch(/border:\s*1px solid var\(--seg-line\)/);
+    expect(TOKENS.dark.segTrack).toBe("transparent");
+    expect(TOKENS.light.segLine).toBe("#d0dde5");
+    expect(TOKENS.dark.segLine).toBe("#2b3037");
+  });
+
+  it("raises the chosen option onto #30363d in dark and #fff in light, in the chosen ink", () => {
+    const chosen = rule('.fd-filter button[aria-pressed="true"]');
+    expect(chosen).toMatch(/background:\s*var\(--seg-active\)/);
+    expect(chosen).toMatch(/color:\s*var\(--seg-chosen-ink\)/);
+    expect(TOKENS.dark.segActive).toBe("#30363d");
+    expect(TOKENS.light.segChosenInk).toBe("#2e4957");
+    expect(TOKENS.dark.segChosenInk).toBe("#e3e7eb");
+  });
+
+  it("sets the options in Atlas's 14px, 7px 9px, in its own quiet ink", () => {
+    const option = rule(".fd-filter button");
+    expect(option).toMatch(/font-size:\s*14px/);
+    expect(option).toMatch(/padding:\s*7px 9px/);
+    expect(option).toMatch(/color:\s*var\(--seg-ink\)/);
+    expect(TOKENS.light.segInk).toBe("#5c7281");
+    expect(TOKENS.dark.segInk).toBe("#949da8");
+  });
+});
+
+describe("7. status pills and captions at Atlas's size", () => {
+  const PILLS = [".fd-runstatus", ".fd-step__pill", ".fd-ledger__tag"];
+
+  it("sets every status pill as `.status`: 12px / 400, no tracking, no uppercase, 4px 8px", () => {
+    for (const selector of PILLS) {
+      const body = rule(selector);
+      expect(body, selector).toMatch(/font-size:\s*12px/);
+      expect(body, selector).toMatch(/font-weight:\s*400/);
+      expect(body, selector).not.toMatch(/text-transform:\s*uppercase/);
+      expect(body, selector).not.toMatch(/letter-spacing/);
+      expect(body, selector).toMatch(/padding:\s*4px 8px/);
+    }
+  });
+
+  it("writes the pills in sentence case — Succeeded, OK, Real — because CSS no longer shouts them", () => {
+    const step = endStep(startStep(createStep({ id: "a", label: "emit" }), 1), "succeeded", 2);
+    const run: Run = { turnId: "t", steps: [step], startedAt: 0, endedAt: 3, abortRequested: false };
+    const out = html(<RunPane run={run} busy={false} />);
+    expect(out).toMatch(/class="fd-runstatus fd-runstatus--succeeded">Succeeded</);
+    expect(out).toMatch(/class="fd-step__pill fd-step__pill--succeeded">OK</);
+    const cand = candidate();
+    const preview = html(
+      <PreviewPane state={buildPreview({ candidate: cand, layers })} enable={ALL_ENABLED} onEnable={noop} onRevealFile={noop} />,
+    );
+    expect(preview).toMatch(/class="fd-ledger__tag fd-ledger__tag--real">Real</);
+    expect(preview).not.toMatch(/class="fd-ledger__tag[^"]*">[a-z]/);
+  });
+
+  it("puts every caption on Atlas's 12px — nothing under 12px but two count badges and code", () => {
+    // `.fd-tab__count` and `.fd-tabs__edits` are count badges, measured
+    // against Atlas's 11px count badge; everything monospace is code.
+    const allowed = new Set([".fd-tab__count", ".fd-tabs__edits"]);
+    const small: string[] = [];
+    for (const match of WORKBENCH_CSS.matchAll(/([^{}]+)\{([^}]*)\}/g)) {
+      const selector = match[1]!.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\s+/g, " ").trim();
+      const body = match[2]!;
+      if (!/font-size:\s*(?:\d|1[01])(?:\.\d+)?px/.test(body)) continue;
+      if (/var\(--mono\)/.test(body)) continue;
+      if (allowed.has(selector)) continue;
+      small.push(selector);
+    }
+    expect(small).toEqual([]);
+  });
+});
+
+describe("7. the request log is not code", () => {
+  it("sets the preview's request log and its why-line in the sans stack, at 12px", () => {
+    expect(rule(".fd-log")).not.toMatch(/var\(--mono\)/);
+    expect(rule(".fd-log")).toMatch(/font-size:\s*12px/);
+    expect(rule(".fd-log__why")).not.toMatch(/var\(--mono\)|font-family:\s*inherit/);
+    const selectors = monoSelectors().join(" | ");
+    expect(selectors).not.toMatch(/\.fd-log\b/);
+  });
+});
+
+describe("7. the page header at a phone width", () => {
+  it("steps the h1 down to Atlas's 26px / -1px at 540px and under, and hides the lead", () => {
+    const h = mediaRule("(max-width: 540px)", ".fd-pagehead__h");
+    expect(h).toMatch(/font-size:\s*26px/);
+    expect(h).toMatch(/letter-spacing:\s*-1px/);
+    expect(mediaRule("(max-width: 540px)", ".fd-pagehead__lead")).toMatch(/display:\s*none/);
+  });
+
+  it("stacks the chat under the main pane instead of squeezing the main pane to 90px", () => {
+    const wb = mediaRule("(max-width: 540px)", ".fd-wb");
+    expect(wb).toMatch(/grid-template-columns:\s*minmax\(0,\s*1fr\)/);
+    expect(mediaRule("(max-width: 540px)", ".fd-main")).toMatch(/grid-row:\s*1/);
+    expect(mediaRule("(max-width: 540px)", ".fd-chat")).toMatch(/grid-row:\s*2/);
+  });
+
+  it("stacks each view's fixed-width side column instead of letting it push the work off-screen", () => {
+    // Measured at 390 with the grid fixed: the 300px file tree, the 320px
+    // change list and the 340px preview ledger still left the source 90px
+    // wide and pushed .fd-wb's scrollWidth to 686.
+    expect(mediaRule("(max-width: 540px)", ".fd-files, .fd-preview")).toMatch(/flex-direction:\s*column/);
+    const side = mediaRule("(max-width: 540px)", ".fd-tree, .fd-changes, .fd-preview__side");
+    expect(side).toMatch(/width:\s*auto/);
+    expect(side).toMatch(/max-height:\s*40%/);
+    expect(mediaRule("(max-width: 540px)", ".fd-source__head")).toMatch(/flex-wrap:\s*wrap/);
+  });
+});
+
+describe("7. the stat tile's label and corner icon, in Atlas's own greys", () => {
+  it("takes `.metric-label`'s ink and its svg's ink in both themes", () => {
+    expect(rule(".fd-stat__k")).toMatch(/color:\s*var\(--metric-label\)/);
+    expect(rule(".fd-stat__k svg")).toMatch(/color:\s*var\(--metric-icon\)/);
+    expect(TOKENS.light.metricLabel).toBe("#5e7482");
+    expect(TOKENS.dark.metricLabel).toBe("#98a2ae");
+    expect(TOKENS.light.metricIcon).toBe("#6a8494");
+    expect(TOKENS.dark.metricIcon).toBe("#747f89");
   });
 });
 
