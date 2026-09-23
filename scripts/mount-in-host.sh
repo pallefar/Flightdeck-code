@@ -17,9 +17,12 @@
 # reproduced all six — but a harness that fails six files for its own reasons
 # cannot tell you whether the seventh is yours. So the sandbox mirrors the repo.
 #
-# It NEVER writes to the host checkout: the whole repo is COPIED (41M without
-# .git/node_modules), and only node_modules — 1.1G, absurd to copy — is
-# symlinked. A test that writes, writes into the copy.
+# It NEVER writes to the host checkout: the sandbox is the host's HEAD commit
+# as a history-free, single-commit git checkout — tracked files only, with a
+# real .git (scripts/sandbox-lib.sh says why: the host's PII tests need git, and
+# neither gitignored person data and secrets nor the person data still in the
+# host's history may reach /tmp). Only node_modules — 1.1G, absurd to copy — is
+# symlinked. A test that writes, writes into the sandbox.
 set -euo pipefail
 
 REPO="${REPO:-/home/user/project-contract}"
@@ -28,14 +31,14 @@ SPEC="${SPEC:-$(cd "$(dirname "$0")/.." && pwd)/fixtures/wc-clock.spec.json}"
 ROOT="${SANDBOX:-/tmp/fd-sandbox}"
 SANDBOX="$ROOT/$HOST_REL"
 STUDIO="$(cd "$(dirname "$0")/.." && pwd)"
+. "$STUDIO/scripts/sandbox-lib.sh"
 
 [ -d "$REPO/$HOST_REL/server/subapps" ] || { echo "not a Flightdeck repo: $REPO" >&2; exit 2; }
 [ "$(ls "$REPO/$HOST_REL/node_modules" 2>/dev/null | wc -l)" -gt 10 ] || {
   echo "host deps missing — run: (cd $REPO/$HOST_REL && npm install)" >&2; exit 2; }
 
-echo "==> sandbox: copying the whole repo (excluding .git, node_modules)"
-rm -rf "$ROOT"; mkdir -p "$ROOT"
-tar -C "$REPO" --exclude=.git --exclude=node_modules -cf - . | tar -C "$ROOT" -xf -
+echo "==> sandbox: the whole repo at HEAD, one commit (tracked files only)"
+sandbox_from_tracked "$REPO" "$ROOT"
 ln -s "$REPO/$HOST_REL/node_modules" "$SANDBOX/node_modules"
 
 # vitest exits non-zero when ANY test fails, and this script's whole job is to

@@ -21,8 +21,18 @@
 #    possible." A promotion record that hides a skipped stack is worse than no
 #    record, because someone signs it.
 #
-# NEVER writes to the host checkout. Copies the whole repo (tests reach above
-# flightdeck/ into processes/ and engine/), symlinks node_modules.
+# NEVER writes to the host checkout. The sandbox is the host's HEAD commit as
+# a history-free, single-commit git checkout — tracked files only, with a real
+# .git, because the host gate's PII stack needs git, and must never see
+# gitignored person data, secrets, or the person data still in the host's
+# history (scripts/sandbox-lib.sh says why). ⚠ That does NOT yet let the host
+# gate pass: its piiGitBoundary.test.ts also asserts the gitignored PII files
+# exist on disk, which a PII-free sandbox never satisfies, so step [5/6] still
+# records host-gate FAIL pending an owner decision (sandbox-lib.sh, KNOWN). The whole repo, not just flightdeck/:
+# tests reach above flightdeck/ into processes/ and engine/. node_modules is
+# symlinked; flightdeck/.env.supabase is the one ignored file brought in, mode
+# 600, only for the host gate step, and removed again right after it
+# (sandbox_run_host_gate; FLIGHTDECK_GATE_POSTGRES=0 keeps it out entirely).
 #
 # Usage: HOST_REPO=/path/to/project-contract SPEC=fixtures/x.spec.json \
 #        bash scripts/promote.sh
@@ -35,6 +45,7 @@ ROOT="${SANDBOX:-/tmp/fd-promote}"
 SANDBOX="$ROOT/flightdeck"
 RECORD="${RECORD:-$ROOT/compliance-record.json}"
 STAMP="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+. "$STUDIO/scripts/sandbox-lib.sh"
 
 FAILED=""; SKIPPED=""; PASSED=""
 note_pass() { PASSED="$PASSED $1"; echo "PASS: $1"; }
@@ -45,8 +56,7 @@ note_skip() { SKIPPED="$SKIPPED $1"; echo "SKIP: $1 — $2"; }
 [ -f "$SPEC" ] || { echo "no spec at $SPEC" >&2; exit 2; }
 
 echo "==> [0/6] sandbox"
-rm -rf "$ROOT"; mkdir -p "$ROOT"
-tar -C "$REPO" --exclude=.git --exclude=node_modules -cf - . | tar -C "$ROOT" -xf -
+sandbox_from_tracked "$REPO" "$ROOT" || { echo "could not build the sandbox from $REPO's HEAD" >&2; exit 2; }
 if [ "$(ls "$REPO/flightdeck/node_modules" 2>/dev/null | wc -l)" -gt 10 ]; then
   ln -s "$REPO/flightdeck/node_modules" "$SANDBOX/node_modules"
 else
@@ -115,7 +125,9 @@ fi
 
 echo "==> [5/6] THE HOST'S OWN GATE — scripts/gate.sh, all five stacks"
 # This is the load-bearing stack. Everything above is Studio checking itself.
-( cd "$ROOT" && bash scripts/gate.sh >"$ROOT/host-gate.log" 2>&1 )
+# sandbox_run_host_gate brings in flightdeck/.env.supabase for this step only
+# (its Postgres tier reads it) and removes it again; see scripts/sandbox-lib.sh.
+sandbox_run_host_gate "$REPO" "$ROOT" "$ROOT/host-gate.log"
 HOST_GATE_RC=$?
 if grep -q '^SKIPPED STACKS:' "$ROOT/host-gate.log"; then
   note_skip "host-gate-partial" "$(grep '^SKIPPED STACKS:' "$ROOT/host-gate.log")"
