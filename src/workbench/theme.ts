@@ -38,8 +38,11 @@ export type StudioTheme = "light" | "dark";
 export const DEFAULT_THEME: StudioTheme = "light";
 
 /** Where the driver remembers a person's choice, on Studio's own origin.
- * `index.html` repeats this key literally in its pre-paint script (it runs
- * before any module loads), so a rename has to happen in both places. */
+ * `public/theme-boot.js` — the pre-paint script `index.html` loads with a
+ * synchronous `<script src>` (it runs before any module loads, and is out of
+ * line because the server's CSP forbids inline script) — repeats this key
+ * literally, so a rename has to happen in both places.
+ * `scripts/__tests__/csp-inline.test.ts` fails if they drift. */
 export const THEME_STORAGE_KEY = "flightdeck-studio-theme";
 
 export function isStudioTheme(value: unknown): value is StudioTheme {

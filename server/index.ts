@@ -62,6 +62,8 @@ import { DEFAULT_MODEL } from "../packages/providers/src/models";
 import { plannerLlm } from "../packages/providers/src/planner-bridge";
 import type { ModelProvider } from "../packages/providers/src/types";
 
+import { registerWorkbench } from "./static";
+
 /** SHA-256 over UTF-8 — the Node half, so `node:crypto` is allowed here.
  * Injected rather than imported by the packages, which is what lets them
  * stay mountable inside a sub-app route. */
@@ -293,6 +295,12 @@ export interface ServerOptions {
   /** Where `FLIGHTDECK_HARNESS_MODE` records and replays. Defaults to
    * `HARNESS_FIXTURES_DIR`. Ignored when `llm` is injected. */
   readonly harnessFixturesDir?: string;
+  /**
+   * The built workbench (`vite build` output) served same-origin by
+   * `static.ts`. Defaults to `<STUDIO_ROOT>/dist`; nothing is served when
+   * its `index.html` does not exist.
+   */
+  readonly distDir?: string;
 }
 
 /**
@@ -462,6 +470,10 @@ export function createServer(options: ServerOptions): ReturnType<typeof Fastify>
     );
     return reply.send(outcome);
   });
+
+  // The workbench, AFTER the API: its routes are GET-only and never answer
+  // `/api`, and the bearer check above is untouched by them (static.ts).
+  registerWorkbench(app, options.distDir ?? path.join(STUDIO_ROOT, "dist"));
 
   return app;
 }

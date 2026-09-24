@@ -280,6 +280,38 @@ variables it expects — **do not guess them from this document.** The Postgres
 configuration has not been verified from Studio, on the Mac or in the
 container.
 
+### 2.5 Serving the workbench: `npm start`
+
+`npm start` runs `vite build` and then the server (`tsx server/index.ts`). When
+`dist/index.html` exists, the same Fastify process serves the built workbench
+next to `/api/studio/*` (`server/static.ts`), so page and API share one origin.
+It needs the same environment as §3.1 (`STUDIO_OPERATOR`,
+`STUDIO_OPERATOR_TOKEN`, and a key for real calls).
+
+- **Loopback only, by default.** `STUDIO_HOST` defaults to `127.0.0.1`: the
+  process holds the model key and the operator's bearer secret, so the page is
+  reachable from this Mac only. Binding anything else is a decision to make out
+  loud, not a default (§3.2).
+- **Strict CSP on the page:** `default-src 'self'; script-src 'self';
+  style-src 'self' 'unsafe-inline'; connect-src 'self'; frame-src 'self'
+  http://127.0.0.1:*; frame-ancestors 'none'; base-uri 'none'`, plus
+  `nosniff` and `Referrer-Policy: no-referrer`. `script-src 'self'` forbids
+  inline script, so the pre-paint theme script lives in `public/theme-boot.js`
+  and `scripts/__tests__/csp-inline.test.ts` fails on any `<script>` without
+  `src` in `index.html` or in a real build of it.
+- **Routing:** files under `dist/` are served with containment (no `..`,
+  encoded or not, and no symlink out of `dist/`: 404). A path with no file
+  extension falls back to `index.html`; an unknown `/api` path is a 404 JSON.
+  No static route needs the bearer; `POST /api/studio/build` still does.
+- No build, no page: without `dist/index.html` the server is the API alone, as
+  before.
+
+Measured on the Mac, 2026-09-24, on port 4320: `GET /` 200 with the CSP above,
+`/theme-boot.js` `text/javascript`, `curl --path-as-is /assets/../../package.json`
+404, `/api/studio/nope` 404 JSON, `POST /api/studio/build` without the token
+401. Headless Chrome: 0 CSP violations, and a dark reload with the app bundle
+blocked still paints dark (`theme-boot.js` alone set it).
+
 ---
 
 ## 3. Running it
@@ -362,6 +394,7 @@ Measured on the Mac, 2026-09-24, unless the row says otherwise.
 | `npm run dev` | Vite, the workbench | not re-run on the Mac |
 | `npm run build` | `tsc -b` + Vite build → `dist/` | ✅ one 638.74 kB JS chunk |
 | `npm run dev:server` | the composition root | not re-run on the Mac |
+| `npm start` | `vite build`, then the server, serving `dist/` same-origin behind a strict CSP (§2.5) | ✅ port 4320, 2026-09-24 |
 | `npm run redteam` | plants violations, all must block | ✅ `9/9` |
 | `npm run standalone` | builds and smoke-tests each standalone fixture | ✅ all three fixtures, with `PLAYWRIGHT_MODULE` set (§2.2); exits 2 without it |
 | `npm run mount` | mounts a candidate into a host sandbox and diffs the suite before/after; exits 1 if mounting adds a failure or no passing test | container: +10 passing, +0 failing · Mac (host c44d665b): ❌ +11 passing, **+1 failing** — §1.1 |
