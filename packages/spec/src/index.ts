@@ -126,7 +126,8 @@ export type { WorkflowPlanInput } from "./workflowPlan";
 
 /**
  * The OS-workflow output path: `studio-workflow-definition/1`, the Workflow Builder body an
- * OS admin imports in the New-workflow wizard. Statutory steps only with a named human.
+ * OS admin imports in the New-workflow wizard. A file's statutory set, empty or not, only with
+ * a named human.
  */
 export {
   STUDIO_ONLY_KEYS,
@@ -137,6 +138,7 @@ export {
   WORKFLOW_SLUG_PATTERN,
   parseWorkflowDefinition,
   serializeWorkflowDefinition,
+  workflowDefinitionFileSchema,
   workflowDefinitionSchema,
 } from "./process-definition";
 export type { WorkflowDefinition, WorkflowDefinitionParse, WorkflowIntakeField } from "./process-definition";

@@ -7,7 +7,10 @@
  * So the file carries the Builder's body and nothing else: no prompts, no ladder, no gates,
  * no manifest. A model never decides a statutory step; a named human does, and the file
  * says who (`statutoryConfirmedBy`). A non-empty `statutorySteps` without that name is
- * refused, not defaulted.
+ * refused, not defaulted. An EMPTY `statutorySteps` is a statutory decision too ("nothing
+ * here is statutory"), so a file — what `serializeWorkflowDefinition` writes and
+ * `parseWorkflowDefinition` reads — needs the name whatever the set; only an in-memory
+ * draft may still carry `statutoryConfirmedBy: null`.
  *
  * The golden fixture (`fixtures/studio-workflow-definition.golden.json`) is synthetic. It is
  * the byte-for-byte shape the OS import and its end-to-end test will copy, so it must
@@ -20,6 +23,7 @@ import {
   WORKFLOW_DEFINITION_SCHEMA_ID,
   parseWorkflowDefinition,
   serializeWorkflowDefinition,
+  workflowDefinitionFileSchema,
   workflowDefinitionSchema,
 } from "./process-definition";
 import * as spec from "./index";
@@ -37,7 +41,7 @@ function valid(): Record<string, unknown> {
     intakeFields: [{ name: "start_date", type: "date", required: true }],
     steps: ["intake_received", "validate", "statutory", "complete"],
     statutorySteps: [],
-    statutoryConfirmedBy: null,
+    statutoryConfirmedBy: "studio-test-wc-reviewer",
   };
 }
 
@@ -55,6 +59,10 @@ describe("studio-workflow-definition/1 — what it accepts", () => {
 
   it("accepts a draft whose author is not yet named (by: null)", () => {
     expect(ok({ ...valid(), by: null })).toBe(true);
+  });
+
+  it("accepts an in-memory draft whose statutory set nobody has decided yet (statutorySteps [], statutoryConfirmedBy null)", () => {
+    expect(ok({ ...valid(), statutorySteps: [], statutoryConfirmedBy: null })).toBe(true);
   });
 
   it("accepts statutory steps once a named human has confirmed them", () => {
@@ -92,8 +100,13 @@ describe("studio-workflow-definition/1 — what it refuses", () => {
   });
 
   it("refuses a missing statutorySteps — the host's ['statutory'] default must never apply silently", () => {
+    // A named confirmer is present, so the ONLY thing wrong is the missing field: a schema that
+    // put the host's ["statutory"] default back would accept this and fail here.
     const { statutorySteps: _drop, ...rest } = valid();
-    expect(ok(rest)).toBe(false);
+    expect(rest["statutoryConfirmedBy"]).toBe("studio-test-wc-reviewer");
+    const parsed = workflowDefinitionSchema.safeParse(rest);
+    expect(parsed.success, parsed.success ? JSON.stringify(parsed.data.statutorySteps) : "").toBe(false);
+    if (!parsed.success) expect(parsed.error.issues.map((i) => i.path.join("."))).toEqual(["statutorySteps"]);
   });
 
   it("refuses a statutory step that is not in steps", () => {
@@ -156,6 +169,30 @@ describe("serializeWorkflowDefinition", () => {
     expect(a.endsWith("}\n")).toBe(true);
   });
 
+  it("⭐ refuses to write a file whose empty statutory set nobody confirmed — 'nothing is statutory' is a human decision too", () => {
+    const undecided = workflowDefinitionSchema.parse({
+      ...valid(),
+      steps: ["intake_received", "statutory", "works_council", "complete"],
+      statutorySteps: [],
+      statutoryConfirmedBy: null,
+    });
+    expect(() => serializeWorkflowDefinition(undecided)).toThrow(/statutoryConfirmedBy/);
+  });
+
+  it("⭐ refuses to read a file whose empty statutory set nobody confirmed", () => {
+    const text = JSON.stringify({ ...valid(), statutorySteps: [], statutoryConfirmedBy: null });
+    const parsed = parseWorkflowDefinition(text);
+    expect(parsed.ok).toBe(false);
+    if (!parsed.ok) expect(parsed.error).toMatch(/^statutoryConfirmedBy: /);
+  });
+
+  it("writes and reads back an empty statutory set once a named human confirmed it", () => {
+    const text = serializeWorkflowDefinition(workflowDefinitionSchema.parse(valid()));
+    const parsed = parseWorkflowDefinition(text);
+    expect(parsed.ok, parsed.ok ? "" : parsed.error).toBe(true);
+    if (parsed.ok) expect(parsed.definition.statutorySteps).toEqual([]);
+  });
+
   it("refuses to serialize an invalid definition — it never writes a file the import would reject", () => {
     const bad = { ...valid(), statutorySteps: ["statutory"], statutoryConfirmedBy: null };
     expect(() => serializeWorkflowDefinition(bad as never)).toThrow();
@@ -173,6 +210,7 @@ describe("serializeWorkflowDefinition", () => {
 describe("exported from @spec", () => {
   it("the index re-exports the schema, its id and the serializer", () => {
     expect(spec.workflowDefinitionSchema).toBe(workflowDefinitionSchema);
+    expect(spec.workflowDefinitionFileSchema).toBe(workflowDefinitionFileSchema);
     expect(spec.WORKFLOW_DEFINITION_SCHEMA_ID).toBe(WORKFLOW_DEFINITION_SCHEMA_ID);
     expect(spec.serializeWorkflowDefinition).toBe(serializeWorkflowDefinition);
     expect(spec.parseWorkflowDefinition).toBe(parseWorkflowDefinition);

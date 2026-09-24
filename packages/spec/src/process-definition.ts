@@ -16,8 +16,12 @@
  * - `statutorySteps` is REQUIRED. The host defaults it to `["statutory"]`; a Studio file
  *   must say what a human decided, never inherit a default.
  * - `statutoryConfirmedBy` (Studio-only): the named human who decided which steps are
- *   statutory. A non-empty `statutorySteps` without that name is refused. The OS admin
- *   re-ticks the statutory steps on import anyway; this records the first human's choice.
+ *   statutory. A non-empty `statutorySteps` without that name is refused. An EMPTY set is
+ *   a statutory decision too ("nothing here is statutory": the Builder then scaffolds every
+ *   step agent-run, with a prompt template), so a FILE needs the name whatever the set:
+ *   `workflowDefinitionFileSchema` — what `serializeWorkflowDefinition` writes and
+ *   `parseWorkflowDefinition` reads — refuses `statutoryConfirmedBy: null` outright. Only an
+ *   in-memory draft (`workflowDefinitionSchema`) may still have nobody's name there.
  * - `by` may be `null` in a draft (no author named yet); the Builder requires it, so the
  *   OS import sets it before submitting.
  * - `steps` must be unique.
@@ -87,15 +91,31 @@ export const workflowDefinitionSchema = z
     }
   });
 
+/**
+ * A definition fit to be a FILE: the draft rules plus a named human behind the statutory set,
+ * empty or not. Nobody choosing is not the same as choosing "none".
+ */
+export const workflowDefinitionFileSchema = workflowDefinitionSchema.superRefine((d, ctx) => {
+  if (d.statutoryConfirmedBy === null) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["statutoryConfirmedBy"],
+      message:
+        "a workflow definition file needs the named human who decided its statutory steps (statutoryConfirmedBy), even when the answer is none",
+    });
+  }
+});
+
 export type WorkflowDefinition = z.infer<typeof workflowDefinitionSchema>;
 export type WorkflowIntakeField = z.infer<typeof intakeFieldSchema>;
 
 /**
- * The canonical file text: validated, keys in one fixed order, 2-space JSON, trailing
- * newline. Throws on an invalid definition — Studio never writes a file the import refuses.
+ * The canonical file text: validated against `workflowDefinitionFileSchema`, keys in one
+ * fixed order, 2-space JSON, trailing newline. Throws on an invalid definition or an
+ * unconfirmed statutory set — Studio never writes a file the import refuses.
  */
 export function serializeWorkflowDefinition(definition: WorkflowDefinition): string {
-  const d = workflowDefinitionSchema.parse(definition);
+  const d = workflowDefinitionFileSchema.parse(definition);
   const canonical = {
     schema: d.schema,
     by: d.by,
@@ -120,7 +140,7 @@ export type WorkflowDefinitionParse =
   | { readonly ok: true; readonly definition: WorkflowDefinition }
   | { readonly ok: false; readonly error: string };
 
-/** File text in, a validated definition or a named error out. */
+/** File text in, a definition that passes `workflowDefinitionFileSchema` or a named error out. */
 export function parseWorkflowDefinition(text: string): WorkflowDefinitionParse {
   let raw: unknown;
   try {
@@ -128,7 +148,7 @@ export function parseWorkflowDefinition(text: string): WorkflowDefinitionParse {
   } catch (err) {
     return { ok: false, error: `not JSON: ${(err as Error).message}` };
   }
-  const parsed = workflowDefinitionSchema.safeParse(raw);
+  const parsed = workflowDefinitionFileSchema.safeParse(raw);
   if (!parsed.success) {
     return {
       ok: false,
