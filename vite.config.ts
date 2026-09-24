@@ -13,10 +13,10 @@ export default defineConfig({
   },
   // ⚠ THIS PROXY POINTED AT 4180 AND THE SERVER LISTENS ON 8787.
   //
-  // They never met. It is latent today — nothing in `src/` fetches `/api`
-  // yet, so no request has ever taken this path — and it would have broken
-  // the first time anyone wired the workbench to the server, with a 504 and
-  // no obvious cause.
+  // They never met. It was latent while nothing in `src/` fetched `/api`,
+  // and it would have broken the first time anyone wired the workbench to
+  // the server, with a 504 and no obvious cause. `src/api/studioClient.ts`
+  // (the Connect dialog's health probe and the build) now takes this path.
   //
   // Derived from the same `PORT` the server reads (`server/index.ts`), so the
   // two stay in step when it is overridden instead of drifting apart again.

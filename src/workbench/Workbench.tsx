@@ -16,10 +16,11 @@
  * frozen snapshot whose identity changes only on a real change, which is
  * the contract that hook wants — see `store.ts` for why the no-op case is
  * load-bearing rather than an optimisation. */
-import { useCallback, useMemo, useRef, useSyncExternalStore } from "react";
+import { useCallback, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { TabIndicator } from "../motion/TabIndicator";
 import { usePanelSwap } from "../motion/useMotion";
 import { ChatPane } from "./components/ChatPane";
+import { CONNECT_CSS, ConnectDialog, ConnectionIndicator, type WorkbenchConnection } from "./components/ConnectDialog";
 import { DiffPane } from "./components/DiffPane";
 import { FileTreePane } from "./components/FileTreePane";
 import { GatePane } from "./components/GatePane";
@@ -130,10 +131,16 @@ export interface WorkbenchProps {
    * findings describe Studio's text and cannot answer that. Absent means no
    * button, rather than a dead one. See `download.ts`. */
   readonly checkFiles?: FileGate;
+  /** The Studio server connection (`src/api/studioClient.ts`): drawn as a
+   * Connected/Demo indicator in the top bar that opens the Connect dialog.
+   * Absent means neither is drawn. The workbench never sees the token —
+   * only the state, and a function to hand a typed one to. */
+  readonly connection?: WorkbenchConnection | undefined;
 }
 
-export function Workbench({ store, onPrompt, onStop, theme = DEFAULT_THEME, onThemeChange, checkFiles }: WorkbenchProps) {
+export function Workbench({ store, onPrompt, onStop, theme = DEFAULT_THEME, onThemeChange, checkFiles, connection }: WorkbenchProps) {
   const state = useSyncExternalStore(store.subscribe, store.getState, store.getState);
+  const [connectOpen, setConnectOpen] = useState(false);
 
   const round = currentRound(state);
   const candidate = currentCandidate(state);
@@ -236,6 +243,7 @@ export function Workbench({ store, onPrompt, onStop, theme = DEFAULT_THEME, onTh
   return (
     <div className="fd-wb" data-theme={theme}>
       <style>{WORKBENCH_CSS}</style>
+      {connection !== undefined && <style>{CONNECT_CSS}</style>}
 
       <ChatPane
         turns={state.turns}
@@ -315,6 +323,9 @@ export function Workbench({ store, onPrompt, onStop, theme = DEFAULT_THEME, onTh
               round #{round.ordinal} · {round.candidate.manifest.id} · {round.candidate.manifest.envVar}
             </span>
           )}
+          {connection !== undefined && (
+            <ConnectionIndicator state={connection.state} onOpen={() => setConnectOpen(true)} />
+          )}
           {onThemeChange !== undefined && <ThemeToggle theme={theme} onChange={onThemeChange} />}
         </div>
 
@@ -391,6 +402,15 @@ export function Workbench({ store, onPrompt, onStop, theme = DEFAULT_THEME, onTh
           )}
         </div>
       </main>
+
+      {connection !== undefined && connectOpen && (
+        <ConnectDialog
+          state={connection.state}
+          onConnect={connection.connect}
+          onDisconnect={connection.disconnect}
+          onClose={() => setConnectOpen(false)}
+        />
+      )}
     </div>
   );
 }

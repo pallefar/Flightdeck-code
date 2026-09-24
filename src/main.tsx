@@ -19,10 +19,11 @@
  * pane and the preview are showing real generated source and a real gate
  * verdict, which is the only way a screenshot of this is worth anything.
  */
-import { StrictMode, useCallback, useEffect, useRef, useState } from "react";
+import { StrictMode, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { createRoot } from "react-dom/client";
 
 import { Workbench } from "./workbench/Workbench";
+import { createStudioClient } from "./api/studioClient";
 import { createStore } from "./workbench/store";
 import { DEFAULT_THEME, THEME_STORAGE_KEY, isStudioTheme, type StudioTheme } from "./workbench/theme";
 import { drive } from "./drive";
@@ -30,6 +31,12 @@ import { checkFiles } from "./wiring";
 import wcClockSpec from "../fixtures/wc-clock.spec.json";
 
 const store = createStore();
+
+/** The Studio server, same origin (the Vite proxy in development). It holds
+ * the operator token in memory for this tab only — see `api/studioClient.ts`.
+ * Nothing sends a build through it yet: prompts still run the wc-clock demo
+ * below, and the indicator's tooltip says so. */
+const client = createStudioClient();
 
 /** The theme a person last picked on this origin, or Atlas's default.
  *
@@ -62,6 +69,12 @@ function App() {
     }
   }, []);
 
+  const connectionState = useSyncExternalStore(client.subscribe, client.getConnection, client.getConnection);
+  const connection = useMemo(
+    () => ({ state: connectionState, connect: client.connect, disconnect: client.disconnect }),
+    [connectionState],
+  );
+
   const started = useRef(false);
   const onPrompt = useCallback((text: string, turnId: string) => {
     void drive(store, turnId, text, wcClockSpec);
@@ -82,6 +95,7 @@ function App() {
       theme={theme}
       onThemeChange={onThemeChange}
       checkFiles={checkFiles}
+      connection={connection}
     />
   );
 }
