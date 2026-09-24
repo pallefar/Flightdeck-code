@@ -130,7 +130,7 @@ export function templateContentHash(template: ProposalTemplate): string {
 const ISO_DATE = /^(\d{4})-(\d{2})-(\d{2})(?:T\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:\d{2}))?$/;
 
 /** A real calendar date in ISO form — `2026-13-40` matches the pattern and is still refused. */
-function isIsoDate(value: string): boolean {
+export function isIsoDate(value: string): boolean {
   const match = ISO_DATE.exec(value);
   if (match === null) return false;
   const [year, month, day] = [Number(match[1]), Number(match[2]), Number(match[3])];
