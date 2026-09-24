@@ -159,6 +159,27 @@ describe("the whole path, over HTTP", () => {
     expect(paths).toContain("standalone/server.ts");
   });
 
+  it("⭐ the proposal carries the @codegen spec and its sha256 — what promote.sh needs", async () => {
+    const { serializeSpec } = await import("../../packages/pipeline/src/build-subapp");
+    const app = serve(async () => ({ text: DRAFT }));
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/studio/build",
+      headers: { authorization: `Bearer ${TOKEN}` },
+      payload: { prompt: PROMPT },
+    });
+    expect(res.statusCode).toBe(200);
+    const body = res.json() as { status: string; spec?: { id?: string }; specSha256?: string };
+    expect(body.status).toBe("proposed");
+    expect(body.spec?.id).toBe("works-council-gaps");
+    expect(body.specSha256).toMatch(/^[0-9a-f]{64}$/);
+    // The hash survives the wire: the spec as the client received it
+    // serialises to the bytes the hash was taken over.
+    const { createHash } = await import("node:crypto");
+    const text = serializeSpec(body.spec as never);
+    expect(createHash("sha256").update(text, "utf8").digest("hex")).toBe(body.specSha256);
+  });
+
   it("a guardrail refusal comes back as an OUTCOME, not a 500", async () => {
     // Tier 4 input. The gate refuses before the model, and the caller gets a
     // decision with an audit body rather than a stack trace.
