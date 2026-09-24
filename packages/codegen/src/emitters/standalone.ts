@@ -177,6 +177,8 @@ export interface SubAppManifestData {
   webModuleId: string;
   capabilities: CapabilityScope[];
   visibleToRoles: WorkspaceRole[];
+  /** D-036: stamped by Flightdeck Studio on every manifest it generates. */
+  generatedBy?: "flightdeck-studio";
 }
 
 export interface SubAppManifest extends SubAppManifestData {

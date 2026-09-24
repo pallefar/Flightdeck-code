@@ -14,6 +14,7 @@
  * a computed expression would still compile and would silently drop out of
  * that check, which is why every data field here is a literal. */
 import { banner, joinLines, str, tsObject, tsStringArray, type ObjectField } from "../emit";
+import { GENERATED_BY } from "../manifest-rules";
 import type { SubAppPlan } from "../plan";
 
 export function emitManifest(plan: SubAppPlan): string {
@@ -80,6 +81,17 @@ export function emitManifest(plan: SubAppPlan): string {
       ],
     });
   }
+
+  // ⛔ D-036: the generated marker, a data literal like every field above.
+  // Always present — `plan.ts` sets it and the local schema copy keeps it —
+  // and re-checked on the TEXT by `invariants.ts` (rule "generated-marker").
+  fields.push({
+    key: "generatedBy",
+    value: str(GENERATED_BY),
+    comment: [
+      "Flightdeck Studio generated this sub-app, so it is OFF by default at the launcher layer (D-036): `scripts/start-postgres.sh` must not name its kill switch, and the host's launcherSubappDefaults test enforces that. To run it, set the kill switch yourself when you start the launcher. The marker grants nothing.",
+    ],
+  });
 
   fields.push(
     hasTables
