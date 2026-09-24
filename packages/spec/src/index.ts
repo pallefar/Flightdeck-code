@@ -123,3 +123,22 @@ export type {
 
 export { autoAdvanceSentence, planFromWorkflow } from "./workflowPlan";
 export type { WorkflowPlanInput } from "./workflowPlan";
+
+/**
+ * The OS-workflow output path: `studio-workflow-definition/1`, the Workflow Builder body an
+ * OS admin imports in the New-workflow wizard. A file's statutory set, empty or not, only with
+ * a named human.
+ */
+export {
+  STUDIO_ONLY_KEYS,
+  WORKFLOW_DEFINITION_SCHEMA_ID,
+  WORKFLOW_FIRST_STEP,
+  WORKFLOW_INTAKE_FIELD_TYPES,
+  WORKFLOW_LAST_STEP,
+  WORKFLOW_SLUG_PATTERN,
+  parseWorkflowDefinition,
+  serializeWorkflowDefinition,
+  workflowDefinitionFileSchema,
+  workflowDefinitionSchema,
+} from "./process-definition";
+export type { WorkflowDefinition, WorkflowDefinitionParse, WorkflowIntakeField } from "./process-definition";

@@ -1,0 +1,51 @@
+{
+  "schema": "studio-workflow-definition/1",
+  "by": "studio-test-author",
+  "name": "Synthetic equipment request",
+  "slug": "synthetic-equipment-request",
+  "country": "DE",
+  "entity": "Synthetic Test Entity",
+  "intakeFields": [
+    {
+      "name": "request_id",
+      "type": "string",
+      "required": true
+    },
+    {
+      "name": "needed_by",
+      "type": "date",
+      "required": true
+    },
+    {
+      "name": "quantity",
+      "type": "number",
+      "required": true
+    },
+    {
+      "name": "category",
+      "type": "enum",
+      "required": false,
+      "source": "synthetic-catalogue"
+    },
+    {
+      "name": "urgent",
+      "type": "boolean",
+      "required": false
+    }
+  ],
+  "steps": [
+    "intake_received",
+    "validate",
+    "generate",
+    "quality_gate",
+    "human_review",
+    "statutory",
+    "approve",
+    "issue",
+    "complete"
+  ],
+  "statutorySteps": [
+    "statutory"
+  ],
+  "statutoryConfirmedBy": "studio-test-reviewer"
+}
