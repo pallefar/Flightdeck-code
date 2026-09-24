@@ -13,6 +13,7 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
+import type { FastifyReply, FastifyRequest } from "fastify";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { EXAMPLE_DRAFT_JSON } from "../../packages/spec/src/prompt";
@@ -21,6 +22,7 @@ import type { DatasourceRef, GrantRow } from "../../packages/approvals/src/index
 import { EFFORTS } from "../../packages/providers/src/types";
 import {
   STUDIO_ROOT,
+  assertStudioBind,
   bootProblems,
   createServer,
   grantsFileFromEnv,
@@ -432,5 +434,87 @@ describe("what it refuses to boot with: the model config", () => {
   it("⛔ an injected llm is not second-guessed — the env effort is not what it runs at", () => {
     vi.stubEnv("FLIGHTDECK_EFFORT", "turbo");
     expect(() => serve(async () => ({ text: DRAFT }))).not.toThrow();
+  });
+});
+
+describe("where it is willing to listen", () => {
+  const OK_ENV_FOR_BIND = { STUDIO_OPERATOR: "Karsten Haldan", STUDIO_OPERATOR_TOKEN: TOKEN };
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+  // This process holds a model key and the operator's bearer secret. Binding
+  // beyond loopback is a decision someone must make out loud — the default
+  // alone did not stop a stray `STUDIO_HOST=0.0.0.0` from doing it silently.
+  it("⛔ refuses every non-loopback bind without STUDIO_ALLOW_REMOTE=true", () => {
+    for (const host of ["0.0.0.0", "::", "192.168.1.20", "studio.example.com", ""]) {
+      expect(() => assertStudioBind(host, {}), JSON.stringify(host)).toThrow(/STUDIO_ALLOW_REMOTE/);
+    }
+  });
+
+  it("the flag must be exactly the string true", () => {
+    for (const flag of ["1", "yes", "TRUE", " true", ""]) {
+      expect(() => assertStudioBind("0.0.0.0", { STUDIO_ALLOW_REMOTE: flag }), flag).toThrow(/STUDIO_ALLOW_REMOTE/);
+    }
+  });
+
+  it("allows a non-loopback bind when it is asked for out loud", () => {
+    expect(() => assertStudioBind("0.0.0.0", { STUDIO_ALLOW_REMOTE: "true" })).not.toThrow();
+  });
+
+  it("allows loopback without asking", () => {
+    for (const host of ["127.0.0.1", "127.0.0.2", "::1", "localhost"]) {
+      expect(() => assertStudioBind(host, {}), host).not.toThrow();
+    }
+  });
+
+  it("⭐ boot refuses it, alongside every other problem", () => {
+    const problems = bootProblems({ ...OK_ENV_FOR_BIND, STUDIO_HOST: "0.0.0.0" });
+    expect(problems).toHaveLength(1);
+    expect(problems[0]).toMatch(/STUDIO_HOST=0\.0\.0\.0 is not loopback/);
+    expect(bootProblems({ ...OK_ENV_FOR_BIND, STUDIO_HOST: "0.0.0.0", STUDIO_ALLOW_REMOTE: "true" })).toEqual([]);
+    expect(bootProblems(OK_ENV_FOR_BIND)).toEqual([]);
+  });
+
+  it("the operator token is still required on a remote bind", async () => {
+    vi.stubEnv("STUDIO_HOST", "0.0.0.0");
+    vi.stubEnv("STUDIO_ALLOW_REMOTE", "true");
+    const res = await serve(async () => ({ text: DRAFT })).inject({
+      method: "POST",
+      url: "/api/studio/build",
+      payload: { prompt: PROMPT },
+    });
+    expect(res.statusCode).toBe(401);
+  });
+});
+
+describe("baseline security headers", () => {
+  const BASELINE = {
+    "x-content-type-options": "nosniff",
+    "referrer-policy": "no-referrer",
+    "x-frame-options": "DENY",
+  };
+  const CSP = "default-src 'self'; frame-ancestors 'none'; object-src 'none'";
+
+  it("⭐ health carries nosniff, no-referrer and XFO DENY", async () => {
+    const res = await serve(async () => ({ text: DRAFT })).inject({ method: "GET", url: "/api/studio/health" });
+    expect(res.statusCode).toBe(200);
+    expect(res.headers).toMatchObject(BASELINE);
+  });
+
+  it("so does a refusal and a 404", async () => {
+    const app = serve(async () => ({ text: DRAFT }));
+    const refused = await app.inject({ method: "POST", url: "/api/studio/build", payload: { prompt: PROMPT } });
+    expect(refused.statusCode).toBe(401);
+    expect(refused.headers).toMatchObject(BASELINE);
+    const missing = await app.inject({ method: "GET", url: "/nowhere" });
+    expect(missing.statusCode).toBe(404);
+    expect(missing.headers).toMatchObject(BASELINE);
+  });
+
+  it("HTML is served with a CSP that forbids framing and plugins", async () => {
+    const app = serve(async () => ({ text: DRAFT }));
+    app.get("/page", async (_request: FastifyRequest, reply: FastifyReply) => reply.type("text/html; charset=utf-8").send("<!doctype html><p>hi</p>"));
+    const res = await app.inject({ method: "GET", url: "/page" });
+    expect(res.headers).toMatchObject({ ...BASELINE, "content-security-policy": CSP });
   });
 });
