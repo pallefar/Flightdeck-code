@@ -237,20 +237,20 @@ describe("the page a person actually looks at", () => {
     expect(web).toContain("has no proposal from this app yet. If it was done elsewhere, carry on.");
   });
 
-  it("uses the host's visual language: its classes, its CSS variables, its dark values as fallbacks", () => {
+  it("uses the host's visual language: its classes, its CSS variables, its Atlas dark values as fallbacks", () => {
     for (const className of ["page", "pagehead", "eyebrow", "card", "chip", "progress", "mono", "muted", "errorbox", "okbox"]) {
       expect(web, `no use of the host class "${className}"`).toMatch(new RegExp(`className=(\\{?)"[^"]*\\b${className}\\b`));
     }
     for (const token of [
-      'var(--bg, #07090d)',
-      'var(--surface, #11161f)',
+      'var(--bg, #0e1720)',
+      'var(--surface, #17242f)',
       'var(--ink, #eef2f7)',
-      'var(--muted, #8b96a5)',
-      'var(--line, #1f2733)',
-      'var(--te, #ff8200)',
-      'var(--green, #2fd472)',
-      'var(--amber, #ffc24b)',
-      'var(--red, #ff5b4d)',
+      'var(--muted, #a7b6c3)',
+      'var(--line, #304553)',
+      'var(--te, #e98300)',
+      'var(--green, #87c3a7)',
+      'var(--amber, #c9b687)',
+      'var(--red, #ff807d)',
     ]) {
       expect(web, `missing token ${token}`).toContain(token);
     }

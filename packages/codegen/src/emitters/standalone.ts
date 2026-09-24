@@ -906,12 +906,12 @@ function emitTheme(plan: SubAppPlan): string {
 
   /* ⭐ THE NAMES THE PAGE ACTUALLY READS.
    *
-   * The emitted page inlines \`var(--muted, #8b96a5)\`, \`var(--te, #ff8200)\`,
+   * The emitted page inlines \`var(--muted, #a7b6c3)\`, \`var(--te, #e98300)\`,
    * \`var(--amber, …)\`, \`var(--green, …)\` and \`var(--red, …)\` — the HOST's
    * token names. This stylesheet defined \`--muted-ink\`, \`--accent\`,
    * \`--amber-line\` and so on, which are not those names, so all five
    * resolved to their INLINE FALLBACKS — and those fallbacks are the host's
-   * DARK palette. #8b96a5 on #f7f8fa is roughly 2.9:1: the form labels and
+   * DARK palette. The muted one (#8b96a5 then) was about 2.9:1 on #f7f8fa: the form labels and
    * the step numbers, the two things telling a reader what to type and
    * where they are, were the least legible text on a light page.
    *

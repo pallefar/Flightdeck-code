@@ -93,12 +93,12 @@ describe("the Studio page, rendered", () => {
     expect(PAGE_SOURCE).not.toMatch(/\bt\(["']/);
   });
 
-  it("themes through host CSS variables, with the host's own values as fallbacks", () => {
+  it("themes through host CSS variables, with the host's own (Atlas) values as fallbacks", () => {
     // The token so the page follows the console's theme toggle; the literal so
     // it still reads correctly anywhere the stylesheet has not loaded.
-    expect(html).toMatch(/var\(--line, #1f2733\)/);
-    expect(html).toMatch(/var\(--te, #ff8200\)/);
-    expect(html).toMatch(/var\(--bg, #07090d\)/);
+    expect(html).toMatch(/var\(--line, #304553\)/);
+    expect(html).toMatch(/var\(--te, #e98300\)/);
+    expect(html).toMatch(/var\(--bg, #0e1720\)/);
   });
 
   it("offers the bundle textarea and a disabled submit until something is pasted", () => {
