@@ -23,19 +23,35 @@
 # neither gitignored person data and secrets nor the person data still in the
 # host's history may reach /tmp). Only node_modules — 1.1G, absurd to copy — is
 # symlinked. A test that writes, writes into the sandbox.
+#
+# The sandbox is built under a fresh mode-700 `mktemp -d
+# ${TMPDIR:-/tmp}/fd-studio.XXXXXX` and removed on exit, however the run ends
+# (FLIGHTDECK_KEEP_SANDBOX=1 keeps it and prints where). The logs go to a
+# mode-700 .studio/runs/<stamp>-mount.* in this checkout (gitignored), which
+# outlives the sandbox. SANDBOX=<path> still names it explicitly; that path is
+# then yours and is kept (scripts/sandbox-lib.sh).
 set -euo pipefail
 
 REPO="${REPO:-/home/user/project-contract}"
 HOST_REL="${HOST_REL:-flightdeck}"
 SPEC="${SPEC:-$(cd "$(dirname "$0")/.." && pwd)/fixtures/wc-clock.spec.json}"
-ROOT="${SANDBOX:-/tmp/fd-sandbox}"
-SANDBOX="$ROOT/$HOST_REL"
 STUDIO="$(cd "$(dirname "$0")/.." && pwd)"
 . "$STUDIO/scripts/sandbox-lib.sh"
 
 [ -d "$REPO/$HOST_REL/server/subapps" ] || { echo "not a Flightdeck repo: $REPO" >&2; exit 2; }
 [ "$(ls "$REPO/$HOST_REL/node_modules" 2>/dev/null | wc -l)" -gt 10 ] || {
   echo "host deps missing — run: (cd $REPO/$HOST_REL && npm install)" >&2; exit 2; }
+
+sandbox_new_run_dir "$STUDIO" mount || exit 2
+RUN_DIR="$SANDBOX_RUN_DIR"
+if [ -n "${SANDBOX:-}" ]; then
+  ROOT="$SANDBOX"
+else
+  sandbox_new_parent || exit 2
+  ROOT="$SANDBOX_PARENT/sandbox"
+fi
+SANDBOX="$ROOT/$HOST_REL"
+echo "==> run logs: $RUN_DIR"
 
 echo "==> sandbox: the whole repo at HEAD, one commit (tracked files only)"
 sandbox_from_tracked "$REPO" "$ROOT"
@@ -78,11 +94,11 @@ failing() { grep -E '^ *FAIL ' "$1" | sed -E 's/^ *FAIL +//; s/ +[0-9]+m?s$//' |
 # with a generated sub-app, and a baseline carrying avoidable failures makes the
 # comparison harder to read. It takes ~3s.
 echo "==> building the web bundle (3 standalone tests measure the real one)"
-( cd "$SANDBOX" && npm run build:web >"$ROOT/build.log" 2>&1 ) || {
-  echo "build:web FAILED — see $ROOT/build.log" >&2; exit 1; }
+( cd "$SANDBOX" && npm run build:web >"$RUN_DIR/build.log" 2>&1 ) || {
+  echo "build:web FAILED — see $RUN_DIR/build.log" >&2; exit 1; }
 
 echo "==> baseline: the host's sub-app suite, before we touch anything"
-BEFORE="$(fences "$ROOT/before.log")"; echo "$BEFORE"
+BEFORE="$(fences "$RUN_DIR/before.log")"; echo "$BEFORE"
 
 echo "==> generating from $SPEC"
 ( cd "$STUDIO" && npx tsx packages/codegen/src/cli.ts --spec "$SPEC" --out "$SANDBOX" )
@@ -91,7 +107,7 @@ echo "==> applying the emitted registry patch"
 ( cd "$SANDBOX" && patch -p1 < server/subapps/registry.ts.patch && rm server/subapps/registry.ts.patch )
 
 echo "==> the same suite, with a generated sub-app mounted"
-AFTER="$(fences "$ROOT/after.log")"; echo "$AFTER"
+AFTER="$(fences "$RUN_DIR/after.log")"; echo "$AFTER"
 
 echo
 echo "==> compare. Mounting must ADD passing tests and add no failures."
@@ -100,7 +116,7 @@ A_TESTS="$(echo "$AFTER"  | grep -oE 'Tests .*' || true)"
 echo "    before: $B_TESTS"
 echo "    after:  $A_TESTS"
 echo
-echo "    full logs: $ROOT/before.log  $ROOT/after.log"
+echo "    full logs: $RUN_DIR/before.log  $RUN_DIR/after.log"
 echo
 
 # Enforced, not just printed: the script used to say the rule above and exit 0
@@ -109,16 +125,16 @@ echo
 # BOTH runs (the Linux container's docusignLibreoffice, say) is the host's and
 # is not held against the candidate; a test failing only AFTER is.
 PROBLEMS=""
-[ -n "$B_TESTS" ] || PROBLEMS="$PROBLEMS\n    the baseline run printed no Tests summary — see $ROOT/before.log"
-[ -n "$A_TESTS" ] || PROBLEMS="$PROBLEMS\n    the mounted run printed no Tests summary — see $ROOT/after.log"
+[ -n "$B_TESTS" ] || PROBLEMS="$PROBLEMS\n    the baseline run printed no Tests summary — see $RUN_DIR/before.log"
+[ -n "$A_TESTS" ] || PROBLEMS="$PROBLEMS\n    the mounted run printed no Tests summary — see $RUN_DIR/after.log"
 if [ -n "$B_TESTS" ] && [ -n "$A_TESTS" ]; then
   B_FAIL="$(count failed "$B_TESTS")"; A_FAIL="$(count failed "$A_TESTS")"
   B_PASS="$(count passed "$B_TESTS")"; A_PASS="$(count passed "$A_TESTS")"
   [ "$A_FAIL" -le "$B_FAIL" ] || PROBLEMS="$PROBLEMS\n    failures went from $B_FAIL to $A_FAIL"
   [ "$A_PASS" -gt "$B_PASS" ] || PROBLEMS="$PROBLEMS\n    passing tests went from $B_PASS to $A_PASS — mounting added none"
-  NEW_FAILS="$(comm -13 <(failing "$ROOT/before.log") <(failing "$ROOT/after.log"))"
+  NEW_FAILS="$(comm -13 <(failing "$RUN_DIR/before.log") <(failing "$RUN_DIR/after.log"))"
   [ -z "$NEW_FAILS" ] || PROBLEMS="$PROBLEMS\n    failing only with the sub-app mounted:$(printf '%s\n' "$NEW_FAILS" | sed 's/^/\n      /')"
-  PRE_FAILS="$(comm -12 <(failing "$ROOT/before.log") <(failing "$ROOT/after.log"))"
+  PRE_FAILS="$(comm -12 <(failing "$RUN_DIR/before.log") <(failing "$RUN_DIR/after.log"))"
   [ -z "$PRE_FAILS" ] || printf '    failing in BOTH runs (the host'"'"'s, not the candidate'"'"'s):\n%s\n' "$(printf '%s\n' "$PRE_FAILS" | sed 's/^/      /')"
 fi
 if [ -n "$PROBLEMS" ]; then

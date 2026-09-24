@@ -95,10 +95,18 @@ function hostState(host: string): string {
   return git(host, "worktree", "list", "--porcelain") + git(host, "status", "--porcelain", "--ignored");
 }
 
+/** Every run's logs and record land in a per-run directory; pinned here to a
+ * throwaway one so the suite never writes into this checkout's `.studio/runs`
+ * (promote.sh step [1/6] runs this suite). SANDBOX, TMPDIR and
+ * FLIGHTDECK_KEEP_SANDBOX are dropped from the inherited environment: an
+ * operator who ran `SANDBOX=… npm run promote` exports them into it. */
+const RUNS = path.join(work, "runs");
+
 function run(script: string, env: Record<string, string>): { status: number | null; out: string } {
+  const { SANDBOX: _s, TMPDIR: _t, FLIGHTDECK_KEEP_SANDBOX: _k, ...base } = process.env;
   const r = spawnSync("bash", [path.join(STUDIO, "scripts", script)], {
     cwd: STUDIO,
-    env: { ...process.env, ...env },
+    env: { ...base, TMPDIR: os.tmpdir(), STUDIO_RUNS_DIR: RUNS, ...env },
     encoding: "utf8",
     timeout: 60_000,
   });
@@ -481,8 +489,265 @@ describe("scripts/promote.sh host-gate step", () => {
     // the helper the three cases above exercise, so its env handling is covered.
     const src = fs.readFileSync(path.join(STUDIO, "scripts", "promote.sh"), "utf8");
     const code = src.split("\n").filter((l) => !l.trimStart().startsWith("#")).join("\n");
-    expect(code).toMatch(/^sandbox_run_host_gate "\$REPO" "\$ROOT" "\$ROOT\/host-gate\.log"\nHOST_GATE_RC=\$\?$/m);
+    expect(code).toMatch(/^sandbox_run_host_gate "\$REPO" "\$ROOT" "\$RUN_DIR\/host-gate\.log"\nHOST_GATE_RC=\$\?$/m);
     expect(code).not.toMatch(/bash[^\n]*scripts\/gate\.sh/);
     expect(code).not.toMatch(/\.env\.supabase/);
   });
+});
+
+/* ── Where the sandbox lives, and who may delete what ─────────────────────
+ *
+ * ⛔ WHAT THIS PINS. promote.sh used ROOT=${SANDBOX:-/tmp/fd-promote} and
+ * mount-in-host.sh ROOT=${SANDBOX:-/tmp/fd-sandbox}: fixed, guessable paths in
+ * a shared directory that were never removed, so every run left the host's
+ * whole tracked tree (and, until the gate step ended, .env.supabase) behind in
+ * /tmp, and the logs and the compliance record lived in it too.
+ * sandbox_from_tracked also ran `rm -rf "$root"` on whatever path it was
+ * handed — SANDBOX=$HOME would have been deleted without a question. And
+ * sandbox_arm_pg_env_cleanup REPLACED any earlier EXIT trap, so a script could
+ * have one cleanup or the other, never both. */
+
+/** The one marker sandbox_from_tracked writes: inside .git, so the host gate
+ * still sees no ignored path but .env.supabase (the probe case above). */
+const MARKER = ".git/studio-sandbox";
+
+function headOf(repo: string): string {
+  return git(repo, "rev-parse", "HEAD").trim();
+}
+
+function ls(dir: string): string[] {
+  return fs.existsSync(dir) ? fs.readdirSync(dir).sort() : [];
+}
+
+describe("sandbox location: a private mktemp parent, removed on exit", () => {
+  it("promote.sh with SANDBOX unset builds under a mode-700 mktemp parent and removes it", () => {
+    const host = makeHost("mk-promote-host", false);
+    const tmp = fs.mkdtempSync(path.join(work, "tmpdir-"));
+    const { status, out } = run("promote.sh", { HOST_REPO: host, TMPDIR: tmp, FLIGHTDECK_GATE_POSTGRES: "1" });
+    expect(out).toContain("host deps missing");
+    expect(status).toBe(2);
+    // It was built there — and it is gone again.
+    expect(out).toMatch(new RegExp(`sandbox: ${tmp.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}/fd-studio\\.[A-Za-z0-9]{6}/sandbox at `));
+    expect(ls(tmp)).toEqual([]);
+    expect(out).not.toContain("/tmp/fd-promote");
+  });
+
+  it("mount-in-host.sh with SANDBOX unset does the same, and its logs survive in a mode-700 run directory", () => {
+    const host = makeHost("mk-mount-host", true);
+    const tmp = fs.mkdtempSync(path.join(work, "tmpdir-"));
+    const runs = path.join(work, "mk-mount-runs");
+    const { status, out } = run("mount-in-host.sh", { REPO: host, TMPDIR: tmp, STUDIO_RUNS_DIR: runs });
+    expect(out).toContain("build:web FAILED");
+    expect(status).toBe(1);
+    expect(out).toMatch(/fd-studio\.[A-Za-z0-9]{6}\/sandbox at /);
+    // npm (build:web) leaves its own node-compile-cache in TMPDIR; no sandbox is left.
+    expect(ls(tmp).filter((n) => n.startsWith("fd-studio."))).toEqual([]);
+    expect(out).not.toContain("/tmp/fd-sandbox");
+    const [runDir, ...more] = ls(runs);
+    expect(more).toEqual([]);
+    expect(runDir).toMatch(/^\d{8}T\d{6}Z-mount\.[A-Za-z0-9]{6}$/);
+    expect(fs.statSync(runs).mode & 0o077).toBe(0);
+    expect(fs.statSync(path.join(runs, runDir!)).mode & 0o077).toBe(0);
+    expect(ls(path.join(runs, runDir!))).toContain("build.log");
+    expect(out).toContain(`see ${path.join(runs, runDir!)}/build.log`);
+  });
+
+  it("FLIGHTDECK_KEEP_SANDBOX=1 keeps the sandbox, prints its path, and it is still tracked-only and marked", () => {
+    const host = makeHost("mk-keep-host", false);
+    const tmp = fs.mkdtempSync(path.join(work, "tmpdir-"));
+    const { status, out } = run("promote.sh", { HOST_REPO: host, TMPDIR: tmp, FLIGHTDECK_KEEP_SANDBOX: "1" });
+    expect(status).toBe(2);
+    const [parent, ...more] = ls(tmp);
+    expect(more).toEqual([]);
+    expect(parent).toMatch(/^fd-studio\.[A-Za-z0-9]{6}$/);
+    const parentPath = path.join(tmp, parent!);
+    const root = path.join(parentPath, "sandbox");
+    expect(fs.statSync(parentPath).mode & 0o777).toBe(0o700);
+    expect(out).toContain(`sandbox kept (FLIGHTDECK_KEEP_SANDBOX=1): ${root}`);
+    expectTrackedOnly(root);
+    expect(fs.readFileSync(path.join(root, MARKER), "utf8")).toBe(`studio-sandbox/1 ${headOf(host)}\n`);
+    expect(fs.statSync(path.join(root, MARKER)).mode & 0o777).toBe(0o600);
+    fs.rmSync(parentPath, { recursive: true, force: true });
+  });
+});
+
+describe("sandbox_from_tracked only ever replaces a sandbox it built (scripts/sandbox-lib.sh)", () => {
+  const lib = path.join(STUDIO, "scripts", "sandbox-lib.sh");
+  function build(host: string, root: string) {
+    const r = spawnSync("bash", ["-c", 'set -uo pipefail; . "$1"; sandbox_from_tracked "$2" "$3"', "_", lib, host, root], {
+      encoding: "utf8",
+    });
+    return { status: r.status, out: `${r.stdout}${r.stderr}` };
+  }
+
+  it("writes a mode-600 studio-sandbox/1 marker naming the host HEAD, and git sees nothing ignored", () => {
+    const host = makeHost("mark-host", false);
+    const root = path.join(work, "mark-root");
+    const { status, out } = build(host, root);
+    expect(status, out).toBe(0);
+    expect(fs.readFileSync(path.join(root, MARKER), "utf8")).toBe(`studio-sandbox/1 ${headOf(host)}\n`);
+    expect(fs.statSync(path.join(root, MARKER)).mode & 0o777).toBe(0o600);
+    expect(git(root, "status", "--porcelain", "--ignored")).toBe("");
+  });
+
+  it("REFUSES a non-empty directory with no marker, and deletes nothing in it", () => {
+    const host = makeHost("foreign-host", false);
+    const root = path.join(work, "foreign-root");
+    write(root, "precious.txt", "someone's work\n");
+    const { status, out } = build(host, root);
+    expect(status).not.toBe(0);
+    expect(out).toContain("refusing");
+    expect(out).toContain("studio-sandbox");
+    expect(fs.readFileSync(path.join(root, "precious.txt"), "utf8")).toBe("someone's work\n");
+  });
+
+  it("REFUSES a directory whose marker is not a studio-sandbox/1 line", () => {
+    const host = makeHost("forged-host", false);
+    const root = path.join(work, "forged-root");
+    write(root, "precious.txt", "keep\n");
+    write(root, MARKER, "something else\n");
+    const { status } = build(host, root);
+    expect(status).not.toBe(0);
+    expect(fs.existsSync(path.join(root, "precious.txt"))).toBe(true);
+  });
+
+  it("REFUSES a symlink, and leaves its target alone", () => {
+    const host = makeHost("link-host", false);
+    const target = path.join(work, "link-target");
+    write(target, "precious.txt", "keep\n");
+    const root = path.join(work, "link-root");
+    fs.symlinkSync(target, root);
+    const { status } = build(host, root);
+    expect(status).not.toBe(0);
+    expect(fs.lstatSync(root).isSymbolicLink()).toBe(true);
+    expect(fs.existsSync(path.join(target, "precious.txt"))).toBe(true);
+  });
+
+  it("replaces a sandbox it built earlier, and uses an empty directory", () => {
+    const host = makeHost("rebuild-host", false);
+    const root = path.join(work, "rebuild-root");
+    expect(build(host, root).status).toBe(0);
+    write(root, "leftover-from-last-run.log", "x\n");
+    const again = build(host, root);
+    expect(again.status, again.out).toBe(0);
+    expect(fs.existsSync(path.join(root, "leftover-from-last-run.log"))).toBe(false);
+    expectTrackedOnly(root);
+
+    const empty = path.join(work, "empty-root");
+    fs.mkdirSync(empty);
+    expect(build(host, empty).status).toBe(0);
+    expectTrackedOnly(empty);
+  });
+});
+
+describe("one EXIT handler: sandbox_cleanup (scripts/sandbox-lib.sh)", () => {
+  const lib = path.join(STUDIO, "scripts", "sandbox-lib.sh");
+  function inShell(name: string, body: string, env: Record<string, string> = {}) {
+    const host = makeHost(`${name}-host`, false);
+    const tmp = fs.mkdtempSync(path.join(work, "tmpdir-"));
+    const { FLIGHTDECK_KEEP_SANDBOX: _k, ...base } = process.env;
+    const r = spawnSync(
+      "bash",
+      ["-c", `set -uo pipefail; . "$1"; sandbox_new_parent || exit 90; ROOT="$SANDBOX_PARENT/sandbox"; sandbox_from_tracked "$2" "$ROOT" >/dev/null || exit 91; ${body}`, "_", lib, host],
+      { encoding: "utf8", env: { ...base, TMPDIR: tmp, ...env } },
+    );
+    return { r, tmp, out: `${r.stdout}${r.stderr}` };
+  }
+
+  it("arming the .env.supabase cleanup does not replace the parent's removal; the exit code survives", () => {
+    const { r, tmp } = inShell(
+      "trap-both",
+      'sandbox_arm_pg_env_cleanup "$ROOT"; sandbox_add_pg_env "$2" "$ROOT"; [ -f "$ROOT/flightdeck/.env.supabase" ] || exit 92; exit 5',
+    );
+    expect(r.status, r.stderr).toBe(5);
+    expect(ls(tmp)).toEqual([]);
+  });
+
+  it("with FLIGHTDECK_KEEP_SANDBOX=1 the sandbox stays but .env.supabase is still removed", () => {
+    const { r, tmp, out } = inShell(
+      "trap-keep",
+      'sandbox_arm_pg_env_cleanup "$ROOT"; sandbox_add_pg_env "$2" "$ROOT"; exit 0',
+      { FLIGHTDECK_KEEP_SANDBOX: "1" },
+    );
+    expect(r.status, r.stderr).toBe(0);
+    const [parent] = ls(tmp);
+    const root = path.join(tmp, parent!, "sandbox");
+    expect(out).toContain(`sandbox kept (FLIGHTDECK_KEEP_SANDBOX=1): ${root}`);
+    expect(fs.existsSync(path.join(root, "flightdeck/server/subapps/registry.ts"))).toBe(true);
+    expect(fs.existsSync(path.join(root, "flightdeck/.env.supabase"))).toBe(false);
+  });
+
+  it("an interrupted run (SIGTERM, SIGINT) still removes the parent", () => {
+    for (const sig of ["TERM", "INT"]) {
+      const { r, tmp, out } = inShell(
+        `trap-${sig.toLowerCase()}`,
+        `sandbox_arm_pg_env_cleanup "$ROOT"; sandbox_add_pg_env "$2" "$ROOT"; [ -f "$ROOT/.git/studio-sandbox" ] && echo "built=$SANDBOX_PARENT"; kill -${sig} $$; sleep 5; exit 0`,
+      );
+      // It really was built (not a run that died before the sandbox existed)...
+      expect(out, sig).toContain(`built=${tmp}/fd-studio.`);
+      // ...then interrupted, and nothing is left.
+      expect(r.status, `${sig}: ${r.stderr}`).not.toBe(0);
+      expect(ls(tmp), sig).toEqual([]);
+    }
+  });
+
+  it("never removes a SANDBOX_PARENT the caller's environment supplied", () => {
+    const precious = fs.mkdtempSync(path.join(work, "caller-parent-"));
+    write(precious, "keep.txt", "keep\n");
+    const lib2 = path.join(STUDIO, "scripts", "sandbox-lib.sh");
+    const r = spawnSync("bash", ["-c", '. "$1"; sandbox_arm_cleanup; exit 0', "_", lib2], {
+      encoding: "utf8",
+      env: { ...process.env, SANDBOX_PARENT: precious },
+    });
+    expect(r.status, r.stderr).toBe(0);
+    expect(fs.existsSync(path.join(precious, "keep.txt"))).toBe(true);
+  });
+});
+
+describe("scripts/promote.sh writes its logs and record to the run directory, not the sandbox", () => {
+  // Steps [1/6]–[6/6] cannot run inside this suite (step 1 IS this suite), so
+  // the paths are pinned in the source: every log and the default RECORD are
+  // under $RUN_DIR, which outlives the sandbox's removal.
+  const src = fs.readFileSync(path.join(STUDIO, "scripts", "promote.sh"), "utf8");
+  const code = src.split("\n").filter((l) => !l.trimStart().startsWith("#")).join("\n");
+  it("defaults RECORD into $RUN_DIR and writes no log under $ROOT", () => {
+    expect(code).toMatch(/^RECORD="\$\{RECORD:-\$RUN_DIR\/compliance-record\.json\}"$/m);
+    expect(code).not.toMatch(/\$ROOT\/[\w.-]+\.(log|json)/);
+    expect(code).not.toMatch(/\/tmp\/fd-promote/);
+  });
+
+  it("a full run (npx/npm stubbed) leaves the record and every log in one mode-700 run dir, and no sandbox", () => {
+    // `npx`/`npm` are stubs on PATH that run nothing (the approach of
+    // packages/compliance/src/__tests__/promote-host-root.test.ts), so steps
+    // [1/6]–[6/6] all execute without running this suite recursively.
+    const host = makeHost("full-host", true);
+    const bin = path.join(work, "full-bin");
+    fs.mkdirSync(bin);
+    for (const name of ["npx", "npm"]) {
+      write(bin, name, '#!/usr/bin/env bash\n[ "$1 $2" = "run redteam" ] && echo "7/7 planted violations produced a BLOCKING finding"\nexit 0\n', 0o755);
+    }
+    const tmp = fs.mkdtempSync(path.join(work, "tmpdir-"));
+    const runs = path.join(work, "full-runs");
+    const { status, out } = run("promote.sh", {
+      HOST_REPO: host,
+      SPEC: WC_CLOCK_SPEC,
+      TMPDIR: tmp,
+      STUDIO_RUNS_DIR: runs,
+      FLIGHTDECK_GATE_POSTGRES: "0",
+      PATH: `${bin}${path.delimiter}${process.env["PATH"] ?? ""}`,
+    });
+    // The stubbed codegen emits nothing, so generate-and-mount fails: BLOCKED.
+    expect(status, out).toBe(1);
+    const [runDir, ...more] = ls(runs);
+    expect(more).toEqual([]);
+    expect(runDir).toMatch(/^\d{8}T\d{6}Z-promote\.[A-Za-z0-9]{6}$/);
+    const dir = path.join(runs, runDir!);
+    expect(fs.statSync(dir).mode & 0o077).toBe(0);
+    expect(ls(dir)).toEqual(["build.log", "codegen.log", "compliance-record.json", "host-gate.log", "redteam.log", "studio-tests.log"]);
+    const record = JSON.parse(fs.readFileSync(path.join(dir, "compliance-record.json"), "utf8"));
+    expect(record.schema).toBe("studio-compliance-record/1");
+    expect(record.passed).toContain("host-gate");
+    expect(out).toContain(`Record: ${dir}/compliance-record.json`);
+    expect(ls(tmp).filter((n) => n.startsWith("fd-studio."))).toEqual([]);
+  }, 60_000);
 });

@@ -377,8 +377,12 @@ Run the gate and read the record:
 ```bash
 HOST_REPO=/Users/you/project-contract SPEC=fixtures/wc-clock.spec.json \
   bash scripts/promote.sh
-cat /tmp/fd-promote/compliance-record.json
+cat "$(ls -d .studio/runs/*-promote.* | tail -1)/compliance-record.json"
 ```
+
+The sandbox is a private `mktemp -d` directory, removed when the run ends
+(`FLIGHTDECK_KEEP_SANDBOX=1` keeps it and prints where); the logs and the
+record stay in `.studio/runs/<stamp>-promote.*/` (gitignored, mode 700).
 
 Today, here, it ends (this record is from BEFORE the two pip installs; the four
 Studio stacks pass, the host stack does not):

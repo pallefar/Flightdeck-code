@@ -74,6 +74,8 @@ function runPromote(name: string, extraEnv: Record<string, string>): string[] {
     HOST_REPO: host,
     SPEC,
     SANDBOX: path.join(tmp, name, "sandbox"),
+    // The run's logs and record: kept out of this checkout's .studio/runs.
+    STUDIO_RUNS_DIR: path.join(tmp, name, "runs"),
     ...extraEnv,
   });
   spawnSync("bash", [PROMOTE], { env, encoding: "utf8", timeout: 60_000 });
