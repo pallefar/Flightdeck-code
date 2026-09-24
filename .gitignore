@@ -1,5 +1,6 @@
-# dependencies
-node_modules/
+# dependencies — no trailing slash: worktrees share one install through a
+# node_modules SYMLINK, and `node_modules/` only matches directories.
+node_modules
 
 # build output
 dist/
