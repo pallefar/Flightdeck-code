@@ -65,6 +65,7 @@ describe("the emitted manifest", () => {
       capabilities: ["read:contracts", "write:inbox-proposal"],
       visibleToRoles: ["hr_preparer", "hr_reviewer", "wc_liaison", "admin"],
       settingsPanel: { tier: "workspace-admin", webComponentId: "wc-clock", label: "Clock defaults" },
+      generatedBy: "flightdeck-studio",
     });
   });
 
@@ -88,6 +89,43 @@ describe("the emitted manifest", () => {
     expect(source).toContain('import { registerWcClockRoutes } from "./routes/index.js";');
     expect(source).toContain("initSchema: (db) => applyWcClockSchema(db)");
     expect(source).toContain("registerRoutes: (app, ctx) => registerWcClockRoutes(app, ctx)");
+  });
+});
+
+/** ⛔ D-036 (option b, fail-closed): a generated mini-app is OFF by default at
+ * the launcher layer. The host's `launcherSubappDefaults.test.ts` keys on
+ * the manifest's `generatedBy: "flightdeck-studio"` marker and then holds the
+ * sub-app to a STRICTER rule — `scripts/start-postgres.sh` may not name its
+ * kill switch at all. So codegen owes the host two things: the marker, on
+ * every manifest, as a literal the host's schema reads; and no launcher
+ * edit, ever. Both are read off the emitted FILES. */
+describe("the launcher layer — a generated mini-app is off by default (D-036)", () => {
+  const apps = [full, minimal];
+
+  it('stamps generatedBy: "flightdeck-studio" on every generated manifest, as a data literal', () => {
+    for (const app of apps) {
+      const source = fileAt(app, `server/subapps/${app.plan.id}/manifest.ts`);
+      // Code, not a comment: the host's schema reads the field, not the prose.
+      expect(stripComments(source)).toContain('  generatedBy: "flightdeck-studio",\n');
+      const data = readEmittedManifest(source);
+      expect(data["generatedBy"]).toBe("flightdeck-studio");
+      expect(assertManifestWouldBoot(data).generatedBy).toBe("flightdeck-studio");
+    }
+  });
+
+  it("never emits a start-postgres.sh file or patch, in any write target", () => {
+    for (const app of apps) {
+      expect(app.files.map((f) => f.path).filter((p) => /start-postgres/.test(p))).toEqual([]);
+    }
+  });
+
+  it("never names its own kill switch in code bound for the host — so never switches it on, in any form", () => {
+    for (const app of apps) {
+      const named = new RegExp(`(?<![A-Za-z0-9_])${app.plan.envVar}(?![A-Za-z0-9_])`);
+      for (const file of app.files.filter((f) => f.kind !== "standalone")) {
+        expect({ path: file.path, names: named.test(stripComments(file.contents)) }).toEqual({ path: file.path, names: false });
+      }
+    }
   });
 });
 

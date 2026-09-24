@@ -22,6 +22,15 @@ import { CAPABILITY_SCOPES, HOST_VERSION, NAV_SECTIONS, SUBAPP_ID_RE, WORKSPACE_
 
 const ROUTE_PREFIX_RE = /^\/api\/apps\/[a-z0-9-]+$/;
 
+/** ⛔ D-036 (option b, fail-closed). The marker codegen stamps on every
+ * manifest it generates, exactly as the host's `subAppManifestSchema`
+ * declares it: `z.literal("flightdeck-studio").optional()`. The host's
+ * `tests/subapps/launcherSubappDefaults.test.ts` keys on this exact string
+ * and holds a marked sub-app to a STRICTER launcher rule — off by default,
+ * its kill switch never named in `scripts/start-postgres.sh`. It grants
+ * nothing; a hand-written manifest omits it. */
+export const GENERATED_BY = "flightdeck-studio" as const;
+
 const settingsPanelSchema = z.object({
   tier: z.enum(["workspace-admin", "super-admin"]),
   webComponentId: z.string().min(1),
@@ -44,6 +53,7 @@ export const subAppManifestSchema = z.object({
   capabilities: z.array(z.enum(CAPABILITY_SCOPES)),
   visibleToRoles: z.array(z.enum(WORKSPACE_ROLES)).min(1),
   settingsPanel: settingsPanelSchema.optional(),
+  generatedBy: z.literal(GENERATED_BY).optional(),
 });
 
 export type SubAppManifestData = z.infer<typeof subAppManifestSchema>;

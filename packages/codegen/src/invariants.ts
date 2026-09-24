@@ -19,6 +19,7 @@
  * emitted file of each kind may reach, full stop, and anything else is a
  * violation whether or not it looked dangerous. */
 import { tablePrefix, underscored } from "./naming";
+import { GENERATED_BY } from "./manifest-rules";
 import { isMiniApp } from "./profile";
 import type { SubAppPlan } from "./plan";
 
@@ -158,11 +159,50 @@ export function checkEmittedInvariants(files: readonly GeneratedFile[], plan: Su
   }
 
   checkProfile(files, code, plan, add);
+  checkLauncherOffByDefault(files, code, plan, add);
 
   return violations;
 }
 
 type Add = (file: string, rule: string, detail: string) => void;
+
+/** ⛔ D-036 (option b, fail-closed): A GENERATED MINI-APP IS OFF BY DEFAULT AT
+ * THE LAUNCHER LAYER. Read off the files, like everything else here.
+ *
+ *   - "generated-marker": the manifest carries `generatedBy: "flightdeck-studio"`
+ *     as CODE. The host's `launcherSubappDefaults.test.ts` keys on that exact
+ *     literal to hold the sub-app to its stricter rule; a manifest without it
+ *     would be judged as hand-written, and a comment is not a field.
+ *   - "launcher-off-by-default": nothing in the file set touches
+ *     `scripts/start-postgres.sh` (not the file, not a patch to it, whatever
+ *     its kind), and no file bound for the host names this sub-app's own
+ *     kill switch in code at all (so none can set it to true, in any
+ *     form). Enabling a generated mini-app is a person's act at launch
+ *     time, never a line codegen writes. The standalone harness is
+ *     exempt from the second half only: it runs on its own, is never written
+ *     into a host checkout (`planWrites`), and needs layer 1 on to run at all. */
+function checkLauncherOffByDefault(files: readonly GeneratedFile[], code: ReadonlyMap<string, string>, plan: SubAppPlan, add: Add): void {
+  const manifest = files.find((f) => f.kind === "manifest");
+  if (manifest !== undefined && !(code.get(manifest.path) ?? "").includes(`  generatedBy: "${GENERATED_BY}",\n`)) {
+    add(manifest.path, "generated-marker", `a generated manifest must carry \`generatedBy: "${GENERATED_BY}"\` as a data field — the host's launcher rule keys on it (D-036)`);
+  }
+
+  // STRICTER than "does not set it to true": host-bound CODE never names the
+  // kill switch at all. The guard reads it through `subAppKillSwitchEnabled`
+  // (killSwitch.ts derives the name), so a host-bound mention is either an
+  // enable — `X = "true"`, `process.env["X"] = "true"`, `{ X: "true" }`,
+  // `X: true` in YAML/JSON — or a read around the leaf; both are refused.
+  // Comments are prose (the manifest banner names the variable) and do not count.
+  const named = new RegExp(`(?<![A-Za-z0-9_])${plan.envVar}(?![A-Za-z0-9_])`);
+  for (const file of files) {
+    if (/(^|\/)start-postgres\.sh(\.[A-Za-z0-9]+)?$/.test(file.path)) {
+      add(file.path, "launcher-off-by-default", "codegen never edits scripts/start-postgres.sh — a generated mini-app is off by default at the launcher layer (D-036)");
+    }
+    if (file.kind !== "standalone" && named.test(code.get(file.path) ?? file.contents)) {
+      add(file.path, "launcher-off-by-default", `names the kill switch ${plan.envVar} in code — only killSwitch.ts reads it, a generated mini-app is off by default, and switching it on is a person's act at launch time (D-036)`);
+    }
+  }
+}
 
 /** ⭐ THE MINI-APP PROPERTY, CHECKED ON THE OUTPUT.
  *

@@ -172,6 +172,57 @@ describe("the emitter-shaped mistakes", () => {
   });
 });
 
+describe("the launcher layer — off by default (D-036)", () => {
+  it("catches a manifest that lost its generatedBy marker", () => {
+    const files = corrupt(MANIFEST, (s) => s.replace('  generatedBy: "flightdeck-studio",\n', ""));
+    expect(rules(files)).toContain("generated-marker");
+  });
+
+  it("does not accept the marker mentioned only in a comment", () => {
+    const files = corrupt(MANIFEST, (s) =>
+      s.replace('  generatedBy: "flightdeck-studio",\n', '  // generatedBy: "flightdeck-studio",\n'),
+    );
+    expect(rules(files)).toContain("generated-marker");
+  });
+
+  it("catches a start-postgres.sh edit in the file set, whatever its kind", () => {
+    for (const path of ["scripts/start-postgres.sh", "scripts/start-postgres.sh.patch"]) {
+      const files = [...clean, { path, contents: "", kind: "patch" as const }];
+      expect(rules(files)).toContain("launcher-off-by-default");
+    }
+  });
+
+  it("catches a host-bound file that switches the kill switch on", () => {
+    const files = corrupt(GUARD, (s) => `${s}\nprocess.env.SUBAPP_WC_CLOCK_ENABLED = "true";\n`);
+    expect(rules(files)).toContain("launcher-off-by-default");
+  });
+
+  it("catches the kill switch set by bracket assignment", () => {
+    const files = corrupt(GUARD, (s) => `${s}\nprocess.env["SUBAPP_WC_CLOCK_ENABLED"] = "true";\n`);
+    expect(rules(files)).toContain("launcher-off-by-default");
+  });
+
+  it("catches the kill switch set through an object literal", () => {
+    const files = corrupt(GUARD, (s) => `${s}\nObject.assign(process.env, { SUBAPP_WC_CLOCK_ENABLED: "true" });\n`);
+    expect(rules(files)).toContain("launcher-off-by-default");
+  });
+
+  it("catches the kill switch set in a host-bound YAML or JSON file", () => {
+    for (const [path, contents] of [
+      ["docker-compose.override.yml", "services:\n  app:\n    environment:\n      SUBAPP_WC_CLOCK_ENABLED: true\n"],
+      ["config/subapps.json", '{ "SUBAPP_WC_CLOCK_ENABLED": true }\n'],
+    ] as const) {
+      const files = [...clean, { path, contents, kind: "patch" as const }];
+      expect(rules(files), path).toContain("launcher-off-by-default");
+    }
+  });
+
+  it("catches host-bound code that names the kill switch at all — only killSwitch.ts reads it", () => {
+    const files = corrupt(GUARD, (s) => `${s}\nconst SWITCH = "SUBAPP_WC_CLOCK_ENABLED";\n`);
+    expect(rules(files)).toContain("launcher-off-by-default");
+  });
+});
+
 describe("comments are prose, not code", () => {
   it("does not trip on a banner that quotes the very things the rules forbid", () => {
     // The emitted route header says the file contains no template literal,

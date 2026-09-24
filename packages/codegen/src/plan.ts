@@ -35,7 +35,7 @@ import {
 } from "./spec-contract";
 import { HOST_VERSION } from "./spec-contract";
 import { tableRefusalReason, type Profile } from "./profile";
-import { assertManifestWouldBoot, type SubAppManifestData } from "./manifest-rules";
+import { GENERATED_BY, assertManifestWouldBoot, type SubAppManifestData } from "./manifest-rules";
 import * as names from "./naming";
 import { PROPOSAL_TEMPLATES, proposeOperationProblem, type ProposalTemplate } from "./proposal-templates";
 
@@ -257,6 +257,7 @@ export function planSubApp(input: unknown, options: PlanOptions = {}): SubAppPla
       ...(spec.settingsPanel
         ? { settingsPanel: { ...spec.settingsPanel, webComponentId: webModuleId } }
         : {}),
+      generatedBy: GENERATED_BY,
     },
     HOST_VERSION,
   );

@@ -96,6 +96,12 @@ const VIOLATIONS: readonly Violation[] = [
   },
   {
     rule: "FD-M003",
+    what: "a generatedBy marker other than \"flightdeck-studio\", which the host's z.literal refuses at boot (D-036)",
+    file: MANIFEST_PATH,
+    build: () => editFile(conformingSubApp(), MANIFEST_PATH, `  id: "wc-clock",`, `  id: "wc-clock",\n  generatedBy: "someone-else",`),
+  },
+  {
+    rule: "FD-M003",
     what: "a routePrefix with a sub-path, which ROUTE_PREFIX_RE rejects",
     file: MANIFEST_PATH,
     build: () => editFile(conformingSubApp(), MANIFEST_PATH, `routePrefix: "/api/apps/wc-clock"`, `routePrefix: "/api/apps/wc-clock/entries"`),

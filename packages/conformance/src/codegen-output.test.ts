@@ -99,6 +99,15 @@ describe.each(SPECS)("verifying codegen output: %s", (_name, spec) => {
       expect(finding.message.length).toBeGreaterThan(40);
       expect(finding.message).not.toContain("undefined (TS");
     }
+    // ⭐ THE MANIFEST ITSELF COMPILES against the stub. Every generated
+    // manifest carries `generatedBy: "flightdeck-studio"` (D-036); a stub
+    // that does not declare it turns that into a TS2353 excess-property
+    // finding on every sub-app codegen emits. The other defects listed above
+    // live in route code, never in the manifest, so this one is pinned.
+    const manifestPath = files.find((file) => file.path.endsWith("/manifest.ts"))?.path;
+    expect(manifestPath).toBeDefined();
+    const onManifest = report.findings.filter((finding) => finding.file === manifestPath);
+    expect(onManifest.map((finding) => `${finding.rule} ${finding.message}`), "the typecheck stage refuses the generated manifest").toEqual([]);
     // Whatever the verdict, the compiler's own words are kept.
     expect(report.stages.find((stage) => stage.name === "typecheck")?.output.length).toBeGreaterThan(0);
   }, 120_000);

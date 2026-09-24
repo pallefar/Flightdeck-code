@@ -100,6 +100,14 @@ describe("the boot rules the host applies", () => {
     expect(() => assertManifestWouldBoot({ ...base, minHostVersion: "5.10.0" }, "5.9.0")).toThrow();
   });
 
+  it('accepts the generated marker, generatedBy: "flightdeck-studio", and keeps it (D-036)', () => {
+    expect(assertManifestWouldBoot({ ...base, generatedBy: "flightdeck-studio" }).generatedBy).toBe("flightdeck-studio");
+  });
+
+  it("refuses any other generatedBy value — a literal, as the host declares it", () => {
+    expect(() => assertManifestWouldBoot({ ...base, generatedBy: "someone-else" })).toThrow(/generatedBy/);
+  });
+
   it("reports every violation at once, not just the first", () => {
     try {
       assertManifestWouldBoot({ ...base, id: "NOPE", visibleToRoles: [], icon: "" });
