@@ -10,7 +10,9 @@
  *     the prompt text cannot arrive by a field nobody meant to add;
  *   - every value is an identifier shaped by a pattern, so it cannot arrive
  *     inside a field that exists either;
- *   - the operator is a named human, by the same rule approvals use;
+ *   - the operator is the one this Studio is CONFIGURED for (STUDIO_OPERATOR),
+ *     name-shaped and a named human by the same rule approvals use — never a
+ *     string the caller made up, and the trail fails closed without it;
  *   - file 600, directory 700, and O_APPEND so concurrent writers never tear.
  */
 import fs from "node:fs";
@@ -24,6 +26,8 @@ import { STUDIO_ROOT } from "../index";
 
 const OPERATOR = "Karsten Haldan";
 const SHA = "a".repeat(64);
+/** The operator this Studio is configured for — the only name the trail records. */
+const ENV = { STUDIO_OPERATOR: OPERATOR };
 
 let root: string;
 beforeEach(() => {
@@ -49,7 +53,7 @@ describe("where the trail lives", () => {
   });
 
   it("creates the directory 700 and the file 600", async () => {
-    await appendAudit({ action: "promote-start", operator: OPERATOR, runId: "r-1" }, { studioRoot: root });
+    await appendAudit({ action: "promote-start", operator: OPERATOR, runId: "r-1" }, { studioRoot: root, env: ENV });
     expect(mode(path.join(root, ".studio"))).toBe(0o700);
     expect(mode(auditFileFor(root))).toBe(0o600);
   });
@@ -59,7 +63,7 @@ describe("where the trail lives", () => {
     fs.chmodSync(path.join(root, ".studio"), 0o755);
     fs.writeFileSync(auditFileFor(root), "");
     fs.chmodSync(auditFileFor(root), 0o644);
-    await appendAudit({ action: "prune", operator: OPERATOR, counts: { runs: 3, worktrees: 0 } }, { studioRoot: root });
+    await appendAudit({ action: "prune", operator: OPERATOR, counts: { runs: 3, worktrees: 0 } }, { studioRoot: root, env: ENV });
     expect(mode(path.join(root, ".studio"))).toBe(0o700);
     expect(mode(auditFileFor(root))).toBe(0o600);
   });
@@ -69,7 +73,7 @@ describe("where the trail lives", () => {
     const elsewhere = path.join(root, "elsewhere.txt");
     fs.writeFileSync(elsewhere, "");
     fs.symlinkSync(elsewhere, auditFileFor(root));
-    await expect(appendAudit({ action: "ship", operator: OPERATOR }, { studioRoot: root })).rejects.toThrow();
+    await expect(appendAudit({ action: "ship", operator: OPERATOR }, { studioRoot: root, env: ENV })).rejects.toThrow();
     expect(fs.readFileSync(elsewhere, "utf8")).toBe("");
   });
 
@@ -78,7 +82,7 @@ describe("where the trail lives", () => {
     const grants = path.join(root, ".studio", "grants.json");
     fs.writeFileSync(grants, '{"rows":[]}\n');
     const before = fs.readFileSync(grants);
-    await appendAudit({ action: "signoff", operator: OPERATOR, specSha256: SHA, runId: "r-9" }, { studioRoot: root });
+    await appendAudit({ action: "signoff", operator: OPERATOR, specSha256: SHA, runId: "r-9" }, { studioRoot: root, env: ENV });
     expect(fs.readFileSync(grants).equals(before)).toBe(true);
   });
 });
@@ -93,7 +97,7 @@ describe("what one entry is", () => {
         runId: "2026-09-24T10-00-00Z-promote",
         recordVerdict: "not-certified",
       },
-      { studioRoot: root, now: () => new Date("2026-09-24T10:00:00.000Z") },
+      { studioRoot: root, env: ENV, now: () => new Date("2026-09-24T10:00:00.000Z") },
     );
     const all = lines();
     expect(all).toHaveLength(1);
@@ -119,7 +123,7 @@ describe("what one entry is", () => {
       "prune",
     ]);
     for (const action of AUDIT_ACTIONS) {
-      await appendAudit({ action, operator: OPERATOR }, { studioRoot: root });
+      await appendAudit({ action, operator: OPERATOR }, { studioRoot: root, env: ENV });
     }
     expect(lines()).toHaveLength(AUDIT_ACTIONS.length);
   });
@@ -128,23 +132,37 @@ describe("what one entry is", () => {
     await expect(
       appendAudit(
         { action: "promote-start", operator: OPERATOR, prompt: "Show Anna's salary" } as never,
-        { studioRoot: root },
+        { studioRoot: root, env: ENV },
       ),
     ).rejects.toThrow();
     expect(fs.existsSync(auditFileFor(root))).toBe(false);
   });
 
   it("⭐ the refusal does not echo the value it refused", async () => {
+    // The secret goes through fields zod CHECKS THE VALUE of, not only an
+    // extra key: zod's own enum/regex messages quote the received value, and
+    // an unrecognised-key message never does — so a key alone cannot catch
+    // an echo.
     const secret = "Anna Kowalski earns 91000";
-    let message = "";
-    try {
-      await appendAudit({ action: "ship", operator: OPERATOR, note: secret } as never, { studioRoot: root });
-    } catch (error) {
-      message = (error as Error).message;
+    const refusals: Array<Record<string, unknown>> = [
+      { action: "ship", operator: OPERATOR, note: secret },
+      { action: "ship", operator: OPERATOR, recordVerdict: secret },
+      { action: secret, operator: OPERATOR },
+      { action: "ship", operator: OPERATOR, branch: secret },
+      { action: "ship", operator: secret },
+    ];
+    for (const input of refusals) {
+      let message = "";
+      try {
+        await appendAudit(input as never, { studioRoot: root, env: ENV });
+      } catch (error) {
+        message = (error as Error).message;
+      }
+      expect(message).not.toBe("");
+      expect(message).not.toContain("Anna");
+      expect(message).not.toContain("91000");
     }
-    expect(message).not.toBe("");
-    expect(message).not.toContain("Anna");
-    expect(message).not.toContain("91000");
+    expect(fs.existsSync(auditFileFor(root))).toBe(false);
   });
 
   it("⭐ free text cannot ride in a field that exists", async () => {
@@ -158,10 +176,12 @@ describe("what one entry is", () => {
       { counts: { runs: -1 } },
       { counts: { runs: 1, names: 2 } },
       { action: "delete-everything" },
+      { operator: "Show Anna Kowalski's salary of 91000 EUR" },
+      { operator: "Anna Kowalski earns 91000" },
     ];
     for (const extra of bad) {
       await expect(
-        appendAudit({ action: "ship", operator: OPERATOR, ...extra } as never, { studioRoot: root }),
+        appendAudit({ action: "ship", operator: OPERATOR, ...extra } as never, { studioRoot: root, env: ENV }),
       ).rejects.toThrow();
     }
     expect(fs.existsSync(auditFileFor(root))).toBe(false);
@@ -169,15 +189,57 @@ describe("what one entry is", () => {
 
   it("the operator is a named human — a role, a service or an initial is refused", async () => {
     for (const operator of ["", "system", "studio", "bot", "K"]) {
-      await expect(appendAudit({ action: "ship", operator }, { studioRoot: root })).rejects.toThrow();
+      await expect(appendAudit({ action: "ship", operator }, { studioRoot: root, env: ENV })).rejects.toThrow();
     }
     expect(fs.existsSync(auditFileFor(root))).toBe(false);
+  });
+
+  it("⭐ the operator is the CONFIGURED one — a caller cannot put any other string there", async () => {
+    // A name-shaped sentence is still not the operator this Studio runs as.
+    for (const operator of ["Show Anna Kowalski's salary", "Anna Kowalski"]) {
+      await expect(appendAudit({ action: "ship", operator }, { studioRoot: root, env: ENV })).rejects.toThrow();
+    }
+    expect(fs.existsSync(auditFileFor(root))).toBe(false);
+  });
+
+  it("⭐ fails CLOSED when STUDIO_OPERATOR is unset, blank or not a named human", async () => {
+    for (const env of [{}, { STUDIO_OPERATOR: "   " }, { STUDIO_OPERATOR: "system" }]) {
+      await expect(appendAudit({ action: "ship", operator: OPERATOR }, { studioRoot: root, env })).rejects.toThrow();
+    }
+    // Even a matching pair is refused when the configured value is not a name.
+    const sentence = "Anna Kowalski earns 91000";
+    await expect(
+      appendAudit({ action: "ship", operator: sentence }, { studioRoot: root, env: { STUDIO_OPERATOR: sentence } }),
+    ).rejects.toThrow();
+    expect(fs.existsSync(auditFileFor(root))).toBe(false);
+  });
+
+  it("the operator refusal does not echo either name", async () => {
+    let message = "";
+    try {
+      await appendAudit(
+        { action: "ship", operator: "Anna Kowalski" },
+        { studioRoot: root, env: { STUDIO_OPERATOR: "Berit Sørensen" } },
+      );
+    } catch (error) {
+      message = (error as Error).message;
+    }
+    expect(message).not.toBe("");
+    expect(message).not.toContain("Anna");
+    expect(message).not.toContain("Berit");
+  });
+
+  it("names with accents, apostrophes, hyphens and dots are names", async () => {
+    for (const name of ["Zoë O'Brien-Łukasiewicz", "J. R. Sørensen", "Nguyễn Thị Minh"]) {
+      await appendAudit({ action: "signoff", operator: name }, { studioRoot: root, env: { STUDIO_OPERATOR: name } });
+    }
+    expect(lines()).toHaveLength(3);
   });
 
   it("an entry names a branch and a commit when a ship produced them", async () => {
     await appendAudit(
       { action: "ship", operator: OPERATOR, specSha256: SHA, branch: "studio/leave-desk-aaaaaaaa", commit: "0123abc" },
-      { studioRoot: root },
+      { studioRoot: root, env: ENV },
     );
     expect(JSON.parse(lines()[0] as string)).toMatchObject({ branch: "studio/leave-desk-aaaaaaaa", commit: "0123abc" });
   });
@@ -187,7 +249,7 @@ describe("append-only under concurrency", () => {
   it("⭐ 50 concurrent appends give 50 parseable lines, none torn, none lost", async () => {
     await Promise.all(
       Array.from({ length: 50 }, (_, i) =>
-        appendAudit({ action: "preview-start", operator: OPERATOR, runId: `run-${i}` }, { studioRoot: root }),
+        appendAudit({ action: "preview-start", operator: OPERATOR, runId: `run-${i}` }, { studioRoot: root, env: ENV }),
       ),
     );
     const all = lines();
@@ -197,9 +259,9 @@ describe("append-only under concurrency", () => {
   });
 
   it("never rewrites what is already there", async () => {
-    await appendAudit({ action: "promote-start", operator: OPERATOR, runId: "first" }, { studioRoot: root });
+    await appendAudit({ action: "promote-start", operator: OPERATOR, runId: "first" }, { studioRoot: root, env: ENV });
     const first = fs.readFileSync(auditFileFor(root), "utf8");
-    await appendAudit({ action: "promote-done", operator: OPERATOR, runId: "first" }, { studioRoot: root });
+    await appendAudit({ action: "promote-done", operator: OPERATOR, runId: "first" }, { studioRoot: root, env: ENV });
     expect(fs.readFileSync(auditFileFor(root), "utf8").startsWith(first)).toBe(true);
   });
 });
@@ -209,7 +271,7 @@ describe("reading it back", () => {
     for (let i = 0; i < 5; i += 1) {
       await appendAudit(
         { action: "preview-start", operator: OPERATOR, runId: `run-${i}` },
-        { studioRoot: root, now: () => new Date(Date.UTC(2026, 8, 24, 10, i)) },
+        { studioRoot: root, env: ENV, now: () => new Date(Date.UTC(2026, 8, 24, 10, i)) },
       );
     }
     const { entries, unreadable } = await readAudit(3, { studioRoot: root });
@@ -222,9 +284,9 @@ describe("reading it back", () => {
   });
 
   it("a line that does not parse against the schema is COUNTED, never returned and never silently dropped", async () => {
-    await appendAudit({ action: "ship", operator: OPERATOR }, { studioRoot: root });
+    await appendAudit({ action: "ship", operator: OPERATOR }, { studioRoot: root, env: ENV });
     fs.appendFileSync(auditFileFor(root), '{"at":"x","action":"ship","operator":"Karsten Haldan","prompt":"p"}\n{torn\n');
-    await appendAudit({ action: "signoff", operator: OPERATOR }, { studioRoot: root });
+    await appendAudit({ action: "signoff", operator: OPERATOR }, { studioRoot: root, env: ENV });
     const { entries, unreadable } = await readAudit(10, { studioRoot: root });
     expect(entries.map((e) => e.action)).toEqual(["signoff", "ship"]);
     expect(unreadable).toBe(2);

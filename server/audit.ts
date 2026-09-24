@@ -24,13 +24,17 @@
  *
  *   - `.strict()`: an extra key — `prompt`, `note`, `detail` — is a THROW,
  *     never a strip. Stripping would make the mistake silent;
- *   - every field that exists is an identifier with a pattern (a sha256, a
- *     run id, a git ref, a commit, a verdict CODE, counts), so free text
- *     cannot ride in a field that exists either;
+ *   - every other field is an identifier with a pattern (a sha256, a run id,
+ *     a git ref, a commit, a verdict CODE, counts), so free text cannot ride
+ *     in a field that exists either;
+ *   - `operator` is the one field that holds words, so the CALLER does not
+ *     choose it: it must equal the configured `STUDIO_OPERATOR`, which must
+ *     itself be name-shaped (letters, marks, spaces, `. ' -`; no digits) and
+ *     a named human by the rule approvals use (`isNamedHuman`) — a sign-off
+ *     by "system" is not a sign-off. With `STUDIO_OPERATOR` unset or not a
+ *     name, NOTHING is written: the trail fails closed;
  *   - the refusal names issue PATHS and CODES only. `zod`'s own messages can
- *     quote the value they refused, and the value might be the prompt;
- *   - `operator` is a named human by the same rule approvals use
- *     (`isNamedHuman`), because a sign-off by "system" is not a sign-off.
+ *     quote the value they refused, and the value might be the prompt.
  *
  * ── APPEND-ONLY ─────────────────────────────────────────────────────────
  *
@@ -86,15 +90,21 @@ export const RECORD_VERDICTS = ["ready", "blocked", "not-certified"] as const;
 
 const count = z.number().int().min(0).max(1_000_000);
 
+/**
+ * A person's name, as a shape: starts with a letter, then letters, combining
+ * marks, spaces and `. ' ’ -`. No digits, no punctuation that makes a
+ * sentence — "Zoë O'Brien-Łukasiewicz" passes, "earns 91000" cannot.
+ */
+const operatorName = z
+  .string()
+  .max(120)
+  .regex(/^\p{L}[\p{L}\p{M} .'’-]+$/u)
+  .refine((name) => isNamedHuman(name));
+
 const auditInput = z
   .object({
     action: z.enum(AUDIT_ACTIONS),
-    operator: z
-      .string()
-      .min(2)
-      .max(120)
-      .regex(/^[^\u0000-\u001f\u007f]+$/)
-      .refine((name) => isNamedHuman(name)),
+    operator: operatorName,
     specSha256: z
       .string()
       .regex(/^[0-9a-f]{64}$/)
@@ -128,12 +138,30 @@ export interface AuditOptions {
   readonly studioRoot?: string;
   /** The clock, injectable for tests. */
   readonly now?: () => Date;
+  /** Where `STUDIO_OPERATOR` is read from. Defaults to `process.env`. */
+  readonly env?: Readonly<Record<string, string | undefined>>;
 }
 
 /** Paths and codes only — never a received value. */
 function refusal(error: z.ZodError): Error {
   const where = error.issues.map((i) => `${i.path.join(".") || "(entry)"}:${i.code}`).join(", ");
   return new Error(`studio audit: entry refused — ${where}`);
+}
+
+/**
+ * The operator this Studio is configured for, or a throw. Fails CLOSED: no
+ * configured operator means no entry, rather than an entry by whoever the
+ * caller says. Neither name is echoed — both are a person's name.
+ */
+function requireConfiguredOperator(claimed: string, env: Readonly<Record<string, string | undefined>>): void {
+  const configured = env["STUDIO_OPERATOR"]?.trim() ?? "";
+  if (configured === "") throw new Error("studio audit: entry refused — STUDIO_OPERATOR is not set");
+  if (!operatorName.safeParse(configured).success) {
+    throw new Error("studio audit: entry refused — STUDIO_OPERATOR is not a named human");
+  }
+  if (claimed !== configured) {
+    throw new Error("studio audit: entry refused — operator is not the configured STUDIO_OPERATOR");
+  }
 }
 
 /** Creates `.studio` 700, or tightens it; refuses anything that is not a real directory. */
@@ -151,6 +179,7 @@ function ensureAuditDir(dir: string): void {
 export async function appendAudit(input: AuditInput, options: AuditOptions = {}): Promise<AuditEntry> {
   const parsed = auditInput.safeParse(input);
   if (!parsed.success) throw refusal(parsed.error);
+  requireConfiguredOperator(parsed.data.operator, options.env ?? process.env);
   const entry: AuditEntry = { at: (options.now ?? (() => new Date()))().toISOString(), ...parsed.data };
   const line = Buffer.from(`${JSON.stringify(entry)}\n`, "utf8");
 
