@@ -3,7 +3,12 @@
  * Each Studio turn that produced a sub-app carries a chip back to that
  * round. Rounds are append-only, so every chip stays live for the whole
  * session — which is what makes "show me what round 2 looked like" a click
- * rather than a regeneration. */
+ * rather than a regeneration.
+ *
+ * Turn text is plain text, drawn as written — no markdown, not even bold
+ * (unseen#88). A Studio turn quotes the person's prompt back and can carry
+ * error output (globs like `src/**\/*.ts`), so markup in it cannot be told
+ * apart from what somebody typed; rendering it restyled their words. */
 import { useEffect, useRef, useState } from "react";
 import { runProgress, type Run } from "../run";
 import type { Round, Turn } from "../types";
