@@ -118,18 +118,36 @@ static import list. Missing it means the dictionary silently falls back to Engli
 
 ## 8. The i18n fence is exact equality, and it will bite
 
-`tests/subapps/i18nSplit.test.ts:709` freezes the total:
+`flightdeck/tests/subapps/i18nSplit.test.ts` freezes the total dictionary size
+and each sub-app's key count as integer constants, and asserts them with `toBe`.
 
-```ts
-const TOTAL_KEYS = 4071;
-expect(Object.keys(DICT).length).toBe(TOTAL_KEYS);
-```
+Measured at host `9d25a078` (on `integration/unified-2026-09-22`; the commit the
+live Mac checkout ran on 2026-09-24):
 
-plus per-sub-app exact counts — `ADVANTAGE_KEYS = 480`, `DOCUSIGN_KEYS = 376`,
-`MAPS_AND_ASSISTANT_KEYS = 722`. **Exact**, not `toBeGreaterThan`. So a generated
-sub-app that ships even one i18n key turns a host test red until the counts are
-updated in the same change. The generator must emit that count delta, or emit no
-i18n at all.
+| Line | Host source |
+|---|---|
+| 978 | `const TOTAL_KEYS = 4582;` |
+| 1113 | `const ADVANTAGE_KEYS = 600;` |
+| 1158 | `const DOCUSIGN_KEYS = 429;` |
+| 1213 | `const MAPS_AND_ASSISTANT_KEYS = 760;` |
+| 1222 | `const KNOWLEDGE_GUARDIAN_KEYS = 8;` |
+| 1223 | `const POA_KEYS = 50;` |
+| 1224 | `const DOCPREVIEW_KEYS = 4;` |
+| 1230 | `expect(Object.keys(DICT).length).toBe(TOTAL_KEYS);` |
+
+**These numbers move** with every key any sub-app or host page adds. The tip of
+`integration/unified-2026-09-22` had already moved `TOTAL_KEYS` again by the time
+this table was written. Re-read the host file before you rely on a number. The
+host file's own notes say each count is **re-counted from the live dictionary in
+a separate process, never derived by addition**. `packages/conformance/src/contract-doc-drift.test.ts`
+checks this table against `git show 9d25a078:…`. It also checks that the live
+host still freezes each named count as an integer constant and asserts the
+total with `toBe`.
+
+The counts are **exact**, not `toBeGreaterThan`. So a generated sub-app that
+ships even one i18n key turns a host test red until the counts are updated in
+the same change. The generator must emit that count delta, or emit no i18n at
+all.
 
 The floor is legitimately i18n-free: `shell-reference` is **three files**
 (`server/subapps/shell-reference/{manifest.ts,routes.ts}` and
@@ -160,6 +178,32 @@ holds 38 files.
 `scaffold:course`) are **existing deterministic manifest-to-file generators** in this
 codebase. They already encode the house doctrine. Study them before inventing a
 generation strategy.
+
+### The host's own sub-app SDK (Phase H, host `981efc19`)
+
+Since 2026-09-20 the host publishes an authoring kit for sub-apps. It is the
+nearest prior art to Studio, and it overlaps with Studio's own conformance gate:
+
+| Piece | Host path | What it does |
+|---|---|---|
+| Contract | `docs/SUBAPP-SDK.md` | the authoring contract, measured against the five shipped sub-apps |
+| Generator | `flightdeck/scripts/scaffold-subapp.ts` (`npm run scaffold:subapp -- --id <slug>`) | writes the six files a sub-app owns, prints the host edits it will not make (registry, `web/src/i18n.ts`, `i18nSplit.test.ts`), then runs the kit on what it wrote |
+| Conformance kit | `flightdeck/server/subapps/conformance.ts` | `runSubAppConformance`: 19 checks over a manifest and its files on disk, pure, no vitest import |
+| Behavioural harness | `flightdeck/tests/subapps/conformanceHarness.ts` | boots a real server with the principals a role fence needs |
+| Platform test | `flightdeck/tests/subapps/sdkConformance.test.ts` | runs the kit over every shipped sub-app, with controls proving each check can fail |
+
+What that means for Studio, stated as fact and not as a plan:
+
+- The host kit and Studio's gate (`packages/conformance`) are **separate
+  implementations of overlapping rules**. Studio does not call the host kit, and
+  nothing checks that the two agree. A generated sub-app mounted into the host
+  meets the host kit through `sdkConformance.test.ts` in the host suite, which
+  `npm run mount` and the host gate run.
+- `scaffold:subapp` deliberately does not edit `registry.ts`. On Studio's side
+  the equivalent is codegen's registry patch
+  (`packages/codegen/src/registry-patch.ts`). `mount-in-host.sh` and
+  `promote.sh` apply it only inside their sandbox. Codegen never writes it into
+  the host.
 
 ## 12. The contamination lesson, already learned here
 
