@@ -30,6 +30,7 @@ import { GatePane } from "../components/GatePane";
 import { PreviewPane } from "../components/PreviewPane";
 import { RunPane } from "../components/RunPane";
 import { ThemeToggle } from "../components/ThemeToggle";
+import { ConnectDialog, ConnectionIndicator, connectErrorText, createConnectFlow } from "../components/ConnectDialog";
 import { Workbench } from "../Workbench";
 import { diffFileSets } from "../diff";
 import { editDraft, openDraft, saveDraft, type Draft } from "../editing";
@@ -723,5 +724,134 @@ describe("theme", () => {
     expect(light).toContain('aria-label="Switch to dark theme"');
     expect(light).not.toContain("<circle");
     expect(dark).toContain("<circle");
+  });
+});
+
+describe("the server connection: Connect dialog and Connected/Demo indicator", () => {
+  const HEALTH = { ok: true as const, model: "claude-opus-5", modelKeyConfigured: true, harnessMode: "playback" };
+  const disconnected = { status: "disconnected" as const, reason: null };
+  const connected = { status: "connected" as const, health: HEALTH };
+  const refuse = async () => ({ ok: false as const, reason: "unreachable" as const });
+
+  it("⭐ renders the dialog: a password field that the browser is told not to fill or keep", () => {
+    const out = html(<ConnectDialog state={disconnected} onConnect={refuse} onDisconnect={noop} onClose={noop} />);
+    expect(out).toContain('role="dialog"');
+    expect(out).toContain('aria-modal="true"');
+    expect(out).toContain('type="password"');
+    // HTML attribute names are case-insensitive; React 19 writes them camel-cased.
+    expect(out).toMatch(/autocomplete="off"/i);
+    expect(out).toMatch(/spellcheck="false"/i);
+    // Says where the token lives, so nobody has to guess.
+    expect(out).toContain("this tab&#x27;s memory only");
+    // Blank field: nothing to send yet.
+    expect(out).toMatch(/<button[^>]*type="submit"[^>]*disabled=""/);
+  });
+
+  it("⛔ the token field is UNCONTROLLED: no `value` attribute for React to copy a typed token into", () => {
+    // React DOM mirrors a controlled input's value into its `value` ATTRIBUTE,
+    // where CSS attribute selectors, MutationObservers and DOM snapshots can
+    // read it. An uncontrolled field renders none, and React never writes one.
+    const out = html(<ConnectDialog state={disconnected} onConnect={refuse} onDisconnect={noop} onClose={noop} />);
+    const field = /<input[^>]*type="password"[^>]*>/.exec(out)?.[0] ?? "";
+    expect(field).not.toBe("");
+    expect(field).not.toMatch(/\svalue=/);
+  });
+
+  it("says the server refused the token after a 401 dropped the connection", () => {
+    const out = html(
+      <ConnectDialog state={{ status: "disconnected", reason: "token-rejected" }} onConnect={refuse} onDisconnect={noop} onClose={noop} />,
+    );
+    expect(out).toContain('role="alert"');
+    expect(out).toContain("refused the token");
+  });
+
+  it("when connected, shows what the health probe said and offers Disconnect", () => {
+    const out = html(<ConnectDialog state={connected} onConnect={refuse} onDisconnect={noop} onClose={noop} />);
+    expect(out).toContain("claude-opus-5");
+    expect(out).toContain("playback");
+    expect(out).toContain(">Disconnect<");
+    expect(out).not.toContain('type="password"');
+  });
+
+  it("names every way a connect can fail, each differently", () => {
+    const texts = (["empty-token", "unreachable", "protocol-error", "token-rejected", "cancelled"] as const).map(
+      connectErrorText,
+    );
+    for (const text of texts) expect(text.length).toBeGreaterThan(10);
+    expect(new Set(texts).size).toBe(5);
+  });
+
+  describe("⭐ the dialog's connect flow: closing while a connect waits abandons it", () => {
+    const HEALTHY = { ok: true as const, health: HEALTH };
+    function deferred() {
+      let resolve: (r: typeof HEALTHY) => void = () => {};
+      const promise = new Promise<typeof HEALTHY>((r) => {
+        resolve = r;
+      });
+      return { promise, resolve };
+    }
+
+    it("Cancel/Escape/backdrop during a pending connect tells the client to drop it, and the late answer is ignored", async () => {
+      const answer = deferred();
+      const calls: string[] = [];
+      const flow = createConnectFlow({
+        connect: () => answer.promise,
+        abandon: () => calls.push("abandon"),
+        close: () => calls.push("close"),
+      });
+      const submitted = flow.submit("secret");
+      expect(flow.pending).toBe(true);
+      flow.close();
+      expect(calls).toEqual(["abandon", "close"]);
+      answer.resolve(HEALTHY);
+      // The dialog is gone; nothing may act on the answer.
+      expect(await submitted).toBeNull();
+      expect(calls).toEqual(["abandon", "close"]);
+    });
+
+    it("closing when nothing is pending only closes", () => {
+      const calls: string[] = [];
+      const flow = createConnectFlow({ connect: async () => HEALTHY, abandon: () => calls.push("abandon"), close: () => calls.push("close") });
+      flow.close();
+      expect(calls).toEqual(["close"]);
+    });
+
+    it("a second submit while one is pending sends nothing", async () => {
+      const answer = deferred();
+      let sent = 0;
+      const flow = createConnectFlow({
+        connect: () => {
+          sent += 1;
+          return answer.promise;
+        },
+        abandon: noop,
+        close: noop,
+      });
+      const first = flow.submit("secret");
+      expect(await flow.submit("secret")).toBeNull();
+      answer.resolve(HEALTHY);
+      expect(await first).toEqual(HEALTHY);
+      expect(sent).toBe(1);
+      expect(flow.pending).toBe(false);
+    });
+  });
+
+  it("the indicator says Demo until connected, then Connected", () => {
+    expect(html(<ConnectionIndicator state={disconnected} onOpen={noop} />)).toContain(">Demo<");
+    expect(html(<ConnectionIndicator state={connected} onOpen={noop} />)).toContain(">Connected<");
+    expect(html(<ConnectionIndicator state={disconnected} onOpen={noop} />)).toContain('aria-haspopup="dialog"');
+  });
+
+  it("⭐ the workbench draws the indicator in the top bar when it is handed a connection — and none without one", () => {
+    const connection = { state: disconnected, connect: refuse, disconnect: noop };
+    const out = html(<Workbench store={createStore()} onPrompt={noop} connection={connection} />);
+    expect(out).toContain('class="fd-conn');
+    expect(out).toContain(">Demo<");
+    // Outside the tablist: the tablist holds only the five views.
+    const start = out.indexOf('role="tablist"');
+    const tablist = out.slice(start, out.indexOf('class="fd-tabs__spacer"', start));
+    expect(tablist).not.toContain("fd-conn");
+    // No connection handed in: no control that could do nothing.
+    expect(html(<Workbench store={createStore()} onPrompt={noop} />)).not.toContain('class="fd-conn');
   });
 });
