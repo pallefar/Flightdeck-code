@@ -50,6 +50,9 @@ export const DATA_FIELDS: readonly string[] = [
   "visibleToRoles",
   "settingsPanel",
   "widgets",
+  // D-036: Studio's codegen marker, a `z.literal("flightdeck-studio")` in the
+  // host's schema. Validated (FD-M003 on any other value), never refused.
+  "generatedBy",
 ];
 
 /** The function members the host calls on every manifest. Required. */

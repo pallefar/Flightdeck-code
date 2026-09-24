@@ -106,6 +106,8 @@ export interface SubAppManifest {
   readonly visibleToRoles: readonly Role[];
   readonly settingsPanel?: SettingsPanel;
   readonly widgets?: readonly unknown[];
+  /** D-036: the marker Studio's codegen stamps on every generated manifest. */
+  readonly generatedBy?: "flightdeck-studio";
   initSchema(db: Db): void | Promise<void>;
   registerRoutes(app: FastifyInstance, ctx: RegisterRoutesCtx): void | Promise<void>;
   /** The host declares this (OS-04 host-surface contributions) and acts on

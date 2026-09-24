@@ -119,11 +119,11 @@ describe("the launcher layer — a generated mini-app is off by default (D-036)"
     }
   });
 
-  it("never switches its own kill switch on in anything bound for the host", () => {
+  it("never names its own kill switch in code bound for the host — so never switches it on, in any form", () => {
     for (const app of apps) {
-      const on = new RegExp(`${app.plan.envVar}\\s*=\\s*["']?true`);
+      const named = new RegExp(`(?<![A-Za-z0-9_])${app.plan.envVar}(?![A-Za-z0-9_])`);
       for (const file of app.files.filter((f) => f.kind !== "standalone")) {
-        expect({ path: file.path, enables: on.test(file.contents) }).toEqual({ path: file.path, enables: false });
+        expect({ path: file.path, names: named.test(stripComments(file.contents)) }).toEqual({ path: file.path, names: false });
       }
     }
   });

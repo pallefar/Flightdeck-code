@@ -196,6 +196,31 @@ describe("the launcher layer — off by default (D-036)", () => {
     const files = corrupt(GUARD, (s) => `${s}\nprocess.env.SUBAPP_WC_CLOCK_ENABLED = "true";\n`);
     expect(rules(files)).toContain("launcher-off-by-default");
   });
+
+  it("catches the kill switch set by bracket assignment", () => {
+    const files = corrupt(GUARD, (s) => `${s}\nprocess.env["SUBAPP_WC_CLOCK_ENABLED"] = "true";\n`);
+    expect(rules(files)).toContain("launcher-off-by-default");
+  });
+
+  it("catches the kill switch set through an object literal", () => {
+    const files = corrupt(GUARD, (s) => `${s}\nObject.assign(process.env, { SUBAPP_WC_CLOCK_ENABLED: "true" });\n`);
+    expect(rules(files)).toContain("launcher-off-by-default");
+  });
+
+  it("catches the kill switch set in a host-bound YAML or JSON file", () => {
+    for (const [path, contents] of [
+      ["docker-compose.override.yml", "services:\n  app:\n    environment:\n      SUBAPP_WC_CLOCK_ENABLED: true\n"],
+      ["config/subapps.json", '{ "SUBAPP_WC_CLOCK_ENABLED": true }\n'],
+    ] as const) {
+      const files = [...clean, { path, contents, kind: "patch" as const }];
+      expect(rules(files), path).toContain("launcher-off-by-default");
+    }
+  });
+
+  it("catches host-bound code that names the kill switch at all — only killSwitch.ts reads it", () => {
+    const files = corrupt(GUARD, (s) => `${s}\nconst SWITCH = "SUBAPP_WC_CLOCK_ENABLED";\n`);
+    expect(rules(files)).toContain("launcher-off-by-default");
+  });
 });
 
 describe("comments are prose, not code", () => {

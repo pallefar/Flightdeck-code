@@ -42,6 +42,15 @@ export const subAppManifestSchema = z.object({
   /** Required and non-empty: this array is the whole RBAC derivation. */
   visibleToRoles: z.array(z.enum(ROLES)).min(1, "is required and must be non-empty"),
   settingsPanel: settingsPanelSchema.optional(),
+  /** D-036 — `server/subapps/types.ts` (host fix/os-generated-subapp-launcher-rule
+   * 7183ff8a, line 108): `generatedBy: z.literal("flightdeck-studio").optional()`.
+   * The marker Studio's codegen stamps on every manifest it emits; the host's
+   * `launcherSubappDefaults.test.ts` keys its stricter launcher rule (off by
+   * default) on it. A LITERAL, as in the host: any other value is refused
+   * here exactly as the host refuses it fail-loud at boot. Transcribed, not
+   * widened — this object is not `.strict()`, so leaving the field out would
+   * strip a misspelt marker and pass a manifest the host would not boot. */
+  generatedBy: z.literal("flightdeck-studio").optional(),
 });
 
 export type SubAppManifestData = z.infer<typeof subAppManifestSchema>;
