@@ -4,6 +4,7 @@
  * consent screen asking for access nothing uses. */
 import { describe, expect, it } from "vitest";
 import { SpecRejectedError, planSubApp } from "../plan";
+import { generateSubApp } from "../generate";
 import { wcClockSpec } from "../fixtures/specs";
 
 type Mutable = Record<string, unknown>;
@@ -35,6 +36,27 @@ describe("the door", () => {
     const spec = clone();
     spec.id = "docusign";
     expect(refuse(spec)).toMatch(/already a hand-written sub-app/);
+  });
+
+  it("refuses knowledge-guardian — the host's fifth manifest, whose id is a constant in guard.ts", () => {
+    // The host registers `knowledgeGuardianManifest` with
+    // `id: KNOWLEDGE_GUARDIAN_SUBAPP_ID`; generating over it would push a
+    // second entry beside it with the same nav path and route prefix.
+    const spec = clone();
+    spec.id = "knowledge-guardian";
+    // The fixture's audit events are namespaced `wc-clock.`, so a renamed
+    // spec is refused for THAT too — assert the reserved-id issue by name,
+    // not merely that something threw.
+    let thrown: unknown;
+    try {
+      generateSubApp(spec);
+    } catch (err) {
+      thrown = err;
+    }
+    expect(thrown).toBeInstanceOf(SpecRejectedError);
+    expect((thrown as SpecRejectedError).issues).toContainEqual(
+      expect.stringMatching(/^id "knowledge-guardian" is already a hand-written sub-app/),
+    );
   });
 
   it("refuses an id the host's SUBAPP_ID_RE rejects", () => {
