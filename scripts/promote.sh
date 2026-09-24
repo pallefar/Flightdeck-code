@@ -36,6 +36,15 @@
 # after it (sandbox_run_host_gate; FLIGHTDECK_GATE_POSTGRES=0 keeps it out
 # entirely).
 #
+# WHERE THINGS GO (scripts/sandbox-lib.sh): the sandbox is built under a fresh
+# mode-700 `mktemp -d ${TMPDIR:-/tmp}/fd-studio.XXXXXX` and removed on exit,
+# however the run ends (FLIGHTDECK_KEEP_SANDBOX=1 keeps it and prints where).
+# Logs and the compliance record go to a mode-700 .studio/runs/<stamp>-promote.*
+# in this checkout (gitignored), which outlives the sandbox. SANDBOX=<path>
+# still names the sandbox explicitly; that path is then yours and is kept, and
+# an existing non-empty one is replaced only if it carries the studio-sandbox
+# marker a previous run wrote.
+#
 # Usage: HOST_REPO=/path/to/project-contract SPEC=fixtures/x.spec.json \
 #        bash scripts/promote.sh
 set -uo pipefail
@@ -43,9 +52,6 @@ set -uo pipefail
 STUDIO="$(cd "$(dirname "$0")/.." && pwd)"
 REPO="${HOST_REPO:-/home/user/project-contract}"
 SPEC="${SPEC:-$STUDIO/fixtures/wc-clock.spec.json}"
-ROOT="${SANDBOX:-/tmp/fd-promote}"
-SANDBOX="$ROOT/flightdeck"
-RECORD="${RECORD:-$ROOT/compliance-record.json}"
 STAMP="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 . "$STUDIO/scripts/sandbox-lib.sh"
 
@@ -56,6 +62,18 @@ note_skip() { SKIPPED="$SKIPPED $1"; echo "SKIP: $1 — $2"; }
 
 [ -d "$REPO/flightdeck/server/subapps" ] || { echo "not a Flightdeck repo: $REPO" >&2; exit 2; }
 [ -f "$SPEC" ] || { echo "no spec at $SPEC" >&2; exit 2; }
+
+sandbox_new_run_dir "$STUDIO" promote || exit 2
+RUN_DIR="$SANDBOX_RUN_DIR"
+if [ -n "${SANDBOX:-}" ]; then
+  ROOT="$SANDBOX"
+else
+  sandbox_new_parent || exit 2
+  ROOT="$SANDBOX_PARENT/sandbox"
+fi
+SANDBOX="$ROOT/flightdeck"
+RECORD="${RECORD:-$RUN_DIR/compliance-record.json}"
+echo "run logs: $RUN_DIR"
 
 echo "==> [0/6] sandbox"
 sandbox_from_tracked "$REPO" "$ROOT" || { echo "could not build the sandbox from $REPO's HEAD" >&2; exit 2; }
@@ -77,7 +95,7 @@ echo "==> [1/6] Studio typecheck + tests"
 # Studio's. An explicitly set FLIGHTDECK_HOST_ROOT still wins.
 HOST_ROOT="${FLIGHTDECK_HOST_ROOT:-$REPO}"
 if ( cd "$STUDIO" && FLIGHTDECK_HOST_ROOT="$HOST_ROOT" npx tsc --noEmit && \
-     FLIGHTDECK_HOST_ROOT="$HOST_ROOT" npx vitest run >"$ROOT/studio-tests.log" 2>&1 ); then
+     FLIGHTDECK_HOST_ROOT="$HOST_ROOT" npx vitest run >"$RUN_DIR/studio-tests.log" 2>&1 ); then
   note_pass "studio-suite"
 else
   note_fail "studio-suite"
@@ -101,34 +119,34 @@ echo "==> [2/6] Studio conformance red-team (planted violations must all block)"
 # Replaced with an explicit comparison: the two numbers must be equal AND
 # non-zero. No regex cleverness, and nothing that passes when the run found
 # nothing.
-if ( cd "$STUDIO" && npm run redteam >"$ROOT/redteam.log" 2>&1 ); then
-  SUMMARY="$(grep -oE '[0-9]+/[0-9]+ planted violations produced a BLOCKING finding' "$ROOT/redteam.log" | tail -1)"
+if ( cd "$STUDIO" && npm run redteam >"$RUN_DIR/redteam.log" 2>&1 ); then
+  SUMMARY="$(grep -oE '[0-9]+/[0-9]+ planted violations produced a BLOCKING finding' "$RUN_DIR/redteam.log" | tail -1)"
   RT_GOT="${SUMMARY%%/*}"
   RT_WANT="$(printf '%s' "${SUMMARY#*/}" | cut -d' ' -f1)"
   if [ -n "$SUMMARY" ] && [ "$RT_GOT" = "$RT_WANT" ] && [ "${RT_GOT:-0}" -gt 0 ] 2>/dev/null; then
     echo "  $SUMMARY"
     # The red-team's OWN skips, surfaced. This script's doctrine is that a
     # skip is never invisible; that applies to a stack's internals too.
-    RT_SKIPS="$(grep -c '^  SKIP' "$ROOT/redteam.log" || true)"
-    [ "${RT_SKIPS:-0}" -gt 0 ] && echo "  note: red-team skipped $RT_SKIPS planted case(s) — see $ROOT/redteam.log"
+    RT_SKIPS="$(grep -c '^  SKIP' "$RUN_DIR/redteam.log" || true)"
+    [ "${RT_SKIPS:-0}" -gt 0 ] && echo "  note: red-team skipped $RT_SKIPS planted case(s) — see $RUN_DIR/redteam.log"
     note_pass "conformance-redteam"
   else
-    note_fail "conformance-redteam"; echo "  no 'N/N planted' summary with N>0 — see $ROOT/redteam.log"
+    note_fail "conformance-redteam"; echo "  no 'N/N planted' summary with N>0 — see $RUN_DIR/redteam.log"
   fi
 else
-  note_fail "conformance-redteam"; echo "  the red-team run itself failed — see $ROOT/redteam.log"
+  note_fail "conformance-redteam"; echo "  the red-team run itself failed — see $RUN_DIR/redteam.log"
 fi
 
 echo "==> [3/6] generate + mount the candidate"
-if ( cd "$STUDIO" && npx tsx packages/codegen/src/cli.ts --spec "$SPEC" --out "$SANDBOX" >"$ROOT/codegen.log" 2>&1 ) && \
-   ( cd "$SANDBOX" && patch -p1 <server/subapps/registry.ts.patch >>"$ROOT/codegen.log" 2>&1 && rm server/subapps/registry.ts.patch ); then
+if ( cd "$STUDIO" && npx tsx packages/codegen/src/cli.ts --spec "$SPEC" --out "$SANDBOX" >"$RUN_DIR/codegen.log" 2>&1 ) && \
+   ( cd "$SANDBOX" && patch -p1 <server/subapps/registry.ts.patch >>"$RUN_DIR/codegen.log" 2>&1 && rm server/subapps/registry.ts.patch ); then
   note_pass "generate-and-mount"
 else
-  note_fail "generate-and-mount"; echo "  see $ROOT/codegen.log"
+  note_fail "generate-and-mount"; echo "  see $RUN_DIR/codegen.log"
 fi
 
 echo "==> [4/6] web bundle (three standalone tests measure the real one)"
-if ( cd "$SANDBOX" && npm run build:web >"$ROOT/build.log" 2>&1 ); then
+if ( cd "$SANDBOX" && npm run build:web >"$RUN_DIR/build.log" 2>&1 ); then
   note_pass "build-web"
 else
   note_fail "build-web"
@@ -139,15 +157,15 @@ echo "==> [5/6] THE HOST'S OWN GATE — scripts/gate.sh, all five stacks"
 # sandbox_run_host_gate brings in flightdeck/.env.supabase for this step only
 # (its Postgres tier reads it) and removes it again, and hands the gate
 # FLIGHTDECK_PII_HOST_ROOT (this host, read-only); see scripts/sandbox-lib.sh.
-sandbox_run_host_gate "$REPO" "$ROOT" "$ROOT/host-gate.log"
+sandbox_run_host_gate "$REPO" "$ROOT" "$RUN_DIR/host-gate.log"
 HOST_GATE_RC=$?
-if grep -q '^SKIPPED STACKS:' "$ROOT/host-gate.log"; then
-  note_skip "host-gate-partial" "$(grep '^SKIPPED STACKS:' "$ROOT/host-gate.log")"
+if grep -q '^SKIPPED STACKS:' "$RUN_DIR/host-gate.log"; then
+  note_skip "host-gate-partial" "$(grep '^SKIPPED STACKS:' "$RUN_DIR/host-gate.log")"
 fi
 if [ "$HOST_GATE_RC" -eq 0 ]; then
   note_pass "host-gate"
 else
-  note_fail "host-gate"; grep -E '^(FAILED STACKS|FAIL):' "$ROOT/host-gate.log" | head -5
+  note_fail "host-gate"; grep -E '^(FAILED STACKS|FAIL):' "$RUN_DIR/host-gate.log" | head -5
 fi
 
 echo "==> [6/6] compliance record"
