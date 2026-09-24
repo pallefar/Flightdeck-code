@@ -380,3 +380,78 @@ describe("a proposing app, from the approved catalogue", () => {
     expect(outcome.status).toBe("needs_input");
   });
 });
+
+/**
+ * ⭐ THE CANDIDATE CARRIES THE SPEC IT WAS BUILT FROM — the file
+ * `scripts/promote.sh` needs.
+ *
+ * promote.sh takes `SPEC=<file>`, records `sha256sum "$SPEC"` in the
+ * compliance record, and re-runs `@codegen`'s CLI on that file. A `proposed`
+ * outcome used to carry the generated files and no spec, so a prompt-built
+ * candidate had nothing to hand promote.sh except the files themselves. It
+ * now carries the TRANSLATED `@codegen` spec and the sha256 of its one
+ * canonical serialisation — the bytes a person writes to disk.
+ */
+describe("the proposed outcome carries the @codegen spec and its canonical sha256", () => {
+  it("⭐ spec is exactly translateSpec(the planner's spec) — nothing re-derived", async () => {
+    const { planFromPrompt } = await import("../../../spec/src/planner");
+    const { approvedTemplateMenu } = await import("../../../codegen/src/proposal-templates");
+    const { translateSpec } = await import("../translate-spec");
+
+    const outcome = await buildSubAppFromPrompt({ prompt: PROMPT }, deps(goodModel));
+    expect(outcome.status).toBe("proposed");
+    if (outcome.status !== "proposed") return;
+
+    const planned = await planFromPrompt(
+      { prompt: PROMPT, proposalTemplates: approvedTemplateMenu() },
+      goodModel,
+    );
+    expect(planned.status).toBe("planned");
+    if (planned.status !== "planned") return;
+    const translated = translateSpec(planned.spec);
+    expect(translated.ok).toBe(true);
+    if (!translated.ok) return;
+    expect(outcome.spec).toEqual(translated.spec);
+  });
+
+  it("⭐ specSha256 is sha256(serializeSpec(spec)), and serializeSpec is the canonical form", async () => {
+    const { serializeSpec } = await import("../build-subapp");
+    const outcome = await buildSubAppFromPrompt({ prompt: PROMPT }, deps(goodModel));
+    expect(outcome.status).toBe("proposed");
+    if (outcome.status !== "proposed") return;
+
+    const text = serializeSpec(outcome.spec);
+    expect(text).toBe(`${JSON.stringify(outcome.spec, null, 2)}\n`);
+    expect(outcome.specSha256).toMatch(/^[0-9a-f]{64}$/);
+    expect(outcome.specSha256).toBe(digest(text));
+  });
+
+  it("⭐ written to a file, its file hash is specSha256 — what promote.sh's sha256sum records", async () => {
+    const fs = await import("node:fs");
+    const os = await import("node:os");
+    const path = await import("node:path");
+    const { serializeSpec } = await import("../build-subapp");
+    const { generateSubApp } = await import("../../../codegen/src/pure");
+
+    const outcome = await buildSubAppFromPrompt({ prompt: PROMPT }, deps(goodModel));
+    expect(outcome.status).toBe("proposed");
+    if (outcome.status !== "proposed") return;
+
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "studio-spec-"));
+    try {
+      const file = path.join(dir, "candidate.spec.json");
+      fs.writeFileSync(file, serializeSpec(outcome.spec));
+      const bytes = fs.readFileSync(file);
+      expect(createHash("sha256").update(bytes).digest("hex")).toBe(outcome.specSha256);
+
+      // And that file is what promote.sh's codegen step would regenerate the
+      // SAME candidate from: every file path and every byte.
+      const again = generateSubApp(JSON.parse(bytes.toString("utf8")));
+      expect(again.files.map((f) => [f.path, f.contents])).toEqual(
+        outcome.generated.files.map((f) => [f.path, f.contents]),
+      );
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});

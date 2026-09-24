@@ -45,6 +45,8 @@ import {
 import { withPseudonymisation, type Tier } from "../../pseudonym/src/index";
 import { PayloadTierError } from "../../pseudonym/src/errors";
 import { approvedTemplateMenu } from "../../codegen/src/proposal-templates";
+import type { MiniAppSpec as CodegenSpec } from "../../codegen/src/spec-contract";
+import { sha256Hex } from "../../guardrails/src/sha256";
 import { translateSpec, type TranslationRefusal } from "./translate-spec";
 import type { PlannerLlmLike } from "./gated-planner";
 
@@ -128,11 +130,28 @@ export type BuildOutcome =
   /** A candidate, with every verdict that produced it attached. */
   | {
       readonly status: "proposed";
+      /** The TRANSLATED @codegen spec `generated` was emitted from — the file
+       * `scripts/promote.sh` takes as `SPEC` and re-runs @codegen's CLI on. */
+      readonly spec: CodegenSpec;
+      /** sha256 of `serializeSpec(spec)`: the bytes a person writes to disk,
+       * so it equals the `sha256sum "$SPEC"` promote.sh records. */
+      readonly specSha256: string;
       readonly generated: GeneratedSubApp;
       readonly conformance: GateReport;
       readonly artifacts: GateDecision;
       readonly understanding: string;
     };
+
+/**
+ * ⭐ THE ONE CANONICAL SERIALISATION of a candidate's spec. `specSha256` is
+ * taken over exactly these bytes, so a spec written with this function hashes,
+ * under `sha256sum`, to the value the proposal carried. Written any other way
+ * (other indent, no trailing newline) it is a different file with a different
+ * hash, and promote.sh's record would not match the proposal.
+ */
+export function serializeSpec(spec: CodegenSpec): string {
+  return `${JSON.stringify(spec, null, 2)}\n`;
+}
 
 export async function buildSubAppFromPrompt(
   input: BuildFromPromptInput,
@@ -299,8 +318,14 @@ export async function buildSubAppFromPrompt(
     return { status: "artifacts-refused", decision: artifacts };
   }
 
+  // ⚠ `sha256Hex`, NOT `deps.digest`. The injected digest is whatever the
+  // caller's gates hash with; this value has to equal `sha256sum` of a file,
+  // so it is SHA-256 by construction (the pure one, differentially tested
+  // against node:crypto — this module has no node import).
   return {
     status: "proposed",
+    spec: translated.spec,
+    specSha256: sha256Hex(serializeSpec(translated.spec)),
     generated,
     conformance,
     artifacts,
