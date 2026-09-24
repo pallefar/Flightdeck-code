@@ -60,9 +60,14 @@
  *    inline style whose every colour is `var(--token, <literal>)`: the
  *    token so the page follows the host's theme toggle, the literal so it
  *    still reads correctly anywhere the stylesheet is not loaded. The
- *    literals are the host's dark values (--bg #07090d, --surface #11161f,
- *    --ink #eef2f7, --muted #8b96a5, --line #1f2733, --te #ff8200,
- *    --green #2fd472, --amber #ffc24b, --red #ff5b4d).
+ *    literals are the host's ATLAS dark values (--bg #0e1720, --surface
+ *    #17242f, --ink #eef2f7, --muted #a7b6c3, --line #304553, --te #e98300,
+ *    --green #87c3a7, --amber #c9b687, --red #ff807d).
+ *    ⛔ They used to be the pre-Atlas dark palette, and four of those values
+ *    are on the host's retired list: `tests/atlasCategoricalPalette.test.ts`
+ *    fails on them anywhere under `web/src` or `server/`, so every generated
+ *    app turned the host gate red. `__tests__/atlas-palette.test.ts` pins
+ *    these literals and, with a host checkout, re-reads both lists from it.
  *
  * ── WHY THE PAGE IS DATA-DRIVEN ──────────────────────────────────────
  * The obvious emitter unrolls one bespoke component per route and produces
@@ -328,21 +333,21 @@ interface StepStatus {
   proposalPath: string | null;
 }`;
 
-/** Host CSS variables with the host's own dark values as fallbacks. The
+/** Host CSS variables with the host's own (Atlas) dark values as fallbacks. The
  * variable is what makes the page follow the console's theme toggle
  * (theme.css defines a light \`:root\` and a dark \`[data-theme="dark"]\`);
  * the literal is what keeps it legible anywhere the stylesheet is not
  * loaded, such as Studio's own preview. */
 const TOKENS = `const T = {
-  bg: "var(--bg, #07090d)",
-  surface: "var(--surface, #11161f)",
+  bg: "var(--bg, #0e1720)",
+  surface: "var(--surface, #17242f)",
   ink: "var(--ink, #eef2f7)",
-  muted: "var(--muted, #8b96a5)",
-  line: "var(--line, #1f2733)",
-  accent: "var(--te, #ff8200)",
-  green: "var(--green, #2fd472)",
-  amber: "var(--amber, #ffc24b)",
-  red: "var(--red, #ff5b4d)",
+  muted: "var(--muted, #a7b6c3)",
+  line: "var(--line, #304553)",
+  accent: "var(--te, #e98300)",
+  green: "var(--green, #87c3a7)",
+  amber: "var(--amber, #c9b687)",
+  red: "var(--red, #ff807d)",
 } as const;`;
 
 const STYLES = `const railStyle: CSSProperties = { listStyle: "none", margin: "0 0 26px", padding: 0, display: "grid", gap: 10 };

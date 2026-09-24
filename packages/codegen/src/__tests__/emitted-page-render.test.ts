@@ -110,8 +110,8 @@ describe("a converted workflow's page, rendered", () => {
   it("wears the host's visual language rather than a stylesheet of its own", () => {
     expect(html).toContain('<div class="page">');
     expect(html).toContain('<div class="eyebrow">WORKFLOW</div>');
-    expect(html).toContain("var(--surface, #11161f)");
-    expect(html).toContain("var(--line, #1f2733)");
+    expect(html).toContain("var(--surface, #17242f)");
+    expect(html).toContain("var(--line, #304553)");
     expect(html).toContain("border-radius:16px");
     expect(html).not.toContain("<link");
     expect(html).not.toContain("<style");

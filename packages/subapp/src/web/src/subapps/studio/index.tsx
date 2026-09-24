@@ -55,15 +55,15 @@ import type { SubAppModule } from "../registry";
 const ROUTE_PREFIX = "/api/apps/studio";
 
 const T = {
-  bg: "var(--bg, #07090d)",
-  surface: "var(--surface, #11161f)",
+  bg: "var(--bg, #0e1720)",
+  surface: "var(--surface, #17242f)",
   ink: "var(--ink, #eef2f7)",
-  muted: "var(--muted, #8b96a5)",
-  line: "var(--line, #1f2733)",
-  accent: "var(--te, #ff8200)",
-  green: "var(--green, #2fd472)",
-  amber: "var(--amber, #ffc24b)",
-  red: "var(--red, #ff5b4d)",
+  muted: "var(--muted, #a7b6c3)",
+  line: "var(--line, #304553)",
+  accent: "var(--te, #e98300)",
+  green: "var(--green, #87c3a7)",
+  amber: "var(--amber, #c9b687)",
+  red: "var(--red, #ff807d)",
 } as const;
 
 /* ── What the server can answer ─────────────────────────────────────────── */
