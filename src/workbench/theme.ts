@@ -811,8 +811,9 @@ ${declare(TOKENS.dark)}
    The file and diff headers wrap too, and a long path breaks rather than
    pushing the Lock button off the pane. Guarded at 541px so the phone
    tier below is untouched; 1279px leaves headroom over the measured 1183
-   for a tab count or an "unsaved" chip, and a 1280px window and wider keep
-   the one-row bar. */
+   for a tab count, and a 1280px window and wider keep the one-row bar
+   for as long as it fits (see the 1280px block below for when it does
+   not). */
 @media (min-width: 541px) and (max-width: 1279px) {
   .fd-tabs {
     height: auto; min-height: var(--topbar-h); flex-wrap: wrap; row-gap: 0;
@@ -823,6 +824,16 @@ ${declare(TOKENS.dark)}
   .fd-tabs > .fd-tabs__spacer { flex: 0 0 100%; height: 10px; }
   .fd-tabs > .fd-tabs__id { flex: 1 1 0; text-align: right; }
   .fd-tabs > .fd-themetoggle { margin-left: auto; }
+}
+/* The file and diff headers wrap at every width above the phone tier (which
+   wraps them already), not only in the tablet one: in the editor, with
+   "unsaved", Save and Revert showing, a 1280px window's header ran 56px
+   past the edge, Revert and the line count out of reach. Where a header
+   fits at its items' own widths, wrapping changes nothing. The one place
+   that changes at 1440: that same editing header, which used to fit only
+   by squeezing the path onto two lines (63px tall), now keeps the path on
+   one and puts the buttons on a second row (94.5px). */
+@media (min-width: 541px) {
   .fd-source__head { flex-wrap: wrap; }
   .fd-source__path { min-width: 0; overflow-wrap: anywhere; }
 }
@@ -836,6 +847,41 @@ ${declare(TOKENS.dark)}
   .fd-files, .fd-preview { flex-direction: column; }
   .fd-tree, .fd-changes, .fd-preview__side { width: auto; max-height: 40%; border-right: 0; border-left: 0; border-bottom: 1px solid var(--line); }
   .fd-preview__side { border-bottom: 0; border-top: 1px solid var(--line); }
+  /* ⚠ STACKED, THE CODE STILL HAS TO SCROLL. In a column, a flex item's
+     minimum height is its content's, so .fd-source grew to the whole file
+     (1080px), .fd-code never got a bounded height and never scrolled, and
+     the file's last lines sat at y = 1601 in a 700px window — clipped by
+     .fd-wb's overflow:hidden, out of reach. Typing in the editor then
+     scrolled .fd-wb itself 58px up, the view tabs with it. min-height: 0
+     hands the code pane what is left and lets it scroll; the columns
+     themselves scroll as the last resort, should a header ever be taller
+     than the room left for it — never .fd-wb. */
+  .fd-source, .fd-preview__stage { min-height: 0; }
+  .fd-files, .fd-preview { overflow-y: auto; }
+}
+/* Under 700px the pane is under 400px — narrower than a phone's — and the
+   heading wrapped to four lines (220px of a 700px window), leaving the
+   code 71px and the open editor none. It takes the phone tier's heading
+   step: 26px, -1px, the lead hidden, 17px gutters. */
+@media (min-width: 541px) and (max-width: 699px) {
+  .fd-pagehead { padding: 18px 17px 14px; }
+  .fd-pagehead__h { font-size: 26px; letter-spacing: -1px; }
+  .fd-pagehead__lead { display: none; }
+}
+/* From 1280px the bar keeps its one row — while it fits. The edit chips
+   ("1 unsaved", "2 locked", …) come and go with the user's work, so no
+   breakpoint can hold them all: one "unsaved" chip put the theme switch at
+   1246..1282 in a 1280px window, past the edge. So the bar may wrap,
+   the controls it cannot hold starting a second row with the switch kept
+   at the right. The round line cannot cause the wrap: its basis is 0 and
+   it grows to its own width and no further, the spacer taking the rest.
+   Its grow factor is a million so the spacer's one share of that growth
+   rounds to nothing (at 1000 the spacer took 0.2px at 1440) — wherever the
+   bar fits it is drawn exactly as before, measured rect for rect. */
+@media (min-width: 1280px) {
+  .fd-tabs { height: auto; min-height: var(--topbar-h); flex-wrap: wrap; row-gap: 10px; padding-block: 12px; }
+  .fd-tabs > .fd-tabs__id { flex: 1000000 1 0; max-width: max-content; }
+  .fd-tabs > .fd-themetoggle { margin-left: auto; }
 }
 /* The view pill is 557px with its icons and counts, which a pane under
    ~613px (a window under ~913px) cannot hold. Under 960px the tabs drop
