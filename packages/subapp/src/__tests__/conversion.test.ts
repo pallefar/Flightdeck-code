@@ -247,6 +247,19 @@ describe("refusals", () => {
     expect(asked.questions.map((q) => q.id)).toContain("navSection");
   });
 
+  it("will not mint a sub-app over knowledge-guardian — the host already registers that id", () => {
+    const workflow = CONVERTIBLE_WORKFLOW.replace("name: works-council-clock", "name: knowledge-guardian").replace(
+      "# works-council-clock",
+      "# knowledge-guardian",
+    );
+    expect(workflow).toContain("name: knowledge-guardian");
+    const clash = convertWorkflow({ workflow, answers: ANSWERS });
+    expect(clash.status).toBe("needs_input");
+    if (clash.status !== "needs_input") return;
+    const collision = clash.questions.find((q) => q.id === "id:collision");
+    expect(collision?.question).toContain('"knowledge-guardian"');
+  });
+
   it("refuses markdown with no procedure to convert", () => {
     const nothing = convertWorkflow({ workflow: "---\nname: x\ndescription: y\n---\n\n# x\n\nNo procedure here." });
     expect(["unreadable", "rejected"]).toContain(nothing.status);

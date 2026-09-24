@@ -44,8 +44,14 @@ export const HOST_VERSION = "5.0.0";
 /** Ids already occupied in the host's `SUBAPP_MANIFESTS`. Generating over
  * one of these would produce a duplicate nav path, a duplicate route prefix
  * and a colliding table prefix — and the registry patch would push a second
- * entry beside the hand-written one. Refused at the door. */
-export const RESERVED_SUBAPP_IDS = ["shell-reference", "docusign", "maps", "advantage"] as const;
+ * entry beside the hand-written one. Refused at the door.
+ *
+ * ⚠ A TRANSCRIBED LIST, held to the host by
+ * `__tests__/reserved-ids-drift.test.ts`, which traces every
+ * `SUBAPP_MANIFESTS` entry to its manifest's real `id` — knowledge-guardian's
+ * is the constant `KNOWLEDGE_GUARDIAN_SUBAPP_ID` in its `guard.ts`, which is
+ * how it went missing here while the host registered it. */
+export const RESERVED_SUBAPP_IDS = ["shell-reference", "docusign", "maps", "advantage", "knowledge-guardian"] as const;
 
 /** The three columns codegen owns on every generated table. A spec declares
  * only its DOMAIN columns; these are always emitted first, so every
