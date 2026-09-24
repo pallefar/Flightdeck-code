@@ -49,7 +49,7 @@ function storedTheme(): StudioTheme {
 function App() {
   const [theme, setTheme] = useState<StudioTheme>(storedTheme);
   // Mirrored onto <html> so the page behind the workbench (and the next
-  // load's pre-paint script in index.html) agrees with it.
+  // load's pre-paint script, public/theme-boot.js) agrees with it.
   useEffect(() => {
     document.documentElement.dataset["theme"] = theme;
   }, [theme]);

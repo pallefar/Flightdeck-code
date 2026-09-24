@@ -4,16 +4,11 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Flightdeck Studio</title>
-    <script>
-      // Before first paint: pick up the theme a person chose last time, so a
-      // dark-mode reload does not flash Atlas light first. The key is
-      // THEME_STORAGE_KEY in src/workbench/theme.ts; rename both together.
-      // Guarded, because storage throws in some private windows.
-      try {
-        var t = localStorage.getItem("flightdeck-studio-theme");
-        if (t === "light" || t === "dark") document.documentElement.dataset.theme = t;
-      } catch (e) {}
-    </script>
+    <!-- Before first paint: the theme a person chose last time. Out of line
+         because the server's CSP is `script-src 'self'`; synchronous (no
+         async, defer or type="module") so it runs before the first paint.
+         See public/theme-boot.js. -->
+    <script src="/theme-boot.js"></script>
     <style>
       /* The workbench injects its own stylesheet (theme.ts → WORKBENCH_CSS).
          All this does is stop the page from sitting on the browser default
