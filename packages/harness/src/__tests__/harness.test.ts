@@ -5,6 +5,7 @@
 import { mkdtemp, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { setTimeout as delay } from "node:timers/promises";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { HARNESS_MODE_ENV, HarnessCacheMiss, createHarness, resolveMode } from "../harness";
 import { listFixtures, modelSlug } from "../fixture";
@@ -103,9 +104,17 @@ describe("record once, replay forever", () => {
   });
 
   it("re-recording an unchanged call rewrites the same bytes", async () => {
+    // The two answers take different wall-clock time on purpose. With the clock
+    // injected, how long the provider took is not allowed to leak into the
+    // bytes: this used to flake whenever the two calls straddled a millisecond.
+    let turn = 0;
     const options = {
       mode: "live",
-      provider: fakeProvider<TestRequest, TestResponse>(() => ({ text: "stable" })).provider,
+      provider: async (): Promise<TestResponse> => {
+        turn += 1;
+        await delay(turn === 1 ? 0 : 15);
+        return { text: "stable" };
+      },
       fixturesDir: dir,
       now: FIXED_NOW,
       env: {},
@@ -117,6 +126,44 @@ describe("record once, replay forever", () => {
     const second = await readFile((await listFixtures(dir))[0]?.path ?? "", "utf8");
 
     expect(second).toBe(first);
+  });
+
+  it("times the call on the injected clock, not the wall clock", async () => {
+    // One clock for every recorded instant: a test that pins time pins the
+    // duration too, so a recording is reproducible byte for byte.
+    const ticks = ["2026-01-01T00:00:00.000Z", "2026-01-01T00:00:00.250Z"];
+    let tick = 0;
+    const recorder = createHarness<TestRequest, TestResponse>({
+      mode: "live",
+      provider: async (): Promise<TestResponse> => {
+        await delay(15);
+        return { text: "ok" };
+      },
+      fixturesDir: dir,
+      now: () => new Date(ticks[Math.min((tick += 1) - 1, ticks.length - 1)] ?? ""),
+      env: {},
+    });
+    await recorder.call(ask("hello"));
+
+    const [only] = await listFixtures(dir);
+    expect(only?.record.durationMs).toBe(250);
+    expect(only?.record.recordedAt).toBe("2026-01-01T00:00:00.250Z");
+    expect(recorder.events.map((event) => event.durationMs)).toEqual([250]);
+  });
+
+  it("records no duration, rather than a wrong one, when the injected clock cannot tell time", async () => {
+    const recorder = createHarness<TestRequest, TestResponse>({
+      mode: "live",
+      provider: fakeProvider<TestRequest, TestResponse>(() => ({ text: "ok" })).provider,
+      fixturesDir: dir,
+      now: () => new Date("not a date"),
+      env: {},
+    });
+    await recorder.call(ask("hello"));
+
+    const [only] = await listFixtures(dir);
+    expect(only?.record.durationMs).toBeNull();
+    expect(only?.record.recordedAt).toBeNull();
   });
 
   it("leaves no temporary files behind", async () => {

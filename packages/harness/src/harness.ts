@@ -78,7 +78,8 @@ export interface LiveHarnessOptions<Req extends ProviderCallShape, Res> extends 
    * exactly as playback will. Off by default — live should hand back what the
    * provider actually returned. */
   readonly roundTrip?: boolean | undefined;
-  /** Injected clock; a recording is otherwise the only nondeterministic byte. */
+  /** Injected clock for every recorded instant — `recordedAt` and the
+   * `durationMs` of the call — so a recording is otherwise deterministic. */
   readonly now?: (() => Date) | undefined;
 }
 
@@ -223,9 +224,15 @@ export function createHarness<Req extends ProviderCallShape, Res>(
     const key = keyFor(request);
     const path = fixturePath(fixturesDir, request.model, key);
 
-    const startedAt = Date.now();
+    // Every recorded instant comes from the one injected clock. Timing the call
+    // on `Date.now()` behind an injected `now` left `durationMs` as the one
+    // wall-clock byte in an otherwise reproducible recording.
+    const clock = (): Date => (config.now === undefined ? new Date() : config.now());
+    const startedAt = clock().getTime();
     const response = await config.provider(request);
-    const durationMs = Date.now() - startedAt;
+    const finishedAt = clock();
+    const elapsed = finishedAt.getTime() - startedAt;
+    const durationMs = Number.isFinite(elapsed) ? elapsed : null;
 
     if (config.onExisting === "keep" && (await tryReadFixtureAt(path)) !== null) {
       events.push({ kind: "kept", key, model: request.model, path, durationMs });
@@ -234,14 +241,13 @@ export function createHarness<Req extends ProviderCallShape, Res>(
 
     const serialized =
       config.serializeResponse === undefined ? (response as unknown) : config.serializeResponse(response);
-    const now = config.now === undefined ? new Date() : config.now();
 
     const record: FixtureRecord = {
       format: FIXTURE_FORMAT,
       key,
       model: request.model,
       keyedFields: fields,
-      recordedAt: Number.isNaN(now.getTime()) ? null : now.toISOString(),
+      recordedAt: Number.isNaN(finishedAt.getTime()) ? null : finishedAt.toISOString(),
       durationMs,
       request: redactWithSecrets(
         keyedView(request as unknown as Readonly<Record<string, unknown>>, fields),
