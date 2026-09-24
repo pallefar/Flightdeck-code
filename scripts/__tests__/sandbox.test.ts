@@ -10,9 +10,9 @@
  * 1. It STRIPPED `.git`, so the host's git-based PII checks could not run in
  *    the sandbox: `tests/piiGitBoundary.test.ts` refuses to run without
  *    `git rev-parse`, and `scripts/check-contracts-boundary.sh --tracked` lists
- *    `git ls-files`. (The host gate still cannot pass in the new sandbox either:
- *    that test also asserts the gitignored PII files exist on disk. Open, owner
- *    decision — see the KNOWN note in scripts/sandbox-lib.sh.)
+ *    `git ls-files`. (That test also asserts the gitignored PII files exist on
+ *    disk; the gate reads those from FLIGHTDECK_PII_HOST_ROOT, the real host
+ *    checkout — see scripts/sandbox-lib.sh. None is copied into the sandbox.)
  * 2. It COPIED EVERYTHING ELSE, including what `.gitignore` exists to keep
  *    out: the loose person-bearing contracts under `contracts/`, and the
  *    secrets in `flightdeck/.env` and `flightdeck/.env.supabase` — into /tmp,
@@ -336,10 +336,14 @@ describe("sandbox_add_pg_env (scripts/sandbox-lib.sh)", () => {
 describe("sandbox_run_host_gate (scripts/sandbox-lib.sh)", () => {
   // The fixture gate records what it can see of flightdeck/.env.supabase while
   // it runs, then exits with a code the caller must get back.
+  // It also records, in GATE_HOST_PROBE, the FLIGHTDECK_PII_HOST_ROOT it was
+  // handed and every gitignored path it can see in the sandbox.
   const probeGate = [
     "#!/usr/bin/env bash",
     'f=flightdeck/.env.supabase',
     'if [ -f "$f" ]; then echo "present $(ls -l "$f" | cut -c1-10)" >"$GATE_PROBE"; else echo absent >"$GATE_PROBE"; fi',
+    'echo "pii_host_root=${FLIGHTDECK_PII_HOST_ROOT-<unset>}" >"$GATE_HOST_PROBE"',
+    'git status --porcelain --ignored | grep "^!!" >>"$GATE_HOST_PROBE"',
     "exit 3",
     "",
   ].join("\n");
@@ -349,11 +353,12 @@ describe("sandbox_run_host_gate (scripts/sandbox-lib.sh)", () => {
     const host = makeHost(`${name}-host`, false, probeGate);
     const root = path.join(work, `${name}-root`);
     const probe = path.join(work, `${name}.probe`);
+    const hostProbe = path.join(work, `${name}.host-probe`);
     const r = spawnSync("bash", ["-c", `set -uo pipefail; . "$1"; sandbox_from_tracked "$2" "$3" >/dev/null || exit 90; ${body}`, "_", lib, host, root], {
       encoding: "utf8",
-      env: { ...process.env, GATE_PROBE: probe, ...env },
+      env: { ...process.env, GATE_PROBE: probe, GATE_HOST_PROBE: hostProbe, ...env },
     });
-    return { r, root, probe, out: `${r.stdout}${r.stderr}` };
+    return { r, host, root, probe, hostProbe, out: `${r.stdout}${r.stderr}` };
   }
 
   it("brings .env.supabase in at mode 600 for the gate only, returns the gate's code, and removes it", () => {
@@ -374,6 +379,34 @@ describe("sandbox_run_host_gate (scripts/sandbox-lib.sh)", () => {
     expect(out).not.toContain("STILL_PRESENT");
     expect(fs.existsSync(path.join(root, "flightdeck/.env.supabase"))).toBe(false);
     expect(out).not.toContain(SECRET);
+  });
+
+  it("hands the gate the real host checkout as FLIGHTDECK_PII_HOST_ROOT, with no PII in the sandbox", () => {
+    // The host's piiGitBoundary.test.ts asserts the gitignored PII files EXIST;
+    // it reads them read-only from FLIGHTDECK_PII_HOST_ROOT. The sandbox itself
+    // must still hold none of them: the one ignored path the gate may see is
+    // .env.supabase, brought in for this step.
+    const { r, host, hostProbe, out } = gateRun("gate-hostroot", {}, 'sandbox_run_host_gate "$2" "$3" "$3/host-gate.log"; echo "rc=$?"; echo "after=${FLIGHTDECK_PII_HOST_ROOT-<unset>}"');
+    expect(r.status, r.stderr).toBe(0);
+    expect(out).toContain("rc=3");
+    expect(fs.readFileSync(hostProbe, "utf8")).toBe(`pii_host_root=${fs.realpathSync(host)}\n!! flightdeck/.env.supabase\n`);
+    // Set for the gate only, not left behind in the caller's shell.
+    expect(out).toContain("after=<unset>");
+  });
+
+  it("uses the host the sandbox was built from, not a FLIGHTDECK_PII_HOST_ROOT the caller had set", () => {
+    const elsewhere = fs.mkdtempSync(path.join(work, "not-the-host-"));
+    const { r, host, hostProbe } = gateRun("gate-stale", { FLIGHTDECK_PII_HOST_ROOT: elsewhere }, 'sandbox_run_host_gate "$2" "$3" "$3/host-gate.log"');
+    expect(r.status, r.stderr).toBe(3);
+    expect(fs.readFileSync(hostProbe, "utf8").split("\n")[0]).toBe(`pii_host_root=${fs.realpathSync(host)}`);
+  });
+
+  it("does not run the gate at all, and fails, when the host root cannot be resolved", () => {
+    const { r, probe, out } = gateRun("gate-nohost", {}, 'rm -rf "$2/.git"; sandbox_run_host_gate "$2" "$3" "$3/host-gate.log"; echo "rc=$?"');
+    expect(r.status, r.stderr).toBe(0);
+    expect(out).not.toContain("rc=0");
+    expect(out).not.toContain("rc=3");
+    expect(fs.existsSync(probe)).toBe(false);
   });
 
   it("never brings it in when FLIGHTDECK_GATE_POSTGRES=0", () => {
