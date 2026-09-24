@@ -2,17 +2,27 @@
  * switch.
  *
  * ── WHERE THE TOKEN IS WHILE A PERSON TYPES IT ──────────────────────
- * In this component's React state — the controlled input's value — and
- * nowhere else. On Connect it is handed to the client (`src/api/studioClient.ts`),
- * which keeps it in one closure variable for the life of the tab; this
- * component then clears its own copy. It is never put in a URL, an attribute,
- * storage or a log. The field is `type="password"` with `autocomplete="off"`,
- * and the form never navigates, so there is no submission for a browser's
- * password manager to offer to keep.
+ * In the password field's live value, and nowhere else. The field is
+ * UNCONTROLLED on purpose: React DOM copies a controlled input's value into
+ * its `value` ATTRIBUTE, where CSS attribute selectors, MutationObservers and
+ * DOM snapshots can read it. So the token is not React state; the component
+ * keeps only whether the field is empty, and reads the value through a ref at
+ * the moment Connect is pressed. It is handed to the client
+ * (`src/api/studioClient.ts`), which keeps it in one closure variable for the
+ * life of the tab, and the field is cleared once the connect succeeds. It is
+ * never put in a URL, an attribute, storage or a log. The field is
+ * `type="password"` with `autocomplete="off"`, and the form never navigates,
+ * so there is no submission for a browser's password manager to offer to keep.
+ *
+ * ── CLOSING WHILE A CONNECT WAITS ───────────────────────────────────
+ * Cancel, Escape or a backdrop click while a connect is pending ABANDONS it
+ * (the client's `disconnect`), so a person who cancelled is not connected a
+ * moment later with their token kept. `createConnectFlow` holds that rule
+ * without a DOM, so `components.test.tsx` can pin it.
  *
  * Like every pane, it takes plain props and reaches for nothing, so it renders
  * under `react-dom/server` in `components.test.tsx`. */
-import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 
 import type { ConnectResult, ConnectionState } from "../../api/studioClient";
 
@@ -34,7 +44,52 @@ export function connectErrorText(reason: Extract<ConnectResult, { ok: false }>["
       return "The Studio server did not answer. Is it running (npm run dev:server)?";
     case "protocol-error":
       return "Something answered, but not the Studio server's health probe.";
+    case "token-rejected":
+      return "The server refused this token. Paste the STUDIO_OPERATOR_TOKEN it was started with.";
+    case "cancelled":
+      return "The connect was cancelled before the server answered.";
   }
+}
+
+/** The dialog's connect rules, with no DOM: one connect at a time, and a
+ * close while one is pending abandons it and ignores its answer. */
+export interface ConnectFlow {
+  readonly pending: boolean;
+  /** `null` when nothing may act on the answer: another connect was already
+   * pending, or the dialog closed before this one answered. */
+  submit(token: string): Promise<ConnectResult | null>;
+  close(): void;
+}
+
+export function createConnectFlow(deps: {
+  readonly connect: (token: string) => Promise<ConnectResult>;
+  /** Tells the client to drop the pending connect (its `disconnect`). */
+  readonly abandon: () => void;
+  readonly close: () => void;
+}): ConnectFlow {
+  let pending = false;
+  let closed = false;
+  return {
+    get pending() {
+      return pending;
+    },
+    async submit(token) {
+      if (pending || closed) return null;
+      pending = true;
+      try {
+        const result = await deps.connect(token);
+        return closed ? null : result;
+      } finally {
+        pending = false;
+      }
+    },
+    close() {
+      if (closed) return;
+      closed = true;
+      if (pending) deps.abandon();
+      deps.close();
+    },
+  };
 }
 
 /** What `harnessMode` means to the person reading it. */
@@ -61,7 +116,7 @@ interface IndicatorProps {
 export function ConnectionIndicator({ state, onOpen }: IndicatorProps) {
   const connected = state.status === "connected";
   const title = connected
-    ? `Connected to the Studio server (${state.health.model}). The server checks the token on every build; if it refuses it, Studio disconnects. Prompts still run the built-in wc-clock demo until they are wired to the server.`
+    ? `Connected to the Studio server (${state.health.model}), which accepted the operator token. It checks the token again on every build; if it refuses it, Studio disconnects. Prompts still run the built-in wc-clock demo until they are wired to the server.`
     : "Demo: not connected to a Studio server. Prompts run the built-in wc-clock demo. Click to connect with the operator token.";
   return (
     <button
@@ -85,38 +140,63 @@ interface DialogProps {
 }
 
 export function ConnectDialog({ state, onConnect, onDisconnect, onClose }: DialogProps) {
-  // ⛔ The token, while it is being typed. See the file header.
-  const [token, setToken] = useState("");
+  // ⛔ No token in state: only whether the field is empty. See the file header.
+  const [hasToken, setHasToken] = useState(false);
   const [pending, setPending] = useState(false);
   const [failure, setFailure] = useState<string | null>(null);
   const dialogRef = useRef<HTMLDivElement>(null);
+  const tokenRef = useRef<HTMLInputElement>(null);
+
+  // The latest props, for a flow created once per dialog.
+  const props = useRef({ onConnect, onDisconnect, onClose });
+  props.current = { onConnect, onDisconnect, onClose };
+  const flowRef = useRef<ConnectFlow | null>(null);
+  flowRef.current ??= createConnectFlow({
+    connect: (token) => props.current.onConnect(token),
+    abandon: () => props.current.onDisconnect(),
+    close: () => props.current.onClose(),
+  });
+  const flow = flowRef.current;
 
   // Focus moves INTO the dialog when it opens — the token field when there is
-  // one (`autoFocus`), the dialog itself otherwise — so Escape reaches it and a
-  // keyboard user is not left behind on the button that opened it.
+  // one (`autoFocus`), the dialog itself otherwise — so a keyboard user is not
+  // left behind on the button that opened it.
   useEffect(() => {
     const dialog = dialogRef.current;
     if (dialog !== null && !dialog.contains(document.activeElement)) dialog.focus();
   }, []);
 
+  // Escape closes from anywhere while the dialog is open, not only while focus
+  // is inside it: a disabled Connect button drops focus to <body>.
+  useEffect(() => {
+    const onKeyDown = (event: globalThis.KeyboardEvent) => {
+      if (event.key === "Escape") flow.close();
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [flow]);
+
   const submit = (event: FormEvent) => {
     event.preventDefault();
-    if (pending) return;
+    const field = tokenRef.current;
+    if (field === null || flow.pending) return;
     setPending(true);
     setFailure(null);
-    void onConnect(token).then((result) => {
+    void flow.submit(field.value).then((result) => {
+      // `null`: the dialog closed while it waited, and the connect was abandoned.
+      if (result === null) return;
       setPending(false);
       if (result.ok) {
-        setToken("");
-        onClose();
+        field.value = "";
+        setHasToken(false);
+        props.current.onClose();
       } else {
         setFailure(connectErrorText(result.reason));
+        // Back to the field, so the person can correct it and Escape still has
+        // a focused place to start from.
+        field.focus();
       }
     });
-  };
-
-  const onKeyDown = (event: KeyboardEvent) => {
-    if (event.key === "Escape") onClose();
   };
 
   const notice =
@@ -129,7 +209,7 @@ export function ConnectDialog({ state, onConnect, onDisconnect, onClose }: Dialo
     <div
       className="fd-conn-backdrop"
       onMouseDown={(event) => {
-        if (event.target === event.currentTarget) onClose();
+        if (event.target === event.currentTarget) flow.close();
       }}
     >
       <div
@@ -139,7 +219,6 @@ export function ConnectDialog({ state, onConnect, onDisconnect, onClose }: Dialo
         role="dialog"
         aria-modal="true"
         aria-labelledby="fd-conn-title"
-        onKeyDown={onKeyDown}
       >
         <span className="fd-pagehead__eyebrow">Studio server</span>
         <h2 id="fd-conn-title" className="fd-conn-dialog__h">
@@ -157,11 +236,11 @@ export function ConnectDialog({ state, onConnect, onDisconnect, onClose }: Dialo
               <dd>{answersFrom(state.health.harnessMode)}</dd>
             </dl>
             <p className="fd-conn-dialog__p">
-              The server checks the token on every build; if it refuses it, Studio disconnects. Prompts still run
-              the built-in wc-clock demo until they are wired to this server.
+              The server accepted the operator token. It checks it again on every build; if it refuses it, Studio
+              disconnects. Prompts still run the built-in wc-clock demo until they are wired to this server.
             </p>
             <div className="fd-conn-dialog__acts">
-              <button type="button" className="fd-lockbtn" onClick={onClose}>
+              <button type="button" className="fd-lockbtn" onClick={() => flow.close()}>
                 Close
               </button>
               <button
@@ -169,7 +248,7 @@ export function ConnectDialog({ state, onConnect, onDisconnect, onClose }: Dialo
                 className="fd-lockbtn"
                 onClick={() => {
                   onDisconnect();
-                  onClose();
+                  flow.close();
                 }}
               >
                 Disconnect
@@ -192,8 +271,8 @@ export function ConnectDialog({ state, onConnect, onDisconnect, onClose }: Dialo
                 autoComplete="off"
                 spellCheck={false}
                 autoFocus
-                value={token}
-                onChange={(event) => setToken(event.target.value)}
+                ref={tokenRef}
+                onChange={(event) => setHasToken(event.target.value.trim() !== "")}
               />
             </label>
             {notice !== null && (
@@ -202,10 +281,10 @@ export function ConnectDialog({ state, onConnect, onDisconnect, onClose }: Dialo
               </p>
             )}
             <div className="fd-conn-dialog__acts">
-              <button type="button" className="fd-lockbtn" onClick={onClose}>
+              <button type="button" className="fd-lockbtn" onClick={() => flow.close()}>
                 Cancel
               </button>
-              <button type="submit" className="fd-save" disabled={pending || token.trim() === ""}>
+              <button type="submit" className="fd-save" disabled={pending || !hasToken}>
                 {pending ? "Connecting…" : "Connect"}
               </button>
             </div>

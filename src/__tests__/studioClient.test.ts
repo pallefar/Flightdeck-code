@@ -44,6 +44,9 @@ interface Call {
   readonly method: string;
   readonly headers: Record<string, string>;
   readonly body: string | undefined;
+  readonly redirect: RequestRedirect | undefined;
+  readonly credentials: RequestCredentials | undefined;
+  readonly cache: RequestCache | undefined;
 }
 
 /** A `fetch` that records every call and answers from `reply`. */
@@ -59,6 +62,9 @@ function stubFetch(reply: (call: Call) => Response | Promise<Response>): { fetch
       method: init?.method ?? "GET",
       headers,
       body: typeof init?.body === "string" ? init.body : undefined,
+      redirect: init?.redirect,
+      credentials: init?.credentials,
+      cache: init?.cache,
     };
     calls.push(call);
     return reply(call);
@@ -69,9 +75,19 @@ function stubFetch(reply: (call: Call) => Response | Promise<Response>): { fetch
 const json = (status: number, body: unknown, headers: Record<string, string> = {}) =>
   new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json", ...headers } });
 
-/** Health answers; the build answers with `build`. */
+/** The server's answer to connect's token check when the token is RIGHT:
+ * past the bearer, the empty body fails the build schema (`server/index.ts`). */
+const TOKEN_ACCEPTED = () => json(400, { error: "malformed request", at: ["prompt"] });
+
+/** connect's token check: a build with an empty object for a body. */
+const isTokenCheck = (call: Call) => call.url.endsWith("/api/studio/build") && call.body === "{}";
+
+/** Health answers, the token check accepts; the build answers with `build`.
+ * So a connect is TWO calls (probe, token check) and the first build is `calls[2]`. */
 function server(build: (call: Call) => Response | Promise<Response>) {
-  return stubFetch((call) => (call.url.endsWith("/api/studio/health") ? json(200, HEALTH) : build(call)));
+  return stubFetch((call) =>
+    call.url.endsWith("/api/studio/health") ? json(200, HEALTH) : isTokenCheck(call) ? TOKEN_ACCEPTED() : build(call),
+  );
 }
 
 /** The REAL server behind a `fetch`: routing, auth, body parse and the
@@ -113,13 +129,84 @@ describe("connect: the health probe, and a token held in memory only", () => {
     const result = await client.connect(TOKEN);
 
     expect(result).toEqual({ ok: true, health: HEALTH });
-    expect(calls).toHaveLength(1);
+    expect(calls).toHaveLength(2);
     expect(calls[0]?.method).toBe("GET");
     expect(calls[0]?.url).toBe("/api/studio/health");
     // The probe is unauthenticated on the server; sending the secret where it
     // is not needed only widens where it can leak.
     expect(calls[0]?.headers["authorization"]).toBeUndefined();
     expect(client.getConnection()).toEqual({ status: "connected", health: HEALTH });
+  });
+
+  it("⭐ 'Connected' means the server ACCEPTED the token: connect checks it with a bodiless build", async () => {
+    const { fetch, calls } = server(() => json(500, {}));
+    const client = createStudioClient({ fetch });
+    await client.connect(TOKEN);
+
+    // The server checks the bearer before it parses the body, so `{}` is
+    // answered 401 (wrong token) or 400 (right token) and spends no model call.
+    const check = calls[1];
+    expect(check?.method).toBe("POST");
+    expect(check?.url).toBe("/api/studio/build");
+    expect(check?.headers["authorization"]).toBe(`Bearer ${TOKEN}`);
+    expect(check?.headers["content-type"]).toBe("application/json");
+    expect(check?.body).toBe("{}");
+    expect(check?.redirect).toBe("error");
+    expect(check?.credentials).toBe("omit");
+    expect(check?.cache).toBe("no-store");
+  });
+
+  it("⭐ a token the server refuses is 'token-rejected': not connected, not kept", async () => {
+    const { fetch, calls } = stubFetch((call) =>
+      call.url.endsWith("/api/studio/health") ? json(200, HEALTH) : json(401, { error: "operator token required" }),
+    );
+    const client = createStudioClient({ fetch });
+    expect(await client.connect(TOKEN)).toEqual({ ok: false, reason: "token-rejected" });
+    expect(client.getConnection().status).toBe("disconnected");
+    expect(await client.build(PROMPT)).toEqual({ status: "not-connected" });
+    expect(calls).toHaveLength(2);
+  });
+
+  it("a token check answered by something other than the build schema's 400 is a protocol-error", async () => {
+    for (const reply of [
+      () => json(200, { status: "invalid_draft", issues: [], attempts: 1 }),
+      () => json(400, { error: "something else" }),
+      () => new Response("Bad Request", { status: 400 }),
+      () => json(404, {}),
+    ]) {
+      const { fetch } = stubFetch((call) => (call.url.endsWith("/api/studio/health") ? json(200, HEALTH) : reply()));
+      const client = createStudioClient({ fetch });
+      expect(await client.connect(TOKEN)).toEqual({ ok: false, reason: "protocol-error" });
+      expect(client.getConnection().status).toBe("disconnected");
+    }
+  });
+
+  it("a probe that fails sends no token at all", async () => {
+    const { fetch, calls } = stubFetch(() => json(404, {}));
+    const client = createStudioClient({ fetch });
+    await client.connect(TOKEN);
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.headers["authorization"]).toBeUndefined();
+  });
+
+  it("⭐ a disconnect while a connect is still waiting abandons it: the token is not kept", async () => {
+    let release: () => void = () => {};
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const { fetch, calls } = stubFetch(async (call) => {
+      await gate;
+      return call.url.endsWith("/api/studio/health") ? json(200, HEALTH) : TOKEN_ACCEPTED();
+    });
+    const client = createStudioClient({ fetch });
+    const pending = client.connect(TOKEN);
+    client.disconnect(); // what the dialog does when a person cancels mid-connect
+    release();
+    expect(await pending).toEqual({ ok: false, reason: "cancelled" });
+    expect(client.getConnection().status).toBe("disconnected");
+    expect(await client.build(PROMPT)).toEqual({ status: "not-connected" });
+    // Abandoned before the probe answered: the token check never went out.
+    expect(calls.filter((c) => c.headers["authorization"] !== undefined)).toHaveLength(0);
   });
 
   it("the connection state never carries the token", async () => {
@@ -146,11 +233,27 @@ describe("connect: the health probe, and a token held in memory only", () => {
     expect(calls).toHaveLength(1);
   });
 
+  it("⭐ a dev proxy with no server behind it is 'unreachable', not a protocol error", async () => {
+    // Vite's proxy answers a refused upstream with an empty text/plain 500;
+    // gateways answer 502/503/504. None of them is the Studio server talking.
+    for (const reply of [
+      () => new Response("", { status: 500, headers: { "content-type": "text/plain" } }),
+      () => new Response("", { status: 502 }),
+      () => new Response("<html>Service Unavailable</html>", { status: 503, headers: { "content-type": "text/html" } }),
+      () => new Response("", { status: 504 }),
+    ]) {
+      const client = createStudioClient({ fetch: stubFetch(reply).fetch });
+      expect(await client.connect(TOKEN)).toEqual({ ok: false, reason: "unreachable" });
+      expect(client.getConnection().status).toBe("disconnected");
+    }
+  });
+
   it("a health reply that is not a health reply is a protocol error, not a connection", async () => {
     for (const reply of [
       () => new Response("<html>proxy error</html>", { status: 200 }),
       () => json(200, { ok: "yes" }),
-      () => json(503, HEALTH),
+      () => json(500, { error: "boom" }),
+      () => json(404, HEALTH),
     ]) {
       const client = createStudioClient({ fetch: stubFetch(reply).fetch });
       expect(await client.connect(TOKEN)).toEqual({ ok: false, reason: "protocol-error" });
@@ -164,7 +267,7 @@ describe("connect: the health probe, and a token held in memory only", () => {
     client.disconnect();
     expect(client.getConnection()).toEqual({ status: "disconnected", reason: "signed-out" });
     expect(await client.build(PROMPT)).toEqual({ status: "not-connected" });
-    expect(calls).toHaveLength(1);
+    expect(calls).toHaveLength(2);
   });
 
   it("subscribers hear every change of connection", async () => {
@@ -186,11 +289,16 @@ describe("build: the bearer, and every reply parsed", () => {
 
     await client.build(PROMPT, { answers: { "consent:read:contracts": "yes" } });
 
-    const build = calls[1];
+    const build = calls[2];
     expect(build?.method).toBe("POST");
     expect(build?.url).toBe("/api/studio/build");
     expect(build?.headers["authorization"]).toBe(`Bearer ${TOKEN}`);
     expect(build?.headers["content-type"]).toBe("application/json");
+    // The bearer is for the Studio server only: a redirect would hand it to
+    // somebody else, and ambient cookies/caches have no business here.
+    expect(build?.redirect).toBe("error");
+    expect(build?.credentials).toBe("omit");
+    expect(build?.cache).toBe("no-store");
     // The server's body schema is `.strict()`: anything else is a 400.
     expect(JSON.parse(build?.body ?? "null")).toEqual({
       prompt: PROMPT,
@@ -202,7 +310,7 @@ describe("build: the bearer, and every reply parsed", () => {
     const { fetch, calls } = server(() => json(200, { status: "invalid_draft", issues: [], attempts: 1 }));
     const client = await connected(fetch);
     await client.build(PROMPT);
-    expect(JSON.parse(calls[1]?.body ?? "null")).toEqual({ prompt: PROMPT });
+    expect(JSON.parse(calls[2]?.body ?? "null")).toEqual({ prompt: PROMPT });
   });
 
   it("refuses to send while disconnected — no request, no token", async () => {
@@ -219,7 +327,7 @@ describe("build: the bearer, and every reply parsed", () => {
     expect(await client.build(PROMPT)).toEqual({ status: "unauthorized" });
     expect(client.getConnection()).toEqual({ status: "disconnected", reason: "token-rejected" });
     expect(await client.build(PROMPT)).toEqual({ status: "not-connected" });
-    expect(calls).toHaveLength(2);
+    expect(calls).toHaveLength(3);
   });
 
   it("⭐ 429 is 'rate-limited' with the server's Retry-After, and keeps the connection", async () => {
@@ -254,12 +362,11 @@ describe("build: the bearer, and every reply parsed", () => {
   });
 
   it("a network failure mid-build is a protocol-error too, not an exception", async () => {
-    let first = true;
+    let n = 0;
     const { fetch } = stubFetch(() => {
-      if (first) {
-        first = false;
-        return json(200, HEALTH);
-      }
+      n += 1;
+      if (n === 1) return json(200, HEALTH);
+      if (n === 2) return TOKEN_ACCEPTED();
       throw new TypeError("fetch failed");
     });
     const client = await connected(fetch);
@@ -299,11 +406,34 @@ describe("⭐ the parser against the REAL server's replies", () => {
     expect(outcome.status).toBe("invalid_draft");
   });
 
-  it("401 — the real server's refusal of a wrong token disconnects", async () => {
-    const client = createStudioClient({ fetch: realServer(async () => ({ text: DRAFT })) });
-    expect((await client.connect(`${TOKEN}-wrong`)).ok).toBe(true);
-    expect(await client.build(PROMPT)).toEqual({ status: "unauthorized" });
-    expect(client.getConnection()).toEqual({ status: "disconnected", reason: "token-rejected" });
+  it("⭐ connect against the real server: a wrong token is refused, the right one accepted — no model call either way", async () => {
+    const llm = vi.fn(async () => ({ text: DRAFT }));
+    const wrong = createStudioClient({ fetch: realServer(llm) });
+    expect(await wrong.connect(`${TOKEN}-wrong`)).toEqual({ ok: false, reason: "token-rejected" });
+    expect(wrong.getConnection().status).toBe("disconnected");
+    expect(await wrong.build(PROMPT)).toEqual({ status: "not-connected" });
+
+    const right = createStudioClient({ fetch: realServer(llm) });
+    const result = await right.connect(TOKEN);
+    expect(result.ok).toBe(true);
+    expect(right.getConnection().status).toBe("connected");
+    expect(llm).not.toHaveBeenCalled();
+  });
+
+  it("proposed — `files: []` is a protocol-error, and a field the server adds survives", async () => {
+    const client = await connected(realServer(async () => ({ text: DRAFT })));
+    const outcome = await client.build(PROMPT);
+    if (outcome.status !== "proposed") throw new Error(`expected proposed, got ${outcome.status}`);
+    const reply = JSON.parse(JSON.stringify(outcome)) as Record<string, unknown>;
+
+    const noFiles = structuredClone(reply);
+    (noFiles["generated"] as Record<string, unknown>)["files"] = [];
+    expect(parseBuildReply(noFiles).status).toBe("protocol-error");
+
+    const extended = { ...structuredClone(reply), specSha256: "ab".repeat(32) };
+    const parsed = parseBuildReply(extended) as unknown as Record<string, unknown>;
+    expect(parsed["status"]).toBe("proposed");
+    expect(parsed["specSha256"]).toBe("ab".repeat(32));
   });
 
   it("grant-refused — the intake grant's answer, replayed byte for byte", async () => {

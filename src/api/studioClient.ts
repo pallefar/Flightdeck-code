@@ -11,8 +11,17 @@
  * tab is one more place it can be read from. `studioClient.test.ts` spies on
  * all three stores and on `console` to hold that.
  *
- * It is sent on exactly one request, the build. The health probe is
+ * It is sent on one route only, the build — as the build itself, and once
+ * when connecting, as the token check below. The health probe is
  * unauthenticated on the server, so it goes without it.
+ *
+ * ── WHAT "CONNECTED" MEANS: THE SERVER ACCEPTED THIS TOKEN ─────────
+ * The probe says a Studio server is there; it cannot say the token is right.
+ * So connect then sends `POST /api/studio/build` with `{}` for a body and the
+ * candidate bearer. The server checks the bearer BEFORE it parses the body
+ * (`server/index.ts`), so a wrong token is answered 401 and a right one 400
+ * "malformed request" — and neither spends a model call. Only that 400 is
+ * `connected`; a 401 is `token-rejected` and nothing is kept.
  *
  * ── EVERY REPLY IS PARSED, NOT TRUSTED ──────────────────────────────
  * A reply is checked against the server's `BuildOutcome` union (plus the
@@ -34,6 +43,10 @@
  *       `Retry-After` in seconds, or `null` when it gave none it could count.
  *       The connection stays.
  * anything else that is not 200 — `protocol-error`, with the status.
+ *
+ * On connect, a 502/503/504 or a 500 that is not JSON is `unreachable`: that is
+ * a gateway — in development, Vite's proxy with no Studio server behind it —
+ * answering for a server that is not there, not the server saying something.
  */
 import { z } from "zod";
 
@@ -189,13 +202,17 @@ export function parseBuildReply(reply: unknown): ServerOutcome | Extract<ClientO
 export type ConnectionState =
   /** `reason` is why it is not connected: `null` before anyone connected. */
   | { readonly status: "disconnected"; readonly reason: null | "signed-out" | "token-rejected" }
-  /** The server answered its health probe. The TOKEN is checked by the server
-   * on each build; a refused one drops back to `disconnected`. */
+  /** The server answered its health probe AND accepted the token. It checks
+   * the token again on every build; a refused one drops back to `disconnected`. */
   | { readonly status: "connected"; readonly health: StudioHealth };
 
 export type ConnectResult =
   | { readonly ok: true; readonly health: StudioHealth }
-  | { readonly ok: false; readonly reason: "empty-token" | "unreachable" | "protocol-error" };
+  | {
+      readonly ok: false;
+      /** `cancelled`: a disconnect (or a newer connect) superseded it while it waited. */
+      readonly reason: "empty-token" | "unreachable" | "protocol-error" | "token-rejected" | "cancelled";
+    };
 
 export interface BuildOptions {
   /** Answers to the clarifying questions of a `needs_input`, by question id. */
@@ -221,6 +238,17 @@ export interface StudioClientOptions {
 }
 
 const INITIAL: ConnectionState = { status: "disconnected", reason: null };
+
+/** The build route's answer to an empty body once the bearer has passed. */
+const tokenAccepted = z.object({ error: z.literal("malformed request") }).passthrough();
+
+/** A gateway answering for a server that is not there: 502/503/504, or a 500
+ * that is not JSON (Vite's dev proxy, when nothing listens behind it, answers
+ * an empty text/plain 500). The Studio server itself answers JSON. */
+function gatewayWithoutServer(res: Response): boolean {
+  if (res.status === 502 || res.status === 503 || res.status === 504) return true;
+  return res.status === 500 && !(res.headers.get("content-type") ?? "").includes("application/json");
+}
 
 /** `Retry-After` in delta-seconds. An HTTP date is not counted: `null`
  * ("the server did not say, in a form we can count") beats an invented number. */
@@ -256,6 +284,7 @@ export function createStudioClient(options: StudioClientOptions = {}): StudioCli
     } catch {
       return { ok: false, reason: "unreachable" };
     }
+    if (gatewayWithoutServer(res)) return { ok: false, reason: "unreachable" };
     if (res.status !== 200) return { ok: false, reason: "protocol-error" };
     let body: unknown;
     try {
@@ -265,6 +294,41 @@ export function createStudioClient(options: StudioClientOptions = {}): StudioCli
     }
     const parsed = healthSchema.safeParse(body);
     return parsed.success ? { ok: true, health: parsed.data } : { ok: false, reason: "protocol-error" };
+  }
+
+  /** The same request `build` makes, with the same fetch options, and the
+   * one body the server's schema is certain to refuse. See the file header. */
+  const postBuild = (bearer: string, body: unknown) =>
+    doFetch(`${baseUrl}/api/studio/build`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${bearer}`, "content-type": "application/json" },
+      body: JSON.stringify(body),
+      credentials: "omit",
+      cache: "no-store",
+      // The server never redirects /api. A redirect is somebody else
+      // answering, and the bearer is not for them.
+      redirect: "error",
+    });
+
+  async function checkToken(secret: string): Promise<"accepted" | Extract<ConnectResult, { ok: false }>["reason"]> {
+    let res: Response;
+    try {
+      res = await postBuild(secret, {});
+    } catch {
+      return "unreachable";
+    }
+    if (res.status === 401) return "token-rejected";
+    if (gatewayWithoutServer(res)) return "unreachable";
+    if (res.status !== 400) return "protocol-error";
+    let body: unknown;
+    try {
+      body = await res.json();
+    } catch {
+      return "protocol-error";
+    }
+    // Past the bearer, the build route's own refusal of an empty body — not
+    // just any 400 from something in between.
+    return tokenAccepted.safeParse(body).success ? "accepted" : "protocol-error";
   }
 
   return {
@@ -285,14 +349,16 @@ export function createStudioClient(options: StudioClientOptions = {}): StudioCli
       token = null;
       if (connection.status === "connected") set(INITIAL);
       const mine = ++attempt;
-      const result = await probe();
+      const probed = await probe();
       // A later connect (or a disconnect) superseded this one while it waited.
-      if (mine !== attempt) return result;
-      if (result.ok) {
-        token = secret;
-        set({ status: "connected", health: result.health });
-      }
-      return result;
+      if (mine !== attempt) return { ok: false, reason: "cancelled" };
+      if (!probed.ok) return probed;
+      const checked = await checkToken(secret);
+      if (mine !== attempt) return { ok: false, reason: "cancelled" };
+      if (checked !== "accepted") return { ok: false, reason: checked };
+      token = secret;
+      set({ status: "connected", health: probed.health });
+      return probed;
     },
 
     disconnect() {
@@ -308,16 +374,7 @@ export function createStudioClient(options: StudioClientOptions = {}): StudioCli
       const body = buildOptions.answers === undefined ? { prompt } : { prompt, answers: buildOptions.answers };
       let res: Response;
       try {
-        res = await doFetch(`${baseUrl}/api/studio/build`, {
-          method: "POST",
-          headers: { authorization: `Bearer ${sent}`, "content-type": "application/json" },
-          body: JSON.stringify(body),
-          credentials: "omit",
-          cache: "no-store",
-          // The server never redirects /api. A redirect is somebody else
-          // answering, and the bearer is not for them.
-          redirect: "error",
-        });
+        res = await postBuild(sent, body);
       } catch {
         return { status: "protocol-error", cause: "network", httpStatus: null };
       }

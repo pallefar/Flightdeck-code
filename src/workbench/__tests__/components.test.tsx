@@ -30,7 +30,7 @@ import { GatePane } from "../components/GatePane";
 import { PreviewPane } from "../components/PreviewPane";
 import { RunPane } from "../components/RunPane";
 import { ThemeToggle } from "../components/ThemeToggle";
-import { ConnectDialog, ConnectionIndicator, connectErrorText } from "../components/ConnectDialog";
+import { ConnectDialog, ConnectionIndicator, connectErrorText, createConnectFlow } from "../components/ConnectDialog";
 import { Workbench } from "../Workbench";
 import { diffFileSets } from "../diff";
 import { editDraft, openDraft, saveDraft, type Draft } from "../editing";
@@ -747,6 +747,16 @@ describe("the server connection: Connect dialog and Connected/Demo indicator", (
     expect(out).toMatch(/<button[^>]*type="submit"[^>]*disabled=""/);
   });
 
+  it("⛔ the token field is UNCONTROLLED: no `value` attribute for React to copy a typed token into", () => {
+    // React DOM mirrors a controlled input's value into its `value` ATTRIBUTE,
+    // where CSS attribute selectors, MutationObservers and DOM snapshots can
+    // read it. An uncontrolled field renders none, and React never writes one.
+    const out = html(<ConnectDialog state={disconnected} onConnect={refuse} onDisconnect={noop} onClose={noop} />);
+    const field = /<input[^>]*type="password"[^>]*>/.exec(out)?.[0] ?? "";
+    expect(field).not.toBe("");
+    expect(field).not.toMatch(/\svalue=/);
+  });
+
   it("says the server refused the token after a 401 dropped the connection", () => {
     const out = html(
       <ConnectDialog state={{ status: "disconnected", reason: "token-rejected" }} onConnect={refuse} onDisconnect={noop} onClose={noop} />,
@@ -764,9 +774,66 @@ describe("the server connection: Connect dialog and Connected/Demo indicator", (
   });
 
   it("names every way a connect can fail, each differently", () => {
-    const texts = (["empty-token", "unreachable", "protocol-error"] as const).map(connectErrorText);
+    const texts = (["empty-token", "unreachable", "protocol-error", "token-rejected", "cancelled"] as const).map(
+      connectErrorText,
+    );
     for (const text of texts) expect(text.length).toBeGreaterThan(10);
-    expect(new Set(texts).size).toBe(3);
+    expect(new Set(texts).size).toBe(5);
+  });
+
+  describe("⭐ the dialog's connect flow: closing while a connect waits abandons it", () => {
+    const HEALTHY = { ok: true as const, health: HEALTH };
+    function deferred() {
+      let resolve: (r: typeof HEALTHY) => void = () => {};
+      const promise = new Promise<typeof HEALTHY>((r) => {
+        resolve = r;
+      });
+      return { promise, resolve };
+    }
+
+    it("Cancel/Escape/backdrop during a pending connect tells the client to drop it, and the late answer is ignored", async () => {
+      const answer = deferred();
+      const calls: string[] = [];
+      const flow = createConnectFlow({
+        connect: () => answer.promise,
+        abandon: () => calls.push("abandon"),
+        close: () => calls.push("close"),
+      });
+      const submitted = flow.submit("secret");
+      expect(flow.pending).toBe(true);
+      flow.close();
+      expect(calls).toEqual(["abandon", "close"]);
+      answer.resolve(HEALTHY);
+      // The dialog is gone; nothing may act on the answer.
+      expect(await submitted).toBeNull();
+      expect(calls).toEqual(["abandon", "close"]);
+    });
+
+    it("closing when nothing is pending only closes", () => {
+      const calls: string[] = [];
+      const flow = createConnectFlow({ connect: async () => HEALTHY, abandon: () => calls.push("abandon"), close: () => calls.push("close") });
+      flow.close();
+      expect(calls).toEqual(["close"]);
+    });
+
+    it("a second submit while one is pending sends nothing", async () => {
+      const answer = deferred();
+      let sent = 0;
+      const flow = createConnectFlow({
+        connect: () => {
+          sent += 1;
+          return answer.promise;
+        },
+        abandon: noop,
+        close: noop,
+      });
+      const first = flow.submit("secret");
+      expect(await flow.submit("secret")).toBeNull();
+      answer.resolve(HEALTHY);
+      expect(await first).toEqual(HEALTHY);
+      expect(sent).toBe(1);
+      expect(flow.pending).toBe(false);
+    });
   });
 
   it("the indicator says Demo until connected, then Connected", () => {
