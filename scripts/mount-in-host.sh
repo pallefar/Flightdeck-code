@@ -47,11 +47,30 @@ ln -s "$REPO/$HOST_REL/node_modules" "$SANDBOX/node_modules"
 # comparison it exists to print — which is exactly what happened the first time.
 # So: capture to a log, never let the exit status propagate, and report from the
 # log. `|| true` is load-bearing, not sloppiness.
+#
+# ⛔ The POSTGRES_* unsets and the AUTH/WORKSPACES pins are the host gate's own
+# fence (scripts/gate.sh, stack 2), copied because this runs the same suite:
+# with POSTGRES_ENABLED/POSTGRES_DSN/SUPABASE_TEST_DSN in the environment, an
+# app-boot test with a fixture root binds the live workspace and the indexers
+# prune it — the 2026-08-20 data loss. This script used to pass the caller's
+# environment straight through, so an operator who had exported them for a
+# server run armed that against the live database.
 fences() {
   local log="$1"
-  ( cd "$SANDBOX" && npx vitest run tests/subapps/ >"$log" 2>&1 ) || true
-  grep -E "Test Files|Tests " "$log" | tail -2
+  ( cd "$SANDBOX" \
+    && unset POSTGRES_ENABLED POSTGRES_DSN SUPABASE_TEST_DSN \
+    && AUTH_REQUIRED=false WORKSPACES_ENABLED=false npx vitest run tests/subapps/ >"$log" 2>&1 ) || true
+  # `|| true` again: a run that crashed before its summary must reach the
+  # comparison below (which fails it) rather than kill the script under set -e.
+  { grep -E "Test Files|Tests " "$log" || true; } | tail -2
 }
+
+# count WHAT LINE — the N in "N what" on a vitest "Tests" summary line; 0 if
+# absent. "expected fail" is not "failed", so it never counts as one.
+count() { printf '%s\n' "$2" | grep -oE "[0-9]+ $1" | head -1 | grep -oE '^[0-9]+' || echo 0; }
+
+# The failing tests a run named, one per line, sorted.
+failing() { grep -E '^ *FAIL ' "$1" | sed -E 's/^ *FAIL +//; s/ +[0-9]+m?s$//' | sort -u; }
 
 # Three standalone tests assert against the REAL built bundle and say so in
 # their own failure message ("run `npm run build:web` — this test measures the
@@ -76,12 +95,34 @@ AFTER="$(fences "$ROOT/after.log")"; echo "$AFTER"
 
 echo
 echo "==> compare. Mounting must ADD passing tests and add no failures."
-echo "    before: $(echo "$BEFORE" | grep -oE 'Tests .*' || true)"
-echo "    after:  $(echo "$AFTER"  | grep -oE 'Tests .*' || true)"
+B_TESTS="$(echo "$BEFORE" | grep -oE 'Tests .*' || true)"
+A_TESTS="$(echo "$AFTER"  | grep -oE 'Tests .*' || true)"
+echo "    before: $B_TESTS"
+echo "    after:  $A_TESTS"
 echo
 echo "    full logs: $ROOT/before.log  $ROOT/after.log"
 echo
-echo "    Known environmental failure in this container, present in BOTH runs:"
-echo "    tests/subapps/docusign/docusignLibreoffice.test.ts — a real docx->PDF"
-echo "    conversion. /usr/bin/soffice exists but the conversion does not"
-echo "    succeed here, so the test runs instead of self-skipping. Not ours."
+
+# Enforced, not just printed: the script used to say the rule above and exit 0
+# whatever the numbers were. Its first Mac run (host c44d665b) went from 0 to
+# 1 failed with the sub-app mounted and reported success. A test failing in
+# BOTH runs (the Linux container's docusignLibreoffice, say) is the host's and
+# is not held against the candidate; a test failing only AFTER is.
+PROBLEMS=""
+[ -n "$B_TESTS" ] || PROBLEMS="$PROBLEMS\n    the baseline run printed no Tests summary — see $ROOT/before.log"
+[ -n "$A_TESTS" ] || PROBLEMS="$PROBLEMS\n    the mounted run printed no Tests summary — see $ROOT/after.log"
+if [ -n "$B_TESTS" ] && [ -n "$A_TESTS" ]; then
+  B_FAIL="$(count failed "$B_TESTS")"; A_FAIL="$(count failed "$A_TESTS")"
+  B_PASS="$(count passed "$B_TESTS")"; A_PASS="$(count passed "$A_TESTS")"
+  [ "$A_FAIL" -le "$B_FAIL" ] || PROBLEMS="$PROBLEMS\n    failures went from $B_FAIL to $A_FAIL"
+  [ "$A_PASS" -gt "$B_PASS" ] || PROBLEMS="$PROBLEMS\n    passing tests went from $B_PASS to $A_PASS — mounting added none"
+  NEW_FAILS="$(comm -13 <(failing "$ROOT/before.log") <(failing "$ROOT/after.log"))"
+  [ -z "$NEW_FAILS" ] || PROBLEMS="$PROBLEMS\n    failing only with the sub-app mounted:$(printf '%s\n' "$NEW_FAILS" | sed 's/^/\n      /')"
+  PRE_FAILS="$(comm -12 <(failing "$ROOT/before.log") <(failing "$ROOT/after.log"))"
+  [ -z "$PRE_FAILS" ] || printf '    failing in BOTH runs (the host'"'"'s, not the candidate'"'"'s):\n%s\n' "$(printf '%s\n' "$PRE_FAILS" | sed 's/^/      /')"
+fi
+if [ -n "$PROBLEMS" ]; then
+  printf 'MOUNT FAILED:%b\n' "$PROBLEMS"
+  exit 1
+fi
+echo "MOUNT OK — mounting added $((A_PASS - B_PASS)) passing test(s) and no failure."
