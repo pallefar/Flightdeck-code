@@ -38,6 +38,7 @@
  */
 import { createHash, timingSafeEqual } from "node:crypto";
 import fs from "node:fs";
+import { isIPv4 } from "node:net";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
@@ -231,6 +232,11 @@ export function modelProviderFromEnv(
  */
 export function bootProblems(env: Readonly<Record<string, string | undefined>>): string[] {
   const problems: string[] = [];
+  try {
+    assertStudioBind(studioHostFromEnv(env), env);
+  } catch (error) {
+    problems.push((error as Error).message);
+  }
   const operator = operatorFromEnv(env);
   if (typeof operator === "string") problems.push(operator);
   const grants = grantsFileFromEnv(env);
@@ -294,6 +300,40 @@ export interface ServerOptions {
    * `HARNESS_FIXTURES_DIR`. Ignored when `llm` is injected. */
   readonly harnessFixturesDir?: string;
 }
+
+/** `STUDIO_HOST`, or loopback. Unset is loopback; set-but-empty is NOT —
+ * Node binds every interface for an empty host, so it goes to the guard. */
+function studioHostFromEnv(env: Readonly<Record<string, string | undefined>>): string {
+  return env["STUDIO_HOST"] ?? "127.0.0.1";
+}
+
+/**
+ * ⛔ A NON-LOOPBACK BIND MUST BE ASKED FOR OUT LOUD.
+ *
+ * This process holds a model key and the operator's bearer secret. The
+ * loopback default alone did not stop `STUDIO_HOST=0.0.0.0` (or an empty
+ * value, which Node reads as "every interface") from exposing both without
+ * a word. So any host that is not loopback throws unless
+ * `STUDIO_ALLOW_REMOTE` is exactly `true`. Fails closed: an unrecognised
+ * host is treated as remote. Allowing it changes nothing else — the operator
+ * token is still required on every build.
+ */
+export function assertStudioBind(host: string, env: Readonly<Record<string, string | undefined>>): void {
+  if (host === "localhost" || host === "::1" || (isIPv4(host) && host.startsWith("127."))) return;
+  if (env["STUDIO_ALLOW_REMOTE"] === "true") return;
+  throw new Error(
+    `STUDIO_HOST=${host} is not loopback — this process holds a model key and the operator token; set STUDIO_ALLOW_REMOTE=true to bind it anyway`,
+  );
+}
+
+/** Sent on every response. The CSP is written for HTML but costs nothing on
+ * JSON, so it is not made conditional on a content type. */
+const SECURITY_HEADERS: Readonly<Record<string, string>> = {
+  "x-content-type-options": "nosniff",
+  "referrer-policy": "no-referrer",
+  "x-frame-options": "DENY",
+  "content-security-policy": "default-src 'self'; frame-ancestors 'none'; object-src 'none'",
+};
 
 /**
  * The real provider's config, or a refusal. Checked HERE as well as at the
@@ -366,6 +406,11 @@ export function createServer(options: ServerOptions): ReturnType<typeof Fastify>
       { id: options.operator.actor, kind: "human", displayName: options.operator.actor, active: true },
     ]);
   const store = options.store ?? createFileGrantStore(grantsFileOrThrow(process.env));
+
+  app.addHook("onSend", async (_request, reply, payload) => {
+    reply.headers(SECURITY_HEADERS);
+    return payload;
+  });
 
   app.get("/api/studio/health", async () => ({
     ok: true,
@@ -510,7 +555,9 @@ if (isEntryPoint) {
   // ⚠ LOOPBACK BY DEFAULT. This process holds a model key and a bearer
   // secret; binding every interface is a decision someone should have to
   // make out loud.
-  const host = process.env["STUDIO_HOST"] ?? "127.0.0.1";
+  // `bootProblems` above has already refused a non-loopback host without
+  // STUDIO_ALLOW_REMOTE=true (`assertStudioBind`), with exit 1.
+  const host = studioHostFromEnv(process.env);
   void createServer({ operator, store: createFileGrantStore(grants.file) })
     .listen({ port, host })
     .then(() => process.stdout.write(`studio: listening on http://${host}:${port}\n`))

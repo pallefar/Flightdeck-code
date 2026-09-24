@@ -340,7 +340,8 @@ curl -s localhost:8787/api/studio/build \
 | `STUDIO_OPERATOR_TOKEN` | **yes** | — | Bearer secret, ≥24 chars. The only thing separating an anonymous request from the first-party path. |
 | `ANTHROPIC_API_KEY` | for real calls | — | Read lazily; the server boots without it. |
 | `PORT` | no | `8787` | `vite.config.ts` derives its `/api` proxy target from this, so `npm run dev` and `npm run dev:server` stay in step. |
-| `STUDIO_HOST` | no | `127.0.0.1` | Loopback by default: this process holds a key and a secret. |
+| `STUDIO_HOST` | no | `127.0.0.1` | Loopback by default: this process holds a key and a secret. Anything but `127.x.x.x`, `::1` or `localhost` (including an empty value, which Node binds to every interface) refuses to boot, exit 1, unless `STUDIO_ALLOW_REMOTE=true`. |
+| `STUDIO_ALLOW_REMOTE` | no | — | Exact string `true` permits a non-loopback `STUDIO_HOST`. The operator token is still required on every build. |
 | `STUDIO_GRANTS_FILE` | no | `<studio root>/.studio/grants.json` | Durable approvals, written `0600`. The base is the Studio checkout (`STUDIO_ROOT`: the nearest ancestor of `server/index.ts` holding a `package.json`), never cwd: a relative value resolves against that root, an absolute one is used as given, set-but-empty refuses to boot. Boot prints `studio: grants at <path>`. A grants file created under another cwd before 2026-09-22 is not migrated — it fails closed (reads as no grants), so point this variable at it explicitly. |
 | `FLIGHTDECK_MODEL` | no | `claude-opus-5` | |
 | `FLIGHTDECK_EFFORT` | no | `high` | `low\|medium\|high\|xhigh\|max`, case-sensitive. Anything else is refused at boot (`studio: refusing to start — FLIGHTDECK_EFFORT=turbo is not one of …`, exit 1), and `createServer` throws on it whenever it builds the real provider. Unset or empty takes the default. |
