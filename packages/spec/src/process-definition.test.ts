@@ -207,6 +207,39 @@ describe("serializeWorkflowDefinition", () => {
   });
 });
 
+describe("one named-human rule — the guardrails rule, imported, not a weaker fourth copy", () => {
+  const NON_NAMES = ["studio", "agent", "system", "x", "   ", "bot", "the approver"];
+
+  it.each(NON_NAMES)("⭐ refuses statutoryConfirmedBy %j when writing and when reading a file", (name) => {
+    const body = { ...valid(), steps: ["intake_received", "statutory", "works_council", "complete"], statutorySteps: [], statutoryConfirmedBy: name };
+    expect(() => serializeWorkflowDefinition(body as never)).toThrow(/statutoryConfirmedBy/);
+    const parsed = parseWorkflowDefinition(JSON.stringify(body));
+    expect(parsed.ok).toBe(false);
+    if (!parsed.ok) expect(parsed.error).toMatch(/statutoryConfirmedBy: /);
+    expect(ok(body)).toBe(false);
+  });
+
+  it.each(NON_NAMES)("⭐ refuses by %j (null stays allowed in a draft; a non-name does not)", (name) => {
+    expect(ok({ ...valid(), by: name })).toBe(false);
+    const parsed = parseWorkflowDefinition(JSON.stringify({ ...valid(), by: name }));
+    expect(parsed.ok).toBe(false);
+    if (!parsed.ok) expect(parsed.error).toMatch(/^by: /);
+  });
+
+  it("a real person still passes both fields — a rule that refuses everyone is not a rule", () => {
+    const text = serializeWorkflowDefinition(
+      workflowDefinitionSchema.parse({ ...valid(), by: "Anna Sørensen", statutoryConfirmedBy: "Wiebke Clausen" }),
+    );
+    expect(parseWorkflowDefinition(text).ok).toBe(true);
+  });
+
+  it("the rule is IMPORTED from guardrails, not transcribed — no local NON_NAMES here", () => {
+    const source = readFileSync(new URL("./process-definition.ts", import.meta.url), "utf8");
+    expect(source).toContain('from "../../guardrails/src/approval-pure"');
+    expect(source).not.toMatch(/NON_NAMES\s*=/);
+  });
+});
+
 describe("exported from @spec", () => {
   it("the index re-exports the schema, its id and the serializer", () => {
     expect(spec.workflowDefinitionSchema).toBe(workflowDefinitionSchema);

@@ -29,6 +29,8 @@
 
 import { z } from "zod";
 
+import { isNamedHuman } from "../../guardrails/src/approval-pure";
+
 export const WORKFLOW_DEFINITION_SCHEMA_ID = "studio-workflow-definition/1" as const;
 
 /** `definitionBody.intakeFields[].type` in the host. */
@@ -40,6 +42,16 @@ export const WORKFLOW_SLUG_PATTERN = /^[a-z0-9-]{3,40}$/;
 /** The universal manifest floor the Builder enforces on `steps`. */
 export const WORKFLOW_FIRST_STEP = "intake_received" as const;
 export const WORKFLOW_LAST_STEP = "complete" as const;
+
+/**
+ * A named human, by the ONE rule the repo keeps (guardrails' `isNamedHuman`): "studio",
+ * "agent", "system", "x" or a blank are not names. Imported, never transcribed — see
+ * packages/registry/src/__tests__/one-named-human-rule.test.ts.
+ */
+const namedHumanSchema = z
+  .string()
+  .min(1, "named human required") // the host's own bound on `by`; the drift test compares bounds
+  .refine(isNamedHuman, "a named human, not a system/agent/placeholder");
 
 /** Keys this file carries that the host's Builder body does not. The OS import drops them. */
 export const STUDIO_ONLY_KEYS = ["schema", "statutoryConfirmedBy"] as const;
@@ -56,7 +68,7 @@ const intakeFieldSchema = z
 export const workflowDefinitionSchema = z
   .object({
     schema: z.literal(WORKFLOW_DEFINITION_SCHEMA_ID),
-    by: z.string().min(1, "named human required").nullable(),
+    by: namedHumanSchema.nullable(),
     name: z.string().min(3).max(80),
     slug: z.string().regex(WORKFLOW_SLUG_PATTERN, "kebab-case slug"),
     country: z.string().min(2).max(40),
@@ -68,7 +80,7 @@ export const workflowDefinitionSchema = z
       .refine((s) => s[0] === WORKFLOW_FIRST_STEP, { message: `first step must be '${WORKFLOW_FIRST_STEP}'` })
       .refine((s) => s.at(-1) === WORKFLOW_LAST_STEP, { message: `last step must be '${WORKFLOW_LAST_STEP}'` }),
     statutorySteps: z.array(z.string()),
-    statutoryConfirmedBy: z.string().min(1).nullable(),
+    statutoryConfirmedBy: namedHumanSchema.nullable(),
   })
   .strict()
   .superRefine((d, ctx) => {

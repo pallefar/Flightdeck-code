@@ -22,6 +22,20 @@ import { describe, expect, it } from "vitest";
 
 import { isNamedHuman } from "../../../guardrails/src/approval-pure";
 import { namedHuman } from "../actor";
+import { parseWorkflowDefinition } from "../../../spec/src/process-definition";
+
+/** A valid studio-workflow-definition/1 file body with a real person in both name fields. */
+const WF_BASE = {
+  schema: "studio-workflow-definition/1",
+  by: "Anna Sørensen",
+  name: "Synthetic onboarding",
+  slug: "synthetic-onboarding",
+  country: "DE",
+  intakeFields: [{ name: "start_date", type: "date", required: true }],
+  steps: ["intake_received", "statutory", "works_council", "complete"],
+  statutorySteps: [],
+  statutoryConfirmedBy: "Wiebke Clausen",
+};
 
 const asNamed = (name: string): boolean =>
   namedHuman({ kind: "human", id: name, displayName: name }) !== null;
@@ -77,6 +91,17 @@ describe("one named-human rule, across packages", () => {
     expect(namedHuman({ kind: "agent", id: "crew.auditor", displayName: "Anna Sørensen" })).toBeNull();
     expect(namedHuman(null)).toBeNull();
     expect(namedHuman(undefined)).toBeNull();
+  });
+
+  it("⭐ the Studio workflow-definition file (spec) uses the same rule for by and statutoryConfirmedBy", () => {
+    const disagreed: string[] = [];
+    for (const name of ["system", "agent", "studio", "service", "bot", "the approver", "x", "", "   "]) {
+      const body = { ...WF_BASE, by: name, statutoryConfirmedBy: name };
+      if (parseWorkflowDefinition(JSON.stringify(body)).ok) disagreed.push(name);
+      if (parseWorkflowDefinition(JSON.stringify({ ...WF_BASE, statutoryConfirmedBy: name })).ok) disagreed.push(`confirmer:${name}`);
+    }
+    expect(disagreed).toEqual([]);
+    expect(parseWorkflowDefinition(JSON.stringify(WF_BASE)).ok).toBe(true);
   });
 
   it("the rule is IMPORTED, not transcribed — there is no local NON_NAMES here", async () => {
