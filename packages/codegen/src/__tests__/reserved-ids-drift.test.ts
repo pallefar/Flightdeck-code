@@ -55,6 +55,8 @@ interface ResolvedManifest {
   readonly entry: string;
   readonly file: string;
   readonly id: string;
+  /** A top-level `generatedBy: "flightdeck-studio"` member: Studio's own app. */
+  readonly generated: boolean;
 }
 
 interface UnresolvedManifest {
@@ -244,14 +246,15 @@ function resolveRegistryIds(registryFile: string, read: ReadFile): RegistryIds {
     }
     const value = (idMember[1] ?? "id").trim();
     const id = resolveIdValue(value, manifestFile, manifestCode, read);
-    if (typeof id === "string") resolved.push({ entry, file: manifestFile, id });
+    const generated = topLevelMembers(body).some((m) => /^generatedBy\s*:\s*(["'])flightdeck-studio\1$/.test(m.trim()));
+    if (typeof id === "string") resolved.push({ entry, file: manifestFile, id, generated });
     else unresolved.push({ entry, why: id.why });
   }
   return { resolved, unresolved };
 }
 
 function unreservedIds(registry: RegistryIds, reserved: readonly string[]): string[] {
-  return registry.resolved.map((r) => r.id).filter((id) => !reserved.includes(id));
+  return registry.resolved.filter((r) => !r.generated).map((r) => r.id).filter((id) => !reserved.includes(id));
 }
 
 const readDisk: ReadFile = (file) => (fs.existsSync(file) ? readHostSource(file) : null);
@@ -362,6 +365,27 @@ describe("the resolver itself", () => {
     const registry = resolveRegistryIds(registryFile, (file) => broken[file] ?? null);
     expect(registry.unresolved.map((u) => u.entry)).toEqual(["deltaManifest", "zetaManifest"]);
     expect(registry.resolved).toHaveLength(4);
+  });
+
+  it("a manifest Studio GENERATED (top-level generatedBy marker) is Studio's own, not a live sub-app to reserve", () => {
+    // mount-into-worktree.sh puts a generated app into an OS worktree; the
+    // codegen CLI then refuses to overwrite it without --force, and the same
+    // spec regenerates it byte for byte. Reserving it would make Studio unable
+    // to regenerate its own app. A marker in a comment or a nested object
+    // does not count — only the manifest's own top-level member.
+    const marked = (idExpr: string, marker: string) =>
+      manifest("zetaManifest", idExpr, `import { ZETA_ID } from "./guard.js";`).replace(
+        `  label: "{ not a brace }",\n`,
+        `  label: "{ not a brace }",\n${marker}\n`,
+      );
+    const generated: Record<string, string> = { ...files, [`${root}/zeta/manifest.ts`]: marked("ZETA_ID", `  generatedBy: "flightdeck-studio",`) };
+    const reg = resolveRegistryIds(registryFile, (file) => generated[file] ?? null);
+    expect(unreservedIds(reg, ["alpha", "beta", "gamma", "delta", "epsilon"])).toEqual([]);
+    for (const marker of [`  // generatedBy: "flightdeck-studio",`, `  nested: { generatedBy: "flightdeck-studio" },`]) {
+      const fake: Record<string, string> = { ...files, [`${root}/zeta/manifest.ts`]: marked("ZETA_ID", marker) };
+      const r = resolveRegistryIds(registryFile, (file) => fake[file] ?? null);
+      expect(unreservedIds(r, ["alpha", "beta", "gamma", "delta", "epsilon"]), marker).toEqual(["zeta"]);
+    }
   });
 
   it("reports an entry whose manifest file is missing as unresolved", () => {

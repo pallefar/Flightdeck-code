@@ -16,8 +16,8 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { execFileSync, spawnSync } from "node:child_process";
-import { afterAll, describe, expect, it } from "vitest";
-import { HOST_ROOT } from "../../packages/guardrails/src/host-source";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { HOST_ROOT, hostAvailability } from "../../packages/guardrails/src/host-source";
 
 const STUDIO = path.resolve(__dirname, "..", "..");
 const SCRIPT = path.join(STUDIO, "scripts", "mount-into-worktree.sh");
@@ -41,17 +41,29 @@ function run(host: string, extraEnv: Record<string, string> = {}) {
   });
 }
 
-// A host repo shaped like the real one at the points the script touches.
+const host = hostAvailability();
 const main = path.join(work, "host-main");
-fs.mkdirSync(path.join(main, "flightdeck", "server", "subapps"), { recursive: true });
-fs.copyFileSync(path.join(HOST_ROOT, REGISTRY_REL), path.join(main, REGISTRY_REL));
-git(main, "init", "-q", "-b", "main");
-git(main, "add", ".");
-git(main, "commit", "-q", "-m", "fixture");
 const worktree = path.join(work, "host wt");
-git(main, "worktree", "add", "-q", worktree, "-b", "feat/x");
 
-describe("mount-into-worktree.sh", () => {
+// The house rule for host-dependent suites (guardrails' divergence.test.ts):
+// no host checkout is a FAILURE unless a human acknowledged running unverified.
+describe("mount-into-worktree.sh — needs the host's registry.ts", () => {
+  it(`the host checkout is readable, or its absence is acknowledged [${host.reason}]`, () => {
+    expect(host.available || host.acknowledged, host.reason).toBe(true);
+  });
+});
+
+describe.skipIf(!host.available)("mount-into-worktree.sh", () => {
+  // A host repo shaped like the real one at the points the script touches.
+  beforeAll(() => {
+    fs.mkdirSync(path.join(main, "flightdeck", "server", "subapps"), { recursive: true });
+    fs.copyFileSync(path.join(HOST_ROOT, REGISTRY_REL), path.join(main, REGISTRY_REL));
+    git(main, "init", "-q", "-b", "main");
+    git(main, "add", ".");
+    git(main, "commit", "-q", "-m", "fixture");
+    git(main, "worktree", "add", "-q", worktree, "-b", "feat/x");
+  });
+
   it("refuses a MAIN checkout — only a linked worktree may be written", () => {
     const r = run(main);
     expect(r.status).toBe(2);

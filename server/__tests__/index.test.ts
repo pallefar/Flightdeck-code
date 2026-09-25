@@ -47,8 +47,14 @@ const DRAFT = (() => {
 })();
 const PROMPT = "Show contract folders needing review, visible to legal and admin.";
 
+// ⚠ distDir pinned to a directory that never exists: the default is this
+// checkout's dist/, and after `npm start` (or `vite build`) the workbench's
+// SPA fallback answers GET /nowhere with index.html — the 404 case below went
+// red for a build artefact, not for the server. static.test.ts owns the
+// served-dist behaviour.
+const NO_DIST = "/nonexistent/studio-dist-for-api-tests";
 const serve = (llm?: () => Promise<{ text: string }>) =>
-  createServer({ operator: OPERATOR, ...(llm === undefined ? {} : { llm }) });
+  createServer({ operator: OPERATOR, distDir: NO_DIST, ...(llm === undefined ? {} : { llm }) });
 
 describe("who is allowed to ask", () => {
   it("⭐ refuses without the operator token — and does NOT run anyway as third-party", async () => {
