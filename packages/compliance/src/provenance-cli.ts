@@ -20,6 +20,14 @@
  *     writes the sidecar into the sandbox's app dir, its place); with
  *     `--host` it refuses if the host HEAD moved since the sandbox was built.
  *
+ *   npx tsx packages/compliance/src/provenance-cli.ts attest-check \
+ *       --record <compliance-record.json> --provenance <PROVENANCE.json> --spec <spec.json> --studio-commit <sha>
+ *
+ *     Run by .github/workflows/promote.yml BEFORE it signs (upd-studio-attestation,
+ *     `attestation.ts`): the record admits for this spec, the sidecar names that
+ *     record, and its Studio commit is the workflow's commit. Prints the sub-app
+ *     id and nothing else on stdout; refuses (exit 1) otherwise.
+ *
  *   npx tsx packages/compliance/src/provenance-cli.ts studio-identity --studio <dir>
  *
  *     Prints the Studio checkout's identity, `<sha>` or `<sha>-dirty`. promote.sh
@@ -43,8 +51,10 @@ import {
   buildProvenance,
   checkSubject,
   declaredHostFiles,
+  sha256Hex,
   type ProvenanceSubject,
 } from "./provenance";
+import { checkAttestable } from "./attestation";
 import { deriveSubject, rehashSubject } from "./subject";
 
 class Usage extends Error {}
@@ -194,13 +204,34 @@ function sealCommand(a: ReturnType<typeof args>): void {
   console.log(`provenance: ${provenance.schema} for ${subject.subappId} written to ${out} (record ${provenance.recordSha256})`);
 }
 
+function attestCheckCommand(a: ReturnType<typeof args>): void {
+  const record = readJson(need(a.opt("--record"), "--record <compliance-record.json>"), "the compliance record");
+  const provenance = readJson(need(a.opt("--provenance"), "--provenance <PROVENANCE.json>"), "the provenance sidecar");
+  const specPath = need(a.opt("--spec"), "--spec <spec.json>");
+  let specBytes: Buffer;
+  try {
+    specBytes = fs.readFileSync(specPath);
+  } catch (err) {
+    throw new Usage(`could not read the spec at ${specPath} — ${(err as Error).message}`);
+  }
+  const result = checkAttestable({
+    record,
+    provenance,
+    specSha256: sha256Hex(specBytes),
+    studioCommit: need(a.opt("--studio-commit"), "--studio-commit <sha>"),
+  });
+  if (!result.ok) throw new Refused(`not attestable — ${result.refusals.join(", ")}`);
+  process.stdout.write(`${result.subappId}\n`);
+}
+
 export function main(argv: readonly string[]): number {
   const a = args(argv);
   try {
     if (a.mode === "subject") subjectCommand(a);
     else if (a.mode === "seal") sealCommand(a);
     else if (a.mode === "studio-identity") studioIdentityCommand(a);
-    else throw new Usage('the first argument is "studio-identity", "subject" or "seal"');
+    else if (a.mode === "attest-check") attestCheckCommand(a);
+    else throw new Usage('the first argument is "studio-identity", "subject", "seal" or "attest-check"');
     return 0;
   } catch (err) {
     if (err instanceof Refused) {

@@ -12,6 +12,8 @@ export {
   admitComplianceRecord,
   recordDigest,
 } from "./record";
+export { ATTESTATION_PREDICATE_TYPE, checkAttestable } from "./attestation";
+export type { Attestable, AttestableInput } from "./attestation";
 export { CanonicalizationError, canonicalize } from "./jcs";
 export {
   PROVENANCE_FILE,

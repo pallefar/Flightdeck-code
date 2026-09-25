@@ -20,5 +20,5 @@
       "@conformance/*": ["./packages/conformance/src/*"]
     }
   },
-  "include": ["src", "server", "packages"]
+  "include": ["src", "server", "packages", "test"]
 }

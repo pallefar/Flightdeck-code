@@ -1,0 +1,193 @@
+name: studio-promote
+
+# The Studio promote job and its cosign KEYLESS attestation (upd-studio-attestation).
+#
+# scripts/promote.sh runs the host's own compliance gate with the candidate
+# mounted, writes the compliance record and seals the studio-provenance/1
+# sidecar, PROVENANCE.json. Anyone can recompute that verdict; recomputing it
+# does not say WHO ran the checks. This workflow runs promote.sh and then signs
+#
+#   cosign attest-blob --type https://flightdeck/studio-compliance/v1 \
+#     --predicate <compliance record> PROVENANCE.json
+#
+# with its own GitHub OIDC identity (no key exists to leak or rotate). The OS
+# admits a Studio sub-app (upd-studio-admission) only against an attestation
+# whose certificate names THIS workflow. The bundle is verified against that
+# identity here and uploaded as <app>/PROVENANCE.sigstore.json, next to the
+# sidecar and the record. Pinned by test/ci/promoteWorkflow.test.ts.
+#
+# ── FAIL CLOSED ──────────────────────────────────────────────────────────
+# - Signs only when the promote step SUCCEEDED, and only after the signer's
+#   own check (provenance-cli.ts attest-check, packages/compliance/src/
+#   attestation.ts): the record admits for this spec, the sidecar names that
+#   record, and its Studio commit is exactly the commit checked out here.
+# - A promote step that did not succeed — failed, cancelled or SKIPPED — fails
+#   the job (last step). A skipped stack is never green in promote.sh; a
+#   skipped promote is never green here.
+# - cosign is one pinned version, sha256-checked per platform before it runs;
+#   every action is pinned by commit sha.
+# - Only a human dispatch starts it. The token reads the repo and mints an
+#   OIDC token, nothing else.
+#
+# ── WHY A SELF-HOSTED RUNNER ─────────────────────────────────────────────
+# The host gate's PII stack (piiGitBoundary) asserts the host's GITIGNORED
+# person-data files exist on disk, and its Postgres tier reads the host's
+# flightdeck/.env.supabase. A hosted runner has neither and must never be
+# given either, so promote.sh can only certify on a machine that holds the
+# real host checkout. The runner carries the label `flightdeck-promote` and
+# sets FLIGHTDECK_HOST_REPO (its runner .env) to that checkout, with the
+# host's flightdeck/node_modules installed. promote.sh never writes to it.
+# Until such a runner is registered the job waits in the queue: nothing is
+# signed. The Fulcio certificate records the runner environment, so the
+# admission side can see that this was a self-hosted run.
+on:
+  workflow_dispatch:
+    inputs:
+      spec:
+        description: "Spec to promote, relative to the Studio checkout"
+        required: true
+        default: fixtures/wc-clock.spec.json
+      catalogue_entry_id:
+        description: "Approved catalogue entry id (empty when the spec came from none)"
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: studio-promote
+  cancel-in-progress: false
+
+jobs:
+  promote:
+    name: promote + attest
+    runs-on: [self-hosted, flightdeck-promote]
+    timeout-minutes: 180
+    env:
+      COSIGN_VERSION: v3.1.3
+    steps:
+      - name: Checkout Studio
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+
+      - name: Install Studio dependencies
+        run: |
+          set -euo pipefail
+          npm ci
+
+      # cosign, one version, sha256-checked BEFORE it is made executable.
+      # The sums are the ones in the release's cosign_checksums.txt.
+      - name: Install cosign (pinned)
+        run: |
+          set -euo pipefail
+          case "$RUNNER_OS-$RUNNER_ARCH" in
+            Linux-X64)   asset=cosign-linux-amd64;  sum=4629c757b7618056f8ddd7e2625ae9fdd94c0372a65049520bc7d9df9efc7f71 ;;
+            Linux-ARM64) asset=cosign-linux-arm64;  sum=c5d324e091826b0d7a78eb16fef316450b4eb9aaec045611c08ba06f5e73220a ;;
+            macOS-X64)   asset=cosign-darwin-amd64; sum=2347488e5d5b25336644024dfeca5601b190e91197a71a917bda44744aff106c ;;
+            macOS-ARM64) asset=cosign-darwin-arm64; sum=5cf948c2f4dfe59687bdd0b8523709067383e03982cc543475c8a7dc70e92a76 ;;
+            *) echo "no pinned cosign for $RUNNER_OS-$RUNNER_ARCH" >&2; exit 1 ;;
+          esac
+          dir="$RUNNER_TEMP/cosign-$COSIGN_VERSION"
+          rm -rf "$dir"; mkdir -p "$dir"
+          curl -fsSL --proto '=https' --tlsv1.2 -o "$dir/cosign" \
+            "https://github.com/sigstore/cosign/releases/download/${COSIGN_VERSION}/$asset"
+          echo "$sum  $dir/cosign" | shasum -a 256 -c -
+          chmod 755 "$dir/cosign"
+          "$dir/cosign" version
+          echo "COSIGN=$dir/cosign" >> "$GITHUB_ENV"
+          echo "$dir" >> "$GITHUB_PATH"
+
+      - name: Promote (scripts/promote.sh)
+        id: promote
+        env:
+          SPEC_INPUT: ${{ inputs.spec }}
+          CATALOGUE_ENTRY_INPUT: ${{ inputs.catalogue_entry_id }}
+        run: |
+          set -euo pipefail
+          host="${FLIGHTDECK_HOST_REPO:?the runner must set FLIGHTDECK_HOST_REPO to the host checkout}"
+          case "$SPEC_INPUT" in
+            ""|/*|*..*) echo "spec must be a path inside the Studio checkout: $SPEC_INPUT" >&2; exit 2 ;;
+          esac
+          spec="$GITHUB_WORKSPACE/$SPEC_INPUT"
+          [ -f "$spec" ] || { echo "no spec at $SPEC_INPUT" >&2; exit 2; }
+          runs="$RUNNER_TEMP/studio-promote-runs"
+          rm -rf "$runs"; mkdir -p "$runs"
+          echo "STUDIO_RUNS_DIR=$runs" >> "$GITHUB_ENV"
+          echo "PROMOTE_SPEC=$spec" >> "$GITHUB_ENV"
+          # promote.sh's own knobs are this step's, never the runner's.
+          env -u RECORD -u SANDBOX -u FLIGHTDECK_KEEP_SANDBOX -u FLIGHTDECK_HOST_ROOT \
+            HOST_REPO="$host" SPEC="$spec" STUDIO_RUNS_DIR="$runs" CATALOGUE_ENTRY_ID="$CATALOGUE_ENTRY_INPUT" \
+            bash scripts/promote.sh
+
+      - name: Attest (cosign keyless)
+        id: attest
+        if: steps.promote.outcome == 'success'
+        run: |
+          set -euo pipefail
+          [ "$(command -v cosign)" = "$COSIGN" ] || { echo "cosign on PATH is not the pinned one" >&2; exit 1; }
+          set -- "$STUDIO_RUNS_DIR"/*-promote.*
+          [ "$#" -eq 1 ] && [ -d "$1" ] || { echo "expected exactly one promote run dir in $STUDIO_RUNS_DIR" >&2; exit 1; }
+          run_dir="$1"
+          [ -s "$run_dir/compliance-record.json" ] && [ -s "$run_dir/PROVENANCE.json" ] || {
+            echo "promote.sh left no compliance-record.json / PROVENANCE.json in $run_dir" >&2; exit 1; }
+          APP="$(npx tsx packages/compliance/src/provenance-cli.ts attest-check \
+            --record "$run_dir/compliance-record.json" --provenance "$run_dir/PROVENANCE.json" \
+            --spec "$PROMOTE_SPEC" --studio-commit "$GITHUB_SHA")"
+          printf '%s\n' "$APP" | grep -Eqx '[a-z][a-z0-9-]*' || { echo "not a sub-app id: $APP" >&2; exit 1; }
+          out_root="$RUNNER_TEMP/studio-attestation"
+          rm -rf "$out_root"; mkdir -p "$out_root/$APP"
+          RECORD="$out_root/$APP/compliance-record.json"
+          PROVENANCE="$out_root/$APP/PROVENANCE.json"
+          BUNDLE="$out_root/$APP/PROVENANCE.sigstore.json"
+          cp "$run_dir/compliance-record.json" "$RECORD"
+          cp "$run_dir/PROVENANCE.json" "$PROVENANCE"
+          cosign attest-blob --yes \
+            --type https://flightdeck/studio-compliance/v1 \
+            --predicate "$RECORD" \
+            --bundle "$BUNDLE" \
+            "$PROVENANCE"
+          [ -s "$BUNDLE" ] || { echo "cosign wrote no bundle" >&2; exit 1; }
+          {
+            echo "ATTEST_ROOT=$out_root"
+            echo "ATTEST_PROVENANCE=$PROVENANCE"
+            echo "ATTEST_BUNDLE=$BUNDLE"
+          } >> "$GITHUB_ENV"
+
+      # What the OS admission will check, checked here first: the bundle binds
+      # PROVENANCE.json, carries this predicate type, and was signed by THIS
+      # workflow (exact identity, never a regexp) through GitHub's OIDC issuer.
+      - name: Verify the attestation against this workflow's identity
+        id: verify
+        if: steps.attest.outcome == 'success'
+        env:
+          WORKFLOW_IDENTITY: ${{ github.server_url }}/${{ github.workflow_ref }}
+        run: |
+          set -euo pipefail
+          cosign verify-blob-attestation \
+            --bundle "$ATTEST_BUNDLE" \
+            --type https://flightdeck/studio-compliance/v1 \
+            --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+            --certificate-identity "$WORKFLOW_IDENTITY" \
+            "$ATTEST_PROVENANCE"
+
+      - name: Upload <app>/PROVENANCE.sigstore.json with the sidecar and the record
+        if: steps.attest.outcome == 'success' && steps.verify.outcome == 'success'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: studio-attestation-${{ github.run_id }}
+          path: ${{ runner.temp }}/studio-attestation/
+          if-no-files-found: error
+
+      - name: Fail when promote did not pass
+        if: always() && steps.promote.outcome != 'success'
+        run: |
+          echo "promote did not pass (failed, cancelled or skipped): nothing was attested" >&2
+          exit 1

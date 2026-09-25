@@ -121,8 +121,44 @@ promoted candidate is and where it came from. `promote.sh` writes it as
   blocks. `shipSubApp` admits on the record alone, so a blocked run must not
   leave a green record behind.
 
-Who ran the checks is not proven by this file. The cosign attestation over
-it is `upd-studio-attestation`.
+Who ran the checks is not proven by this file. The attestation below proves it.
+
+## The promote attestation
+
+`.github/workflows/promote.yml` (upd-studio-attestation) runs `promote.sh`
+and then signs a cosign KEYLESS attestation with the workflow's own GitHub
+OIDC identity. No signing key exists.
+
+```
+cosign attest-blob --type https://flightdeck/studio-compliance/v1 \
+  --predicate compliance-record.json --bundle PROVENANCE.sigstore.json PROVENANCE.json
+```
+
+- **It signs only a promote that passed.** The attest step runs only when the
+  promote step succeeded. A promote step that failed, was cancelled or was
+  skipped fails the job, and nothing is signed.
+- **The signer runs its own check first.** `provenance-cli.ts attest-check`
+  (`attestation.ts`) does not trust `promote.sh`'s exit code. The record must
+  admit for this spec (`admitComplianceRecord`). The sidecar must name that
+  record by digest. The sidecar's `studioCommit` must be exactly the commit
+  the workflow checked out, never `-dirty`, because the certificate carries
+  the workflow's commit.
+- **Pinned.** cosign is one version (`COSIGN_VERSION`), and its sha256 is
+  checked for each platform before it runs. Every action is pinned by commit
+  sha.
+- **Verified before upload.** The bundle is verified against the workflow's
+  exact identity (`github.server_url/github.workflow_ref`, never a regexp) and
+  GitHub's OIDC issuer. It is then uploaded as `<app>/PROVENANCE.sigstore.json`,
+  next to `<app>/PROVENANCE.json` and `<app>/compliance-record.json`.
+- **Self-hosted runner.** The host gate needs the host's gitignored PII files
+  and its `.env.supabase`. A hosted runner has neither and must not be given
+  them. The job therefore runs on a runner labelled `flightdeck-promote` that
+  sets `FLIGHTDECK_HOST_REPO` to the real host checkout. Until such a runner
+  exists the job waits in the queue, and nothing is signed.
+
+The OS verifies this attestation against the pinned workflow identity when it
+admits a Studio sub-app (`upd-studio-admission`). Pinned by
+`test/ci/promoteWorkflow.test.ts`.
 
 ## Not `set -e`
 
