@@ -45,8 +45,12 @@
 # an existing non-empty one is replaced only if it carries the studio-sandbox
 # marker a previous run wrote.
 #
+# PROVENANCE (upd-studio-provenance): step 3b derives the candidate's subject
+# and step 6 seals it into a studio-provenance/1 sidecar, PROVENANCE.json, in
+# the run dir — see the block before the summary.
+#
 # Usage: HOST_REPO=/path/to/project-contract SPEC=fixtures/x.spec.json \
-#        bash scripts/promote.sh
+#        [CATALOGUE_ENTRY_ID=<approved entry id>] bash scripts/promote.sh
 set -uo pipefail
 
 STUDIO="$(cd "$(dirname "$0")/.." && pwd)"
@@ -84,6 +88,16 @@ else
 fi
 SPEC_HASH="$(sha256sum "$SPEC" | cut -d' ' -f1)"
 echo "spec sha256: $SPEC_HASH"
+
+# The Studio identity (upd-studio-provenance, review round 2): captured HERE,
+# before the suite, the red-team and codegen run, and handed to the seal in
+# step 6, which keeps it as captured (a -dirty marker survives edits reverted
+# since) and refuses if this checkout moved or gained local changes meanwhile.
+# Read at the seal instead, a checkout moved A -> clean B mid-run would be
+# recorded as B although A generated the candidate. Empty when it cannot be
+# read; the seal then refuses (no --studio-at), so the run BLOCKS.
+STUDIO_AT="$( cd "$STUDIO" && npx tsx packages/compliance/src/provenance-cli.ts studio-identity --studio "$STUDIO" 2>/dev/null )" || STUDIO_AT=""
+echo "studio: ${STUDIO_AT:-(identity unreadable — the provenance seal will refuse)}"
 
 echo "==> [1/6] Studio typecheck + tests"
 # The guardrail divergence tests read the host's security lists from
@@ -145,6 +159,22 @@ else
   note_fail "generate-and-mount"; echo "  see $RUN_DIR/codegen.log"
 fi
 
+echo "==> [3b/6] provenance subject (app tree without PROVENANCE.json; host files outside it, with hashes)"
+# upd-studio-provenance. Derived NOW, from the freshly mounted sandbox against
+# the host's HEAD commit (git status), before the build and the host gate
+# leave their own files behind. Everything under the app dir is covered by the
+# tree hash; every other changed host file is listed with its sha256 — and one
+# codegen did not declare FAILS this stack, so a host patch cannot ride along
+# uncovered. Step 6 seals this subject into the sidecar once the record exists.
+SUBJECT="$RUN_DIR/provenance-subject.json"
+if ( cd "$STUDIO" && npx tsx packages/compliance/src/provenance-cli.ts subject \
+       --sandbox "$ROOT" --spec "$SPEC" --host "$REPO" --out "$SUBJECT" >"$RUN_DIR/provenance.log" 2>&1 ) && \
+   [ -s "$SUBJECT" ]; then
+  note_pass "provenance-subject"
+else
+  note_fail "provenance-subject"; rm -f "$SUBJECT"; sed 's/^/  /' "$RUN_DIR/provenance.log" | head -20
+fi
+
 echo "==> [4/6] web bundle (three standalone tests measure the real one)"
 if ( cd "$SANDBOX" && npm run build:web >"$RUN_DIR/build.log" 2>&1 ); then
   note_pass "build-web"
@@ -169,6 +199,7 @@ else
 fi
 
 echo "==> [6/6] compliance record"
+write_record() {
 python3 - "$RECORD" "$STAMP" "$SPEC_HASH" "$PASSED" "$FAILED" "$SKIPPED" <<'PY'
 import json, sys
 record, stamp, spec_hash, passed, failed, skipped = sys.argv[1:7]
@@ -188,11 +219,48 @@ json.dump({
 }, open(record, "w"), indent=2)
 print(json.dumps(json.load(open(record)), indent=2))
 PY
+}
+write_record
+
+# ── THE PROVENANCE SIDECAR (studio-provenance/1) ─────────────────────────
+# NOT a manifest field: a field inside the tree would make the tree hash
+# self-referential. It is <app dir>/PROVENANCE.json, which the subject tree
+# hash excludes, and it names the record above by its RFC 8785 digest, the
+# Studio commit (-dirty when this checkout had local changes), the host HEAD
+# and the catalogue entry (CATALOGUE_ENTRY_ID; null when the spec came from
+# none). The Studio commit is the one captured before step 1 ($STUDIO_AT).
+# The seal re-hashes the subject in the sandbox first, re-discovers the host
+# change set (git status; only the host's named runtime artifacts, which the
+# gate rewrites, are set aside), and refuses if the candidate, any other host
+# file, the host HEAD or the Studio checkout moved since. Written to the run dir
+# (which outlives the sandbox) and into the sandbox's app dir, its place.
+# A failed seal cannot appear in the record it digests, so the record is
+# REWRITTEN as failed (provenance-seal in `failed`, readyForProduction false)
+# and the run BLOCKS: shipSubApp admits on the record alone, so a record left
+# green by a blocked run would still authorize writes (review round 3).
+PROVENANCE_OUT="$RUN_DIR/PROVENANCE.json"
+SEAL_FAILED=""
+if [ -f "$SUBJECT" ]; then
+  if ( cd "$STUDIO" && npx tsx packages/compliance/src/provenance-cli.ts seal \
+         --subject "$SUBJECT" --record "$RECORD" --studio "$STUDIO" --studio-at "$STUDIO_AT" --host "$REPO" --sandbox "$ROOT" \
+         ${CATALOGUE_ENTRY_ID:+--catalogue-entry "$CATALOGUE_ENTRY_ID"} --out "$PROVENANCE_OUT" ); then
+    echo "provenance sidecar: $PROVENANCE_OUT"
+  else
+    SEAL_FAILED=1; rm -f "$PROVENANCE_OUT"; echo "provenance sidecar NOT written — see above"
+    note_fail provenance-seal
+    echo "==> [6/6] compliance record, rewritten: the seal failed"
+    write_record
+  fi
+else
+  echo "provenance sidecar NOT written — the subject step failed"
+fi
 
 echo
 echo "==> Promotion summary"
 [ -n "$SKIPPED" ] && echo "SKIPPED:$SKIPPED  (green below does NOT cover these)"
-if [ -z "$FAILED" ] && [ -z "$SKIPPED" ]; then
+if [ -n "$SEAL_FAILED" ]; then
+  echo "BLOCKED — the provenance sidecar could not be sealed. Record: $RECORD"; exit 1
+elif [ -z "$FAILED" ] && [ -z "$SKIPPED" ]; then
   echo "READY FOR PRODUCTION — every stack ran and passed. Record: $RECORD"; exit 0
 elif [ -z "$FAILED" ]; then
   echo "NOT CERTIFIED — all run stacks green, but stacks were skipped. Record: $RECORD"; exit 1

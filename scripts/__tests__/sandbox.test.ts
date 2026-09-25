@@ -743,7 +743,18 @@ describe("scripts/promote.sh writes its logs and record to the run directory, no
     expect(runDir).toMatch(/^\d{8}T\d{6}Z-promote\.[A-Za-z0-9]{6}$/);
     const dir = path.join(runs, runDir!);
     expect(fs.statSync(dir).mode & 0o077).toBe(0);
-    expect(ls(dir)).toEqual(["build.log", "codegen.log", "compliance-record.json", "host-gate.log", "redteam.log", "studio-tests.log"]);
+    // provenance.log: step 3b (upd-studio-provenance). With codegen stubbed there is no
+    // candidate, so that step fails too and no subject or PROVENANCE.json is written.
+    expect(ls(dir)).toEqual([
+      "build.log",
+      "codegen.log",
+      "compliance-record.json",
+      "host-gate.log",
+      "provenance.log",
+      "redteam.log",
+      "studio-tests.log",
+    ]);
+    expect(out).toContain("FAIL: provenance-subject");
     const record = JSON.parse(fs.readFileSync(path.join(dir, "compliance-record.json"), "utf8"));
     expect(record.schema).toBe("studio-compliance-record/1");
     expect(record.passed).toContain("host-gate");
