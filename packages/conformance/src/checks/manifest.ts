@@ -53,6 +53,9 @@ export const DATA_FIELDS: readonly string[] = [
   // D-036: Studio's codegen marker, a `z.literal("flightdeck-studio")` in the
   // host's schema. Validated (FD-M003 on any other value), never refused.
   "generatedBy",
+  // apps-01 / apps-49: the app-directory FACTS block, `.strict()` in the
+  // host. Validated field by field (copy or a URL in it is FD-M003).
+  "listing",
 ];
 
 /** The function members the host calls on every manifest. Required. */

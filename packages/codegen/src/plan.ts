@@ -258,6 +258,19 @@ export function planSubApp(input: unknown, options: PlanOptions = {}): SubAppPla
         ? { settingsPanel: { ...spec.settingsPanel, webComponentId: webModuleId } }
         : {}),
       generatedBy: GENERATED_BY,
+      // apps-49: facts only, key by key — never a spread of the spec, so no
+      // other spec field (summary included) can ride into the listing.
+      ...(spec.listing
+        ? {
+            listing: {
+              availability: spec.listing.availability,
+              discoverable: spec.listing.discoverable ?? false,
+              category: spec.listing.category,
+              ...(spec.listing.requirements ? { requirements: spec.listing.requirements } : {}),
+              publisher: { name: spec.listing.publisher.name },
+            },
+          }
+        : {}),
     },
     HOST_VERSION,
   );

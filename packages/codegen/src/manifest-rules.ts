@@ -18,7 +18,7 @@
  * someone to remember. The contract document says it plainly: if this and
  * the host repo disagree, the host repo wins. */
 import { z } from "zod";
-import { CAPABILITY_SCOPES, HOST_VERSION, NAV_SECTIONS, SUBAPP_ID_RE, WORKSPACE_ROLES } from "./spec-contract";
+import { CAPABILITY_SCOPES, HOST_VERSION, LISTING_CATEGORIES, NAV_SECTIONS, SUBAPP_ID_RE, WORKSPACE_ROLES } from "./spec-contract";
 
 const ROUTE_PREFIX_RE = /^\/api\/apps\/[a-z0-9-]+$/;
 
@@ -37,6 +37,20 @@ const settingsPanelSchema = z.object({
   label: z.string().min(1),
 });
 
+/** Field-for-field with `server/subapps/types.ts#subAppListingSchema`
+ * (apps-01, D-037) — and `.strict()` like the host's, which is the point:
+ * an unknown key (copy, a URL, media, release state) FAILS LOUD at boot
+ * rather than being stripped and later mistaken for approved content. */
+export const subAppListingSchema = z
+  .object({
+    availability: z.enum(["available", "coming-soon"]),
+    discoverable: z.boolean().default(false),
+    category: z.enum(LISTING_CATEGORIES),
+    requirements: z.array(z.string().regex(SUBAPP_ID_RE)).max(5).optional(),
+    publisher: z.object({ name: z.string().min(1) }).strict(),
+  })
+  .strict();
+
 /** Field-for-field with `server/subapps/types.ts#subAppManifestSchema`.
  * NOT `.strict()` — the host's is not either, and `widgets` is an optional
  * additive field this copy deliberately accepts without modelling (D-26's
@@ -54,6 +68,7 @@ export const subAppManifestSchema = z.object({
   visibleToRoles: z.array(z.enum(WORKSPACE_ROLES)).min(1),
   settingsPanel: settingsPanelSchema.optional(),
   generatedBy: z.literal(GENERATED_BY).optional(),
+  listing: subAppListingSchema.optional(),
 });
 
 export type SubAppManifestData = z.infer<typeof subAppManifestSchema>;

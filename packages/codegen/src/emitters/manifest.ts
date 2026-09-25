@@ -93,6 +93,27 @@ export function emitManifest(plan: SubAppPlan): string {
     ],
   });
 
+  // apps-49: the app-directory FACTS, a data literal, only when the spec
+  // stated them. Built key by key from the validated manifest data — never
+  // copy, URLs, media or release state (the host's block is .strict()).
+  if (m.listing) {
+    const l = m.listing;
+    const parts = [
+      `availability: ${str(l.availability)}`,
+      `discoverable: ${l.discoverable ? "true" : "false"}`,
+      `category: ${str(l.category)}`,
+      ...(l.requirements ? [`requirements: ${tsStringArray(l.requirements)}`] : []),
+      `publisher: { name: ${str(l.publisher.name)} }`,
+    ];
+    fields.push({
+      key: "listing",
+      value: `{ ${parts.join(", ")} }`,
+      comment: [
+        "App-directory FACTS only (host apps-01, D-037). Taglines, descriptions, data-handling statements, URLs, media and release state are human-owned and approved per release; the host's listing schema is strict, so any of them here refuses to boot. `discoverable` is false unless the spec said otherwise.",
+      ],
+    });
+  }
+
   fields.push(
     hasTables
       ? {
