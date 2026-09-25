@@ -28,6 +28,7 @@ import { LineIcon, type LineIconName } from "./components/LineIcon";
 import { PreviewPane } from "./components/PreviewPane";
 import { RunPane } from "./components/RunPane";
 import { ThemeToggle } from "./components/ThemeToggle";
+import { WORKFLOW_CSS, WorkflowDialog, type WorkflowBuildInput, type WorkflowBuildResult } from "./components/WorkflowDialog";
 import { candidateDownload, downloadReadiness, runFileGate, saveInBrowser, specDownload, type FileGate } from "./download";
 import { buildPreview } from "./preview/state";
 import {
@@ -136,11 +137,15 @@ export interface WorkbenchProps {
    * Absent means neither is drawn. The workbench never sees the token —
    * only the state, and a function to hand a typed one to. */
   readonly connection?: WorkbenchConnection | undefined;
+  /** "New workflow": a described workflow → a studio-workflow-definition/1
+   * file (`src/wiring.ts#buildWorkflowFile`). Absent means no button. */
+  readonly buildWorkflow?: ((input: WorkflowBuildInput) => WorkflowBuildResult) | undefined;
 }
 
-export function Workbench({ store, onPrompt, onStop, theme = DEFAULT_THEME, onThemeChange, checkFiles, connection }: WorkbenchProps) {
+export function Workbench({ store, onPrompt, onStop, theme = DEFAULT_THEME, onThemeChange, checkFiles, connection, buildWorkflow }: WorkbenchProps) {
   const state = useSyncExternalStore(store.subscribe, store.getState, store.getState);
   const [connectOpen, setConnectOpen] = useState(false);
+  const [workflowOpen, setWorkflowOpen] = useState(false);
 
   const round = currentRound(state);
   const candidate = currentCandidate(state);
@@ -243,7 +248,8 @@ export function Workbench({ store, onPrompt, onStop, theme = DEFAULT_THEME, onTh
   return (
     <div className="fd-wb" data-theme={theme}>
       <style>{WORKBENCH_CSS}</style>
-      {connection !== undefined && <style>{CONNECT_CSS}</style>}
+      {(connection !== undefined || buildWorkflow !== undefined) && <style>{CONNECT_CSS}</style>}
+      {buildWorkflow !== undefined && <style>{WORKFLOW_CSS}</style>}
 
       <ChatPane
         turns={state.turns}
@@ -338,6 +344,19 @@ export function Workbench({ store, onPrompt, onStop, theme = DEFAULT_THEME, onTh
               round #{round.ordinal} · {round.candidate.manifest.id} · {round.candidate.manifest.envVar}
             </span>
           )}
+          {buildWorkflow !== undefined && (
+            <button
+              type="button"
+              className="fd-save"
+              style={{ whiteSpace: "nowrap" }}
+              aria-haspopup="dialog"
+              title="Describe a workflow and download it as a studio-workflow-definition/1 file for the OS New-workflow wizard."
+              onClick={() => setWorkflowOpen(true)}
+            >
+              <LineIcon name="list-checks" size={16} />
+              New workflow
+            </button>
+          )}
           {connection !== undefined && (
             <ConnectionIndicator state={connection.state} onOpen={() => setConnectOpen(true)} />
           )}
@@ -417,6 +436,10 @@ export function Workbench({ store, onPrompt, onStop, theme = DEFAULT_THEME, onTh
           )}
         </div>
       </main>
+
+      {buildWorkflow !== undefined && workflowOpen && (
+        <WorkflowDialog build={buildWorkflow} onSave={(file) => saveInBrowser(file)} onClose={() => setWorkflowOpen(false)} />
+      )}
 
       {connection !== undefined && connectOpen && (
         <ConnectDialog

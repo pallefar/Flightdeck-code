@@ -17,6 +17,7 @@
     "lint": "eslint .",
     "redteam": "tsx scripts/redteam-gate.ts",
     "mount": "bash scripts/mount-in-host.sh",
+    "mount:worktree": "bash scripts/mount-into-worktree.sh",
     "promote": "bash scripts/promote.sh",
     "standalone": "bash scripts/standalone-smoke.sh",
     "responsive": "node scripts/responsive-smoke.mjs"

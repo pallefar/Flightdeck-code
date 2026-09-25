@@ -27,14 +27,14 @@ import { createStudioClient } from "./api/studioClient";
 import { createStore } from "./workbench/store";
 import { DEFAULT_THEME, THEME_STORAGE_KEY, isStudioTheme, type StudioTheme } from "./workbench/theme";
 import { drive, requestToSpec } from "./drive";
-import { checkFiles } from "./wiring";
+import { buildWorkflowFile, checkFiles } from "./wiring";
 import wcClockSpec from "../fixtures/wc-clock.spec.json";
 
 const store = createStore();
 
 /** The Studio server, same origin (the Vite proxy in development). It holds
  * the operator token in memory for this tab only — see `api/studioClient.ts`.
- * Nothing sends a build through it yet: prompts still run the wc-clock demo
+ * Nothing sends a build through it yet: prompts pick a starter from the approved catalogue in the browser
  * below, and the indicator's tooltip says so. */
 const client = createStudioClient();
 
@@ -107,6 +107,7 @@ function App() {
       onThemeChange={onThemeChange}
       checkFiles={checkFiles}
       connection={connection}
+      buildWorkflow={buildWorkflowFile}
     />
   );
 }

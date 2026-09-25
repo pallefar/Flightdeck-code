@@ -10,7 +10,9 @@
  * real store. */
 import { generateSubApp } from "@codegen/pure";
 import { runConformanceGate } from "@conformance/gate";
+import { finishWorkflowDraft, workflowDraftFromRequest } from "@spec/workflow-starter";
 
+import type { WorkflowBuildInput, WorkflowBuildResult } from "./workbench/components/WorkflowDialog";
 import type { FileGate } from "./workbench/download";
 import type { Candidate, GeneratedFile } from "./workbench/types";
 
@@ -66,3 +68,19 @@ export const checkFiles: FileGate = (files) => {
   const report = runConformanceGate({ files: files.map((f) => ({ path: f.path, contents: f.contents })) });
   return { ok: report.ok, findings: report.findings, rulesRun: report.rules };
 };
+
+/** The Workflow dialog's seam (`WorkflowDialog`): a described workflow →
+ * `@spec/workflow-starter`'s draft → the person's decisions → the canonical
+ * `studio-workflow-definition/1` file text an admin imports in the OS
+ * New-workflow wizard. Without a model (ruling 8); the refusal carries the
+ * draft so the person sees what they are completing. */
+export function buildWorkflowFile(input: WorkflowBuildInput): WorkflowBuildResult {
+  const draft = workflowDraftFromRequest(input.request);
+  const finished = finishWorkflowDraft(draft, {
+    by: input.by,
+    statutoryConfirmedBy: input.statutoryConfirmedBy,
+    statutory: input.statutory,
+  });
+  if (!finished.ok) return { ok: false, error: finished.error, preview: `${JSON.stringify(draft, null, 2)}\n` };
+  return { ok: true, text: finished.text, filename: `${finished.definition.slug}.workflow.json` };
+}

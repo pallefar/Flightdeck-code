@@ -116,8 +116,8 @@ interface IndicatorProps {
 export function ConnectionIndicator({ state, onOpen }: IndicatorProps) {
   const connected = state.status === "connected";
   const title = connected
-    ? `Connected to the Studio server (${state.health.model}), which accepted the operator token. It checks the token again on every build; if it refuses it, Studio disconnects. Prompts still run the built-in wc-clock demo until they are wired to the server.`
-    : "Demo: not connected to a Studio server. Prompts run the built-in wc-clock demo. Click to connect with the operator token.";
+    ? `Connected to the Studio server (${state.health.model}), which accepted the operator token. It checks the token again on every build; if it refuses it, Studio disconnects. Prompts still pick a starter from the approved catalogue in this browser (no model) until they are wired to the server.`
+    : "Demo: not connected to a Studio server. Prompts pick a starter from the approved catalogue in this browser (no model). Click to connect with the operator token.";
   return (
     <button
       type="button"
@@ -237,7 +237,7 @@ export function ConnectDialog({ state, onConnect, onDisconnect, onClose }: Dialo
             </dl>
             <p className="fd-conn-dialog__p">
               The server accepted the operator token. It checks it again on every build; if it refuses it, Studio
-              disconnects. Prompts still run the built-in wc-clock demo until they are wired to this server.
+              disconnects. Prompts still pick a starter from the approved catalogue in this browser (no model) until they are wired to this server.
             </p>
             <div className="fd-conn-dialog__acts">
               <button type="button" className="fd-lockbtn" onClick={() => flow.close()}>
