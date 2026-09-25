@@ -426,6 +426,9 @@ export function createServer(options: ServerOptions): ReturnType<typeof Fastify>
     return payload;
   });
 
+  // ⛔ PINNED: unauthenticated, exact key allowlist, unchanged headers —
+  // server/__tests__/health-pin.test.ts. A new key (e.g. `version`, which
+  // awaits an owner ruling, adm-56) is a reviewed change to that pin.
   app.get("/api/studio/health", async () => ({
     ok: true,
     // ⚠ THE EFFECTIVE MODEL, not the override.
