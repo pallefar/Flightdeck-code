@@ -74,6 +74,41 @@ Two properties, both deliberate:
   ran against. Changing the spec invalidates it, the same way changing a tool's
   content invalidates its approval in `packages/approvals`.
 
+## The provenance sidecar
+
+`studio-provenance/1` (`packages/compliance/src/provenance.ts`) says what a
+promoted candidate is and where it came from. `promote.sh` writes it as
+`PROVENANCE.json` in the run dir and in the sandbox's app dir
+(`flightdeck/server/subapps/<id>/PROVENANCE.json`):
+
+```
+{ schema, recordSha256, studioCommit, hostHead, catalogueEntryId,
+  subject: { subappId, version, treeSha256, hostFiles: [{ path, sha256 }] } }
+```
+
+- **A sidecar, not a manifest field.** A field inside the tree would make the
+  tree hash cover the file that states it. `treeSha256` covers the app dir
+  and leaves out only its root `PROVENANCE.json`. The generated manifest
+  carries no provenance.
+- **Host files are listed.** Codegen also changes files outside the app dir:
+  the registry patch, the web module and the host test. Step 3b lists each
+  one with its sha256, from `git status` in the sandbox against the host's
+  HEAD. A changed host file that codegen did not declare fails the
+  `provenance-subject` stack, and so does a deleted one.
+- **Bound to the record by digest.** `recordSha256` is the sha256 of the
+  record's RFC 8785 (JCS) canonical form (`recordDigest`, with JCS
+  implemented in `jcs.ts` and pinned by the RFC's vectors). It is not the
+  file's bytes, so re-indenting the record does not change it.
+- `studioCommit` ends in `-dirty` when the Studio checkout had local
+  changes. `catalogueEntryId` comes from `CATALOGUE_ENTRY_ID` and is `null`
+  when the spec came from no catalogue entry.
+- The seal re-hashes the subject in the sandbox and refuses if the candidate
+  or the host HEAD moved after step 3b. A failed seal cannot appear in the
+  record it digests, so it blocks the run instead.
+
+Who ran the checks is not proven by this file. The cosign attestation over
+it is `upd-studio-attestation`.
+
 ## Not `set -e`
 
 `promote.sh` uses `set -uo pipefail`, never `-e`, copying `gate.sh`'s own

@@ -32,6 +32,10 @@
  * cannot certify it.
  */
 
+import { createHash } from "node:crypto";
+
+import { canonicalize } from "./jcs";
+
 /** The schema `promote.sh` writes. Pinned: a future shape is a migration. */
 export const COMPLIANCE_SCHEMA = "studio-compliance-record/1";
 
@@ -124,4 +128,23 @@ export function admitComplianceRecord(value: unknown, options: AdmitOptions): Co
   if (when > now + 60_000 || now - when > maxAge) return { ok: false, code: "record-expired" };
 
   return { ok: true, record: { specSha256, at, passed } };
+}
+
+/**
+ * ⭐ THE NAME A PROVENANCE SIDECAR GIVES THE RECORD IT RESTS ON.
+ *
+ * sha256 (lowercase hex) of the RFC 8785 canonical form of the PARSED
+ * record — not of the file's bytes. `promote.sh` writes the record with
+ * Python's `json.dump(indent=2)`; whoever re-derives this digest (the OS
+ * admission side) reads it with something else, and a digest that changed
+ * with indentation or key order would bind nothing. JCS is implemented in
+ * this package (`jcs.ts`) and pinned by the RFC's vectors.
+ *
+ * It digests; it does not admit. A record that `admitComplianceRecord`
+ * would refuse still has a digest — the sidecar names which record it rests
+ * on, and the admission side recomputes the verdict from that record.
+ */
+export function recordDigest(record: unknown): string {
+  if (!isObject(record)) throw new TypeError("recordDigest: a compliance record is a JSON object");
+  return createHash("sha256").update(canonicalize(record), "utf8").digest("hex");
 }

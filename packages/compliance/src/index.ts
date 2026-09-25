@@ -10,5 +10,17 @@ export {
   COMPLIANCE_SCHEMA,
   MAX_RECORD_AGE_MS,
   admitComplianceRecord,
+  recordDigest,
 } from "./record";
+export { CanonicalizationError, canonicalize } from "./jcs";
+export {
+  PROVENANCE_FILE,
+  PROVENANCE_SCHEMA,
+  ProvenanceError,
+  buildProvenance,
+  compareSubject,
+  declaredHostFiles,
+  treeSha256,
+} from "./provenance";
+export type { FileDigest, Provenance, ProvenanceSubject, SubjectMismatch } from "./provenance";
 export type { AdmitOptions, AdmittedCompliance, ComplianceAdmission, ComplianceRefusal } from "./record";
