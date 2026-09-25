@@ -18,9 +18,11 @@
  * `SubAppManifestData` — the fields `subAppManifestSchema` validates at
  * boot — plus members Zod never sees: `initSchema`, `registerRoutes`, and
  * since OS-04 (host 42b0f308) an optional `contributions` bundle, which
- * docusign declares as `contributions: docusignContributions`. The host's
+ * docusign declares as `contributions: docusignContributions`, and since
+ * x-subapp-first-object-probe an optional `firstObject` probe (maps declares
+ * `firstObject: (db, scope) => ...`). The host's
  * `loadValidatedManifests` runs the schema over the object; Zod's default
- * strips unknown keys, so none of the three is checked there, and a
+ * strips unknown keys, so none of the four is checked there, and a
  * function-bearing member CANNOT be — "a schema-level `z.any()` would buy
  * nothing while implying it had checked something" (the host's own words).
  *
@@ -44,7 +46,7 @@ export class ManifestReadError extends Error {}
 
 /** The members the host's `SubAppManifest` declares beyond
  * `SubAppManifestData`. Transcribed from the host; drift-tested against it. */
-export const NON_DATA_MEMBERS: readonly string[] = ["initSchema", "registerRoutes", "contributions"];
+export const NON_DATA_MEMBERS: readonly string[] = ["initSchema", "registerRoutes", "contributions", "firstObject"];
 
 const KEY_RE = /^([A-Za-z_$][A-Za-z0-9_$]*)\s*:/;
 

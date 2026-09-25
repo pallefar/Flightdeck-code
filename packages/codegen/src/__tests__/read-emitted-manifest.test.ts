@@ -32,10 +32,12 @@ const FUNCTIONS = `  initSchema: (db) => applyDemoSchema(db),
   registerRoutes: (app, ctx) => registerDemoRoutes(app, ctx),`;
 
 describe("the host's non-data members", () => {
-  it("are exactly the three SubAppManifest adds on top of the Zod data", () => {
+  it("are exactly the four SubAppManifest adds on top of the Zod data", () => {
     // Pinned against the host's interface by manifest-rules.test.ts; pinned
     // here so a local edit to the list is a visible, reviewed change.
-    expect([...NON_DATA_MEMBERS]).toEqual(["initSchema", "registerRoutes", "contributions"]);
+    // `firstObject`: the host's optional onboarding probe
+    // (x-subapp-first-object-probe; maps declares it).
+    expect([...NON_DATA_MEMBERS]).toEqual(["initSchema", "registerRoutes", "contributions", "firstObject"]);
   });
 });
 

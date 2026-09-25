@@ -109,3 +109,22 @@ describe("the word alone is not a finding", () => {
     expect(m008(conformingSubApp())).toEqual([]);
   });
 });
+
+/** x-subapp-first-object-probe (host, plan 2026-09-25 Lane A) added an
+ * optional FOURTH function member, `firstObject(db, scope)`: the host hands
+ * it the workspace's own store and ticks onboarding's first-useful-action row
+ * on its answer. Codegen emits none, and a generated mini-app has no business
+ * telling onboarding a project's first object exists — so the gate refuses
+ * it like `contributions`, and the typecheck stub types it `never`. */
+describe("⛔ firstObject — the host's onboarding probe — is refused too", () => {
+  it.each([
+    ["a plain property", withMember(`  firstObject: async () => ({ exists: true, kind: "clock" }),\n`)],
+    ["a method", withMember(`  async firstObject() { return { exists: true, kind: "clock" }; },\n`)],
+    ["an assignment after the declaration", afterManifest(`wcClockManifest.firstObject = async () => ({ exists: true, kind: "clock" });\n`)],
+  ] as const)("%s", (_name, app) => {
+    const hits = m008(app);
+    expect(hits.length).toBeGreaterThan(0);
+    expect(hits.every((f) => f.severity === "error" && f.file === MANIFEST_PATH)).toBe(true);
+    expect(hits[0]?.message).toContain("firstObject");
+  });
+});

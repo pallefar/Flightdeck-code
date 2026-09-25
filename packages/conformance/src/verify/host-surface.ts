@@ -123,6 +123,9 @@ export interface SubAppManifest {
    * it at boot. A GENERATED mini-app may not: the gate refuses it (FD-M008),
    * and \`never\` makes the compiler refuse it too, so the two stages agree. */
   readonly contributions?: never;
+  /** The host's optional onboarding probe (x-subapp-first-object-probe). Refused
+   * by the gate (FD-M008) for a generated mini-app, and \`never\` here. */
+  readonly firstObject?: never;
 }
 
 /** The host's Zod schema, which \`loadValidatedManifests\` applies

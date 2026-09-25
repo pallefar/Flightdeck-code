@@ -72,10 +72,17 @@ export const FUNCTION_MEMBERS: readonly string[] = ["initSchema", "registerRoute
  * on the bundle at BOOT — `app.ts` calls `assertContributionsUnambiguous`,
  * which throws when a second sub-app claims the single-valued
  * `ticketSigning`. None of that is a mini-app's to touch, and none of it can
- * be judged statically: every point is a function. */
-export const REFUSED_MEMBERS: readonly string[] = ["contributions"];
+ * be judged statically: every point is a function.
+ *
+ * `firstObject` (x-subapp-first-object-probe, host plan 2026-09-25 Lane A) is
+ * an optional fourth function member: the host calls it with the workspace's
+ * own store and ticks onboarding's first-useful-action row on the answer.
+ * Codegen emits none, so a generated mini-app carrying one is refused. */
+export const REFUSED_MEMBERS: readonly string[] = ["contributions", "firstObject"];
 
 const REFUSAL_REASON: Readonly<Record<string, string>> = {
+  firstObject:
+    "`firstObject` is the host's onboarding probe (x-subapp-first-object-probe): the host hands it the workspace's own store and ticks a project's first-useful-action row on its answer. Codegen emits none, and a generated mini-app does not tell onboarding that a project's first object exists",
   contributions:
     "`contributions` is the host's OS-04 contribution bundle — `/api/state` flags, background work handed the raw db and workspace root, fixed connector rows, and a contract's signing state — and the host acts on it at boot: app.ts calls assertContributionsUnambiguous, which throws when a second sub-app claims the single-valued `ticketSigning` (docusign already does). A generated mini-app declares no host-surface contributions",
 };
