@@ -59,6 +59,19 @@ describe.skipIf(!available)("the manifest check against the host's SubAppManifes
     expect([...LISTING_CATEGORIES]).toEqual(readStringArray(source, "LISTING_CATEGORIES"));
   });
 
+  it("the typecheck stub's listing block has the host's OUTPUT optionality — only `.optional()` keys are optional (a `.default()` key is required in z.infer)", () => {
+    const block = /subAppListingSchema = z\s*\.object\(\{([\s\S]*?)\n\s*\}\)/.exec(source)?.[1] ?? "";
+    const stub = FLIGHTDECK_HOST_SURFACE.types["server/subapps/types"] ?? "";
+    const stubListing = /readonly listing\?: \{([\s\S]*?)\n\s*\};/.exec(stub)?.[1] ?? "";
+    const keys = readZodObjectKeys(source, "subAppListingSchema");
+    expect(keys.length).toBeGreaterThan(0);
+    for (const key of keys) {
+      const hostOptional = new RegExp(`\\b${key}:[^\\n]*\\.optional\\(\\)`).test(block);
+      const stubOptional = new RegExp(`readonly\\s+${key}\\?\\s*:`).test(stubListing);
+      expect(stubOptional, `listing.${key}: host optional=${hostOptional}, stub optional=${stubOptional}`).toBe(hostOptional);
+    }
+  });
+
   it("refuses contributions — the OS-04 member that stops the host booting when two sub-apps claim ticketSigning", () => {
     expect(readInterfaceMembers(source, "SubAppManifest")).toContain("contributions");
     expect(REFUSED_MEMBERS).toContain("contributions");
@@ -72,6 +85,11 @@ describe("the typecheck stage's stub agrees with the gate", () => {
     expect(sorted(readInterfaceMembers(stub, "SubAppManifest"))).toEqual(
       sorted([...DATA_FIELDS, ...FUNCTION_MEMBERS, ...REFUSED_MEMBERS]),
     );
+  });
+
+  it("types listing.discoverable REQUIRED, as the host's Zod output type does (`.default(false)`), so a candidate that omits it fails here as it would when mounted", () => {
+    expect(stub).toMatch(/readonly\s+discoverable\s*:\s*boolean\s*;/);
+    expect(stub).not.toMatch(/readonly\s+discoverable\?\s*:/);
   });
 
   it("types every refused member `never`, so the compiler refuses what the gate refuses", () => {

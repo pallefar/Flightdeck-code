@@ -111,7 +111,8 @@ export interface SubAppManifest {
   /** apps-01: the app-directory facts block (facts only, never copy). */
   readonly listing?: {
     readonly availability: "available" | "coming-soon";
-    readonly discoverable?: boolean;
+    /** Required: the host types this as z.infer (the OUTPUT), where \`.default(false)\` makes it required. */
+    readonly discoverable: boolean;
     readonly category: "documents" | "signing" | "analytics" | "knowledge" | "location" | "developer";
     readonly requirements?: readonly string[];
     readonly publisher: { readonly name: string };
