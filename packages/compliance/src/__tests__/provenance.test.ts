@@ -33,7 +33,7 @@ import {
   type ProvenanceSubject,
 } from "../provenance";
 import { recordDigest } from "../record";
-import { CODEGEN_JOURNAL_PREFIX, deriveSubject } from "../subject";
+import { CODEGEN_JOURNAL_PREFIX, deriveSubject, isHostRuntimeArtifact, rehashSubject } from "../subject";
 
 const STUDIO = path.resolve(__dirname, "..", "..", "..", "..");
 const SPEC_PATH = path.join(STUDIO, "fixtures", "wc-clock.spec.json");
@@ -288,5 +288,172 @@ describe("the manifest carries no provenance (coordination with apps-49)", () =>
     expect(manifest).toBeDefined();
     expect(manifest!.contents).not.toMatch(/provenance|treeSha256|recordSha256|studioCommit|hostHead/i);
     expect(generated.files.some((f) => path.posix.basename(f.path) === PROVENANCE_FILE)).toBe(false);
+  });
+});
+
+/**
+ * Review round 2. The seal (step 6) used to re-hash only the SAVED list of
+ * host files, so a host source file that was unchanged at step 3b and changed
+ * during the build or the host gate was never looked at. It now re-runs the
+ * change discovery and refuses any new change outside the app dir, except the
+ * host's own runtime artifacts, which are named one by one.
+ */
+describe("rehashSubject — the seal re-discovers host changes, not just the saved list", () => {
+  it("⭐ a host file that was unchanged at step 3b and changed afterwards refuses the seal, naming it", () => {
+    const root = sandbox("seal-late-edit");
+    const subject = subjectOf(root);
+    expect(rehashSubject(root, subject)).toEqual([]);
+    fs.appendFileSync(path.join(root, "flightdeck", "server", "index.ts"), "export const late = 1;\n");
+    expect(rehashSubject(root, subject)).toEqual([{ code: "host-file-changed-after-subject", path: "flightdeck/server/index.ts" }]);
+  });
+
+  it("a new untracked host file, or a deleted one, after step 3b refuses too", () => {
+    const added = sandbox("seal-late-add");
+    const s1 = subjectOf(added);
+    fs.writeFileSync(path.join(added, "flightdeck", "server", "extra.ts"), "export {};\n");
+    expect(rehashSubject(added, s1)).toEqual([{ code: "host-file-changed-after-subject", path: "flightdeck/server/extra.ts" }]);
+
+    const deleted = sandbox("seal-late-delete");
+    const s2 = subjectOf(deleted);
+    fs.rmSync(path.join(deleted, "flightdeck", "server", "index.ts"));
+    expect(rehashSubject(deleted, s2)).toEqual([{ code: "host-file-changed-after-subject", path: "flightdeck/server/index.ts" }]);
+  });
+
+  it("the host's own runtime artifacts, written by the gate, are named and set aside — nothing else is", () => {
+    const root = sandbox("seal-runtime");
+    const runtime = ["app/BRAIN-INDEX.md", "app/skills-index.json", "audit/os-audit.jsonl", "subapps.json"];
+    for (const rel of runtime) {
+      fs.mkdirSync(path.dirname(path.join(root, rel)), { recursive: true });
+      fs.writeFileSync(path.join(root, rel), "host HEAD\n");
+    }
+    git(root, "add", ...runtime);
+    git(root, "commit", "-q", "--no-gpg-sign", "-m", "runtime artifacts at host HEAD");
+    const subject = subjectOf(root);
+    for (const rel of runtime) fs.appendFileSync(path.join(root, rel), "written by the gate\n");
+    fs.mkdirSync(path.join(root, "memory", "proposals"), { recursive: true });
+    fs.writeFileSync(path.join(root, "memory", "proposals", "brain-lint-2026-09-25.md"), "lint\n");
+    expect(rehashSubject(root, subject)).toEqual([]);
+
+    for (const p of [...runtime, "memory/proposals/brain-lint-2026-09-25.md"]) expect(isHostRuntimeArtifact(p)).toBe(true);
+    for (const p of [
+      "app/BRAIN-INDEX.md.bak",
+      "app/data/status.js",
+      "audit/AUDIT-2026-06-09.md",
+      "audit/nested/x.jsonl",
+      "flightdeck/subapps.json",
+      "memory/proposals/other.md",
+      "memory/proposals/brain-lint-x/y.md",
+      "flightdeck/server/index.ts",
+    ]) {
+      expect(isHostRuntimeArtifact(p), p).toBe(false);
+    }
+  });
+
+  it("a sandbox whose git status cannot be read refuses rather than sealing blind", () => {
+    const root = sandbox("seal-no-git");
+    const subject = subjectOf(root);
+    fs.rmSync(path.join(root, ".git"), { recursive: true, force: true });
+    expect(rehashSubject(root, subject).map((m) => m.code)).toContain("not-a-git-sandbox");
+  });
+});
+
+/**
+ * Review round 2. The Studio identity was read only at seal time, so a
+ * checkout that moved during the run (A -> clean B) was recorded as B although
+ * A generated the candidate, and reverting local generator edits before the
+ * seal dropped the -dirty marker. promote.sh now captures it at step 0 with
+ * `studio-identity` and hands it to `seal --studio-at`.
+ */
+describe("the Studio identity is captured before generation and preserved at the seal", () => {
+  const COMMIT_RE = /^[0-9a-f]{40}$/;
+  const record = { schema: "studio-compliance-record/1", passed: [], failed: [], skipped: [], readyForProduction: true };
+
+  function studioRepo(name: string): string {
+    const dir = path.join(tmp, name);
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, "generator.ts"), "export const v = 1;\n");
+    git(dir, "init", "-q");
+    git(dir, "add", "generator.ts");
+    git(dir, "commit", "-q", "--no-gpg-sign", "-m", "A");
+    return dir;
+  }
+
+  function cli(...argv: string[]) {
+    return spawnSync("npx", ["tsx", CLI, ...argv], { cwd: STUDIO, encoding: "utf8" });
+  }
+
+  function seal(name: string, studio: string, studioAt: string | null) {
+    const dir = path.join(tmp, `${name}-seal`);
+    fs.mkdirSync(dir, { recursive: true });
+    const subject: ProvenanceSubject = {
+      subappId: "wc-clock",
+      version: "0.1.0",
+      treeSha256: sha("tree"),
+      hostFiles: [{ path: "flightdeck/server/subapps/registry.ts", sha256: sha("r") }],
+    };
+    fs.writeFileSync(path.join(dir, "subject.json"), JSON.stringify({ hostHead: "a".repeat(40), subject }));
+    fs.writeFileSync(path.join(dir, "record.json"), JSON.stringify(record));
+    const out = path.join(dir, "PROVENANCE.json");
+    const argv = ["seal", "--subject", path.join(dir, "subject.json"), "--record", path.join(dir, "record.json"), "--studio", studio];
+    if (studioAt !== null) argv.push("--studio-at", studioAt);
+    argv.push("--out", out);
+    const r = cli(...argv);
+    return { r, out, sealed: fs.existsSync(out) ? (JSON.parse(fs.readFileSync(out, "utf8")) as { studioCommit: string }) : null };
+  }
+
+  const identity = (studio: string) => {
+    const r = cli("studio-identity", "--studio", studio);
+    expect(r.status, r.stderr).toBe(0);
+    return r.stdout.trim();
+  };
+
+  it("⭐ a Studio checkout that moved to a clean B after capture refuses the seal (A generated the candidate)", () => {
+    const studio = studioRepo("studio-moved");
+    const at = identity(studio);
+    expect(at).toMatch(COMMIT_RE);
+    fs.writeFileSync(path.join(studio, "generator.ts"), "export const v = 2;\n");
+    git(studio, "commit", "-q", "--no-gpg-sign", "-am", "B");
+    const { r, sealed } = seal("studio-moved", studio, at);
+    expect(r.status).toBe(1);
+    expect(r.stderr).toContain("studio-moved");
+    expect(sealed).toBeNull();
+  });
+
+  it("⭐ dirty at capture, reverted before the seal: the record keeps the -dirty marker", () => {
+    const studio = studioRepo("studio-reverted");
+    fs.writeFileSync(path.join(studio, "generator.ts"), "export const v = 99;\n");
+    const at = identity(studio);
+    expect(at).toMatch(/^[0-9a-f]{40}-dirty$/);
+    git(studio, "checkout", "--", "generator.ts");
+    const { r, sealed } = seal("studio-reverted", studio, at);
+    expect(r.status, r.stderr).toBe(0);
+    expect(sealed?.studioCommit).toBe(at);
+  });
+
+  it("clean at capture, dirty at the seal refuses: what ran is not what the commit says", () => {
+    const studio = studioRepo("studio-dirtied");
+    const at = identity(studio);
+    fs.writeFileSync(path.join(studio, "generator.ts"), "export const v = 3;\n");
+    const { r, sealed } = seal("studio-dirtied", studio, at);
+    expect(r.status).toBe(1);
+    expect(r.stderr).toContain("studio-moved");
+    expect(sealed).toBeNull();
+  });
+
+  it("an unchanged clean checkout seals with that commit; a seal without --studio-at, or a malformed one, is refused", () => {
+    const studio = studioRepo("studio-same");
+    const at = identity(studio);
+    const ok = seal("studio-same", studio, at);
+    expect(ok.r.status, ok.r.stderr).toBe(0);
+    expect(ok.sealed?.studioCommit).toBe(at);
+
+    const missing = seal("studio-missing", studio, null);
+    expect(missing.r.status).toBe(2);
+    expect(missing.r.stderr).toContain("--studio-at");
+    expect(missing.sealed).toBeNull();
+
+    const junk = seal("studio-junk", studio, "HEAD");
+    expect(junk.r.status).not.toBe(0);
+    expect(junk.sealed).toBeNull();
   });
 });

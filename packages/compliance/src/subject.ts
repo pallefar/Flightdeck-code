@@ -134,26 +134,82 @@ export function deriveSubject(options: DeriveSubjectOptions): SubjectDerivation 
 }
 
 /**
- * Re-hashes a subject derived EARLIER from the same sandbox — the app tree
- * and each listed host file — and names what moved. promote.sh derives the
- * subject right after mounting, runs the build and the host gate, and only
- * then seals the sidecar; this is how the seal knows the candidate it names
- * is still the candidate that was gated. (It does not re-run `git status`:
- * the gate leaves its own runtime files behind, which are not the candidate's.)
+ * The host's own RUNTIME ARTIFACTS: tracked (or, for brain-lint, new) files
+ * the running OS and its test suites rewrite, so the host gate (step 5) leaves
+ * them changed in the sandbox. They are the host's bookkeeping, not the
+ * candidate's, and they are the ONLY paths the seal sets aside when it looks
+ * for host changes made after step 3b. Each is matched exactly, one path
+ * segment at a time — no prefix match, so `app/BRAIN-INDEX.md.bak` or a
+ * nested `audit/x/y.jsonl` is NOT a runtime artifact and refuses the seal.
+ * (The same list the Flightdeck repo keeps out of every commit.)
  */
-export function rehashSubject(rootIn: string, subject: ProvenanceSubject): { code: "tree-hash-mismatch" | "host-file-hash-mismatch" | "symlink-in-app-dir"; path?: string }[] {
+const HOST_RUNTIME_ARTIFACTS: readonly RegExp[] = [
+  /^app\/BRAIN-INDEX\.md$/,
+  /^app\/skills-index\.json$/,
+  /^audit\/[^/]+\.jsonl$/,
+  /^subapps\.json$/,
+  /^memory\/proposals\/brain-lint-[^/]+\.md$/,
+];
+
+export function isHostRuntimeArtifact(repoPath: string): boolean {
+  return HOST_RUNTIME_ARTIFACTS.some((re) => re.test(repoPath));
+}
+
+export type RehashProblemCode =
+  | "tree-hash-mismatch"
+  | "host-file-hash-mismatch"
+  | "host-file-changed-after-subject"
+  | "symlink-in-app-dir"
+  | "not-a-git-sandbox";
+
+/**
+ * Re-checks, at the seal, a subject derived EARLIER from the same sandbox and
+ * names what moved. promote.sh derives the subject right after mounting, runs
+ * the build and the host gate, and only then seals the sidecar; this is how
+ * the seal knows the candidate it names is still the candidate that was gated.
+ *
+ * - the app tree is re-hashed, and each listed host file too;
+ * - the host CHANGE SET is re-discovered with `git status` against the host
+ *   commit, exactly as at step 3b: a path outside the app dir (and codegen's
+ *   journal) that is not a listed host file and not one of the host's named
+ *   runtime artifacts means something changed the host after the subject was
+ *   taken — a build, a test, a concurrent edit — and the seal refuses. (Before
+ *   review round 2 only the saved list was re-hashed, so a host file that was
+ *   unchanged at step 3b and edited during the gate was never looked at.)
+ *
+ * ⛔ FAILS CLOSED: a sandbox whose git status cannot be read is a problem.
+ */
+export function rehashSubject(rootIn: string, subject: ProvenanceSubject): { code: RehashProblemCode; path?: string }[] {
   const root = fs.realpathSync(rootIn);
-  const out: { code: "tree-hash-mismatch" | "host-file-hash-mismatch" | "symlink-in-app-dir"; path?: string }[] = [];
+  const out: { code: RehashProblemCode; path?: string }[] = [];
   const appDir = appDirOf(subject.subappId);
   const files: FileDigest[] = [];
   const problems: SubjectProblem[] = [];
   if (fs.existsSync(path.join(root, appDir))) walk(path.join(root, appDir), "", files, problems, appDir);
   for (const p of problems) out.push({ code: "symlink-in-app-dir", ...(p.path === undefined ? {} : { path: p.path }) });
   if (problems.length === 0 && treeSha256(files) !== subject.treeSha256) out.push({ code: "tree-hash-mismatch" });
+  const listed = new Set<string>();
   for (const file of subject.hostFiles) {
+    listed.add(file.path);
     const abs = path.join(root, file.path);
     const now = fs.existsSync(abs) && fs.lstatSync(abs).isFile() ? sha256Hex(fs.readFileSync(abs)) : null;
     if (now !== file.sha256) out.push({ code: "host-file-hash-mismatch", path: file.path });
+  }
+
+  const top = git(root, ["rev-parse", "--show-toplevel"]);
+  const status = top.ok && fs.realpathSync(top.stdout.trim()) === root
+    ? git(root, ["status", "--porcelain=v1", "-z", "--untracked-files=all", "--no-renames"])
+    : { ok: false, stdout: "", stderr: `${rootIn} is not the top level of a git checkout` };
+  if (!status.ok) {
+    out.push({ code: "not-a-git-sandbox" });
+    return out;
+  }
+  for (const entry of status.stdout.split("\0")) {
+    if (entry.length < 4) continue;
+    const p = entry.slice(3);
+    if (p.startsWith(`${appDir}/`) || p.startsWith(CODEGEN_JOURNAL_PREFIX)) continue;
+    if (listed.has(p) || isHostRuntimeArtifact(p)) continue;
+    out.push({ code: "host-file-changed-after-subject", path: p });
   }
   return out;
 }

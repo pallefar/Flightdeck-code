@@ -1,4 +1,4 @@
-/** `provenance` as a command — the two steps `scripts/promote.sh` runs.
+/** `provenance` as a command — the steps `scripts/promote.sh` runs.
  *
  *   npx tsx packages/compliance/src/provenance-cli.ts subject \
  *       --sandbox <root> --spec <spec.json> [--host <repo>] (--out <subject.json> | --dry-run)
@@ -10,14 +10,21 @@
  *
  *   npx tsx packages/compliance/src/provenance-cli.ts seal \
  *       --subject <subject.json> --record <compliance-record.json> --studio <dir> \
- *       [--host <repo>] [--sandbox <root>] [--catalogue-entry <id>] --out <PROVENANCE.json>
+ *       --studio-at <sha[-dirty]> [--host <repo>] [--sandbox <root>] [--catalogue-entry <id>] --out <PROVENANCE.json>
  *
  *     After the compliance record exists: binds the subject to the record's
- *     JCS digest, the Studio commit (`-dirty` when it had local changes) and
- *     the host head, and writes the `studio-provenance/1` sidecar. With
+ *     JCS digest, the Studio identity captured at step 0 (`--studio-at`; it
+ *     refuses if the checkout moved or gained local changes since) and the
+ *     host head, and writes the `studio-provenance/1` sidecar. With
  *     `--sandbox` it first re-hashes the subject there (and afterwards also
  *     writes the sidecar into the sandbox's app dir, its place); with
  *     `--host` it refuses if the host HEAD moved since the sandbox was built.
+ *
+ *   npx tsx packages/compliance/src/provenance-cli.ts studio-identity --studio <dir>
+ *
+ *     Prints the Studio checkout's identity, `<sha>` or `<sha>-dirty`. promote.sh
+ *     captures it at step 0, BEFORE the suite, the red-team and codegen run,
+ *     and hands it to `seal --studio-at`.
  *
  * Exit codes: 0 written / clean dry run; 1 refused (each reason on stderr,
  * nothing written); 2 bad usage or an unreadable input.
@@ -76,6 +83,20 @@ function hostHeadOf(repo: string): string {
   const head = gitOut(repo, ["rev-parse", "--verify", "HEAD^{commit}"]);
   if (head === null) throw new Usage(`${repo} has no HEAD`);
   return head.trim();
+}
+
+const STUDIO_IDENTITY_RE = /^[0-9a-f]{40}(-dirty)?$/;
+
+/** The Studio checkout's identity: its HEAD commit, `-dirty` when it has any local change (untracked included). */
+export function studioIdentity(studio: string): string {
+  const head = gitOut(studio, ["rev-parse", "--verify", "HEAD^{commit}"]);
+  const status = gitOut(studio, ["status", "--porcelain", "--untracked-files=all"]);
+  if (head === null || status === null) throw new Usage(`${studio} is not a git checkout`);
+  return status.trim().length === 0 ? head.trim() : `${head.trim()}-dirty`;
+}
+
+function studioIdentityCommand(a: ReturnType<typeof args>): void {
+  process.stdout.write(`${studioIdentity(need(a.opt("--studio"), "--studio <dir>"))}\n`);
 }
 
 function subjectCommand(a: ReturnType<typeof args>): void {
@@ -141,10 +162,22 @@ function sealCommand(a: ReturnType<typeof args>): void {
     }
   }
 
-  const head = gitOut(studio, ["rev-parse", "--verify", "HEAD^{commit}"]);
-  const status = gitOut(studio, ["status", "--porcelain", "--untracked-files=all"]);
-  if (head === null || status === null) throw new Usage(`${studio} is not a git checkout`);
-  const studioCommit = status.trim().length === 0 ? head.trim() : `${head.trim()}-dirty`;
+  // The identity promote.sh captured at step 0, before the suite, the
+  // red-team and codegen ran — not the checkout as it is now. It is kept as
+  // captured (a -dirty marker survives local edits reverted since), and the
+  // seal refuses if the checkout moved to another commit or picked up local
+  // changes in between: then what the record names is not what ran.
+  const studioAt = need(a.opt("--studio-at"), "--studio-at <sha[-dirty]> (from `studio-identity` at step 0)");
+  if (!STUDIO_IDENTITY_RE.test(studioAt)) throw new Usage(`--studio-at ${studioAt} is not <40-hex sha>[-dirty]`);
+  const now = studioIdentity(studio);
+  const capturedHead = studioAt.slice(0, 40);
+  if (now.slice(0, 40) !== capturedHead) {
+    throw new Refused(`studio-moved — the run started at Studio ${studioAt} but ${studio} is now at ${now}`);
+  }
+  if (!studioAt.endsWith("-dirty") && now.endsWith("-dirty")) {
+    throw new Refused(`studio-moved — ${studio} was clean at ${capturedHead} when the run started and has local changes now`);
+  }
+  const studioCommit = studioAt;
 
   const catalogue = a.opt("--catalogue-entry");
   const provenance = buildProvenance({
@@ -166,7 +199,8 @@ export function main(argv: readonly string[]): number {
   try {
     if (a.mode === "subject") subjectCommand(a);
     else if (a.mode === "seal") sealCommand(a);
-    else throw new Usage('the first argument is "subject" or "seal"');
+    else if (a.mode === "studio-identity") studioIdentityCommand(a);
+    else throw new Usage('the first argument is "studio-identity", "subject" or "seal"');
     return 0;
   } catch (err) {
     if (err instanceof Refused) {

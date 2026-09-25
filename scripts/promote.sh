@@ -89,6 +89,16 @@ fi
 SPEC_HASH="$(sha256sum "$SPEC" | cut -d' ' -f1)"
 echo "spec sha256: $SPEC_HASH"
 
+# The Studio identity (upd-studio-provenance, review round 2): captured HERE,
+# before the suite, the red-team and codegen run, and handed to the seal in
+# step 6, which keeps it as captured (a -dirty marker survives edits reverted
+# since) and refuses if this checkout moved or gained local changes meanwhile.
+# Read at the seal instead, a checkout moved A -> clean B mid-run would be
+# recorded as B although A generated the candidate. Empty when it cannot be
+# read; the seal then refuses (no --studio-at), so the run BLOCKS.
+STUDIO_AT="$( cd "$STUDIO" && npx tsx packages/compliance/src/provenance-cli.ts studio-identity --studio "$STUDIO" 2>/dev/null )" || STUDIO_AT=""
+echo "studio: ${STUDIO_AT:-(identity unreadable — the provenance seal will refuse)}"
+
 echo "==> [1/6] Studio typecheck + tests"
 # The guardrail divergence tests read the host's security lists from
 # FLIGHTDECK_HOST_ROOT (packages/guardrails/src/host-source.ts), which defaults
@@ -215,8 +225,11 @@ PY
 # hash excludes, and it names the record above by its RFC 8785 digest, the
 # Studio commit (-dirty when this checkout had local changes), the host HEAD
 # and the catalogue entry (CATALOGUE_ENTRY_ID; null when the spec came from
-# none). The seal re-hashes the subject in the sandbox first and refuses if
-# the candidate or the host HEAD moved since step 3b. Written to the run dir
+# none). The Studio commit is the one captured before step 1 ($STUDIO_AT).
+# The seal re-hashes the subject in the sandbox first, re-discovers the host
+# change set (git status; only the host's named runtime artifacts, which the
+# gate rewrites, are set aside), and refuses if the candidate, any other host
+# file, the host HEAD or the Studio checkout moved since. Written to the run dir
 # (which outlives the sandbox) and into the sandbox's app dir, its place.
 # A failed seal cannot appear in the record it digests, so it BLOCKS the run
 # below instead: a record without its sidecar is not promotable.
@@ -224,7 +237,7 @@ PROVENANCE_OUT="$RUN_DIR/PROVENANCE.json"
 SEAL_FAILED=""
 if [ -f "$SUBJECT" ]; then
   if ( cd "$STUDIO" && npx tsx packages/compliance/src/provenance-cli.ts seal \
-         --subject "$SUBJECT" --record "$RECORD" --studio "$STUDIO" --host "$REPO" --sandbox "$ROOT" \
+         --subject "$SUBJECT" --record "$RECORD" --studio "$STUDIO" --studio-at "$STUDIO_AT" --host "$REPO" --sandbox "$ROOT" \
          ${CATALOGUE_ENTRY_ID:+--catalogue-entry "$CATALOGUE_ENTRY_ID"} --out "$PROVENANCE_OUT" ); then
     echo "provenance sidecar: $PROVENANCE_OUT"
   else

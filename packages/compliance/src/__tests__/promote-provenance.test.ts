@@ -21,7 +21,7 @@ import { afterAll, describe, expect, it } from "vitest";
 
 import { PROVENANCE_SCHEMA, type Provenance } from "../provenance";
 import { recordDigest } from "../record";
-import { deriveSubject } from "../subject";
+import { rehashSubject } from "../subject";
 
 const STUDIO = path.resolve(__dirname, "..", "..", "..", "..");
 const PROMOTE = path.join(STUDIO, "scripts", "promote.sh");
@@ -31,12 +31,20 @@ const REAL_NPX = spawnSync("bash", ["-lc", "command -v npx"], { encoding: "utf8"
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "promote-provenance-"));
 afterAll(() => fs.rmSync(tmp, { recursive: true, force: true }));
 
-function fakeHost(dir: string): string {
+/** What the fake host gate does besides exit 0 — like the real gate, it rewrites the host's runtime artifacts. */
+const GATE_RUNTIME = [
+  "mkdir -p app audit memory/proposals",
+  "echo rebuilt >>app/BRAIN-INDEX.md",
+  "echo '{}' >>audit/os-audit.jsonl",
+  "echo lint >memory/proposals/brain-lint-2026-09-25.md",
+].join("\n");
+
+function fakeHost(dir: string, gateBody = `${GATE_RUNTIME}\nexit 0\n`): string {
   const fd = path.join(dir, "flightdeck");
   fs.mkdirSync(path.join(fd, "server", "subapps"), { recursive: true });
   for (let i = 0; i < 11; i++) fs.mkdirSync(path.join(fd, "node_modules", `dep${i}`), { recursive: true });
   fs.mkdirSync(path.join(dir, "scripts"), { recursive: true });
-  fs.writeFileSync(path.join(dir, "scripts", "gate.sh"), "exit 0\n");
+  fs.writeFileSync(path.join(dir, "scripts", "gate.sh"), gateBody);
   fs.writeFileSync(
     path.join(fd, "server", "subapps", "registry.ts"),
     'import type { SubAppManifest } from "./types.js";\n\nexport const SUBAPP_MANIFESTS: SubAppManifest[] = [\n];\n',
@@ -75,9 +83,9 @@ function stubBin(dir: string): string {
   return dir;
 }
 
-function runPromote(name: string, extraEnv: Record<string, string> = {}) {
+function runPromote(name: string, extraEnv: Record<string, string> = {}, gateBody?: string) {
   const base = path.join(tmp, name);
-  const host = fakeHost(path.join(base, "host"));
+  const host = fakeHost(path.join(base, "host"), gateBody);
   const bin = stubBin(path.join(base, "bin"));
   const runs = path.join(base, "runs");
   const env: Record<string, string> = {};
@@ -112,20 +120,19 @@ describe("promote.sh and the provenance sidecar", () => {
     expect(sidecar.catalogueEntryId).toBe("triage-summary@2");
     const hostHead = spawnSync("git", ["-C", host, "rev-parse", "HEAD"], { encoding: "utf8" }).stdout.trim();
     expect(sidecar.hostHead).toBe(hostHead);
-    expect(sidecar.studioCommit).toMatch(/^[0-9a-f]{40}(-dirty)?$/);
+    // The Studio identity is the one captured before step 1, not re-read at the seal.
+    const captured = /^studio: ([0-9a-f]{40}(?:-dirty)?)$/m.exec(result.stdout)?.[1];
+    expect(captured, output).toBeDefined();
+    expect(sidecar.studioCommit).toBe(captured);
     expect(sidecar.subject.subappId).toBe("wc-clock");
     expect(sidecar.subject.hostFiles.map((f) => f.path)).toContain("flightdeck/server/subapps/registry.ts");
 
-    // The sidecar also sits in its place, and the tree hash re-derived WITH it there is unchanged.
+    // The sidecar also sits in its place, and the subject re-checked WITH it there (and with the
+    // runtime artifacts the gate rewrote) has not moved: same tree hash, same host files, nothing else.
     const placed = path.join(sandbox, "flightdeck", "server", "subapps", "wc-clock", "PROVENANCE.json");
     expect(fs.readFileSync(placed, "utf8")).toBe(fs.readFileSync(path.join(runDir, "PROVENANCE.json"), "utf8"));
-    const rederived = deriveSubject({
-      root: sandbox,
-      subappId: "wc-clock",
-      version: "0.1.0",
-      declaredHostFiles: sidecar.subject.hostFiles.map((f) => f.path),
-    });
-    expect(rederived.ok && rederived.subject.treeSha256).toBe(sidecar.subject.treeSha256);
+    expect(fs.existsSync(path.join(sandbox, "app", "BRAIN-INDEX.md"))).toBe(true);
+    expect(rehashSubject(sandbox, sidecar.subject)).toEqual([]);
 
     // The manifest names none of it.
     const manifest = fs.readFileSync(path.join(sandbox, "flightdeck", "server", "subapps", "wc-clock", "manifest.ts"), "utf8");
@@ -144,6 +151,18 @@ describe("promote.sh and the provenance sidecar", () => {
     };
     expect(record.failed).toContain("provenance-subject");
     expect(record.readyForProduction).toBe(false);
+    expect(fs.existsSync(path.join(runDir, "PROVENANCE.json"))).toBe(false);
+  });
+
+  it("⭐ a host source file edited during the host gate (unchanged at step 3b) blocks the seal: no sidecar", () => {
+    const gate = `${GATE_RUNTIME}\necho "export const late = 1;" >>flightdeck/server/index.ts\nexit 0\n`;
+    const { result, runDir } = runPromote("late-edit", {}, gate);
+    const output = `${result.stdout}\n${result.stderr}`;
+    expect(output).toContain("PASS: provenance-subject");
+    expect(output).toContain("PASS: host-gate");
+    expect(output).toContain("host-file-changed-after-subject flightdeck/server/index.ts");
+    expect(output).toContain("BLOCKED — the provenance sidecar could not be sealed");
+    expect(result.status).toBe(1);
     expect(fs.existsSync(path.join(runDir, "PROVENANCE.json"))).toBe(false);
   });
 });

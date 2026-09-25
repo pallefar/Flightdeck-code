@@ -99,11 +99,21 @@ promoted candidate is and where it came from. `promote.sh` writes it as
   record's RFC 8785 (JCS) canonical form (`recordDigest`, with JCS
   implemented in `jcs.ts` and pinned by the RFC's vectors). It is not the
   file's bytes, so re-indenting the record does not change it.
-- `studioCommit` ends in `-dirty` when the Studio checkout had local
-  changes. `catalogueEntryId` comes from `CATALOGUE_ENTRY_ID` and is `null`
-  when the spec came from no catalogue entry.
-- The seal re-hashes the subject in the sandbox and refuses if the candidate
-  or the host HEAD moved after step 3b. A failed seal cannot appear in the
+- `studioCommit` is captured before step 1 (`provenance-cli.ts
+  studio-identity`), before the suite, the red-team and codegen run. It ends
+  in `-dirty` when the Studio checkout had local changes then, and keeps that
+  marker even if the changes are reverted before the seal. The seal refuses
+  if the checkout moved to another commit, or went from clean to changed,
+  during the run. `catalogueEntryId` comes from `CATALOGUE_ENTRY_ID` and is
+  `null` when the spec came from no catalogue entry.
+- The seal re-hashes the subject in the sandbox. It also runs `git status`
+  there again, so a host file that was unchanged at step 3b and changed
+  later (by the build, a test or a concurrent edit) is found. It refuses if
+  the candidate, any other host file or the host HEAD moved after step 3b.
+  Only the host's named runtime artifacts, which the gate rewrites, are set
+  aside: `app/BRAIN-INDEX.md`, `app/skills-index.json`, `audit/*.jsonl`,
+  `subapps.json` and `memory/proposals/brain-lint-*.md`, each matched
+  exactly (`isHostRuntimeArtifact`). A failed seal cannot appear in the
   record it digests, so it blocks the run instead.
 
 Who ran the checks is not proven by this file. The cosign attestation over
