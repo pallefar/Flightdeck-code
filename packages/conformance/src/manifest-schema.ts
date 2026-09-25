@@ -16,13 +16,28 @@
  * which is the one failure mode a gate must not have: it teaches people to
  * bypass it. */
 import { z } from "zod";
-import { CAPABILITIES, HOST_VERSION, NAV_SECTIONS, ROLES, ROUTE_PREFIX_RE, SUBAPP_ID_RE, isVersionNewer } from "./derive";
+import { CAPABILITIES, HOST_VERSION, LISTING_CATEGORIES, NAV_SECTIONS, ROLES, ROUTE_PREFIX_RE, SUBAPP_ID_RE, isVersionNewer } from "./derive";
 
 const settingsPanelSchema = z.object({
   tier: z.enum(["workspace-admin", "super-admin"]),
   webComponentId: z.string().min(1),
   label: z.string().min(1),
 });
+
+/** apps-01 / apps-49 — the host's `subAppListingSchema`, transcribed. The
+ * app-directory FACTS block, `.strict()` in the host (and so here): copy,
+ * URLs, media and release state are human-owned per release, and an unknown
+ * key there refuses to boot. Without this field the gate would strip a
+ * generated `listing` unexamined and pass a manifest the host would not boot. */
+const listingSchema = z
+  .object({
+    availability: z.enum(["available", "coming-soon"]),
+    discoverable: z.boolean().default(false),
+    category: z.enum(LISTING_CATEGORIES),
+    requirements: z.array(z.string().regex(SUBAPP_ID_RE)).max(5).optional(),
+    publisher: z.object({ name: z.string().min(1) }).strict(),
+  })
+  .strict();
 
 export const subAppManifestSchema = z.object({
   /** Locked once shipped: the env var, the nav path and the table prefix
@@ -51,6 +66,8 @@ export const subAppManifestSchema = z.object({
    * widened — this object is not `.strict()`, so leaving the field out would
    * strip a misspelt marker and pass a manifest the host would not boot. */
   generatedBy: z.literal("flightdeck-studio").optional(),
+  /** apps-01: optional app-directory facts (see listingSchema above). */
+  listing: listingSchema.optional(),
 });
 
 export type SubAppManifestData = z.infer<typeof subAppManifestSchema>;

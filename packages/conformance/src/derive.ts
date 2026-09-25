@@ -22,6 +22,9 @@ export const NAV_SECTIONS = ["Overview", "Contract pipeline", "Ops & insight", "
 
 export const CAPABILITIES = ["read:contracts", "write:inbox-proposal"] as const;
 
+/** The host's `LISTING_CATEGORIES` (apps-01, D-037), verbatim. */
+export const LISTING_CATEGORIES = ["documents", "signing", "analytics", "knowledge", "location", "developer"] as const;
+
 export const ROLES = ["hr_preparer", "hr_reviewer", "wc_liaison", "legal", "admin"] as const;
 
 /** The version `assertHostVersionCompatible` compares a manifest against. */

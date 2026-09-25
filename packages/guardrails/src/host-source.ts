@@ -291,7 +291,8 @@ export function readInterfaceMembers(source: string, name: string): string[] {
  * fields a host Zod schema validates. */
 export function readZodObjectKeys(source: string, name: string): string[] {
   const code = stripComments(source);
-  const head = new RegExp(`export\\s+const\\s+${name}\\s*=\\s*z\\.object\\(\\s*\\{`).exec(code);
+  // `z\s*\.object`: the host chains some schemas over lines (`z\n  .object({`).
+  const head = new RegExp(`export\\s+const\\s+${name}\\s*=\\s*z\\s*\\.object\\(\\s*\\{`).exec(code);
   if (head === null) throw new Error(`no "export const ${name} = z.object({" in the host source`);
   const open = head.index + head[0].length - 1;
   const body = code.slice(open + 1, matchClose(code, open, `z.object for ${name}`));

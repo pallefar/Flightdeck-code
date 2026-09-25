@@ -13,9 +13,10 @@
 import fs from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { assertManifestWouldBoot, subAppManifestSchema } from "../manifest-rules";
+import { assertManifestWouldBoot, subAppListingSchema, subAppManifestSchema } from "../manifest-rules";
+import { LISTING_CATEGORIES } from "../spec-contract";
 import { NON_DATA_MEMBERS, readEmittedManifest } from "../testing/readEmittedManifest";
-import { HOST_ROOT, readInterfaceMembers } from "../../../guardrails/src/host-source";
+import { HOST_ROOT, readInterfaceMembers, readStringArray, readZodObjectKeys } from "../../../guardrails/src/host-source";
 
 // ⚠ DERIVED, NOT HARDCODED. This was the literal Linux path, so on any
 // machine whose checkout lives elsewhere the file was simply absent and
@@ -33,8 +34,31 @@ describe.skipIf(!available)("the local schema copy agrees with the host's real m
       expect(data.id).toBe(id);
       // The real thing, boot rules and all — not just the Zod shape.
       expect(() => assertManifestWouldBoot(data)).not.toThrow();
+      // apps-49: this copy is not `.strict()`, so a field it does not model
+      // is STRIPPED, not refused — a real manifest's `listing` would pass
+      // here while this copy never checked it. What it validates it keeps.
+      if ("listing" in data) expect(assertManifestWouldBoot(data).listing).toEqual(data.listing);
     });
   }
+
+  /** ⭐ apps-49: THE FIELD LIST ITSELF IS DRIFT-TESTED. The real-manifest
+   * cases above cannot see a field the host added and this copy lacks —
+   * the copy is not `.strict()`, so Zod strips the unknown key and the
+   * manifest still "passes". That is how the host's `listing` (apps-01)
+   * went unmodelled here. So: the host's `subAppManifestSchema` keys, read
+   * off `types.ts`, must equal this copy's keys, except `widgets` — the one
+   * optional additive field this copy deliberately accepts unmodelled. */
+  it("validates every field the host's subAppManifestSchema validates (widgets excepted)", () => {
+    const types = fs.readFileSync(path.join(CONTRACT_SUBAPPS, "types.ts"), "utf8");
+    const hostKeys = readZodObjectKeys(types, "subAppManifestSchema").filter((k) => k !== "widgets");
+    expect(Object.keys(subAppManifestSchema.shape).sort()).toEqual([...hostKeys].sort());
+  });
+
+  it("mirrors the host's listing facts block key for key, and its category list", () => {
+    const types = fs.readFileSync(path.join(CONTRACT_SUBAPPS, "types.ts"), "utf8");
+    expect(Object.keys(subAppListingSchema.shape).sort()).toEqual(readZodObjectKeys(types, "subAppListingSchema").sort());
+    expect([...LISTING_CATEGORIES]).toEqual(readStringArray(types, "LISTING_CATEGORIES"));
+  });
 
   /** ⭐ THE READER'S SKIP LIST IS A TRANSCRIBED CONSTANT, SO IT GETS A DRIFT
    * TEST (HANDOVER §5.4). The reader skips exactly the members the host's

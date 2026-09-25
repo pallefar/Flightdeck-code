@@ -108,6 +108,15 @@ export interface SubAppManifest {
   readonly widgets?: readonly unknown[];
   /** D-036: the marker Studio's codegen stamps on every generated manifest. */
   readonly generatedBy?: "flightdeck-studio";
+  /** apps-01: the app-directory facts block (facts only, never copy). */
+  readonly listing?: {
+    readonly availability: "available" | "coming-soon";
+    /** Required: the host types this as z.infer (the OUTPUT), where \`.default(false)\` makes it required. */
+    readonly discoverable: boolean;
+    readonly category: "documents" | "signing" | "analytics" | "knowledge" | "location" | "developer";
+    readonly requirements?: readonly string[];
+    readonly publisher: { readonly name: string };
+  };
   initSchema(db: Db): void | Promise<void>;
   registerRoutes(app: FastifyInstance, ctx: RegisterRoutesCtx): void | Promise<void>;
   /** The host declares this (OS-04 host-surface contributions) and acts on

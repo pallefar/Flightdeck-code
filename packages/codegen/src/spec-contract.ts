@@ -32,6 +32,11 @@ export type NavSection = (typeof NAV_SECTIONS)[number];
 export const CAPABILITY_SCOPES = ["read:contracts", "write:inbox-proposal"] as const;
 export type CapabilityScope = (typeof CAPABILITY_SCOPES)[number];
 
+/** Mirrors `server/subapps/types.ts`'s LISTING_CATEGORIES (apps-01, D-037);
+ * held to it by `__tests__/manifest-rules.test.ts`. */
+export const LISTING_CATEGORIES = ["documents", "signing", "analytics", "knowledge", "location", "developer"] as const;
+export type ListingCategory = (typeof LISTING_CATEGORIES)[number];
+
 export const WORKSPACE_ROLES = ["hr_preparer", "hr_reviewer", "wc_liaison", "legal", "admin"] as const;
 export type WorkspaceRole = (typeof WORKSPACE_ROLES)[number];
 
@@ -296,6 +301,28 @@ export const workflowSpecSchema = z
   .strict();
 export type WorkflowSpec = z.infer<typeof workflowSpecSchema>;
 
+/** apps-49: the app-directory FACTS a spec may state — and nothing else.
+ *
+ * ⛔ FACTS ONLY. The host's `listing` block (apps-01, D-037) is `.strict()`
+ * because taglines, descriptions, data-handling statements, support/privacy/
+ * terms URLs, media and release state are human-owned and approved per
+ * release (apps-13). A generator that emitted any of them would be writing
+ * unapproved copy into a manifest, so this door refuses every such key.
+ * `summary` is NOT a listing field: it stays the in-app page subtitle.
+ * `discoverable` is optional here and defaults to false in `plan.ts` —
+ * fail closed, an app is hidden from the directory unless the spec says so. */
+export const listingSpecSchema = z
+  .object({
+    availability: z.enum(["available", "coming-soon"]),
+    discoverable: z.boolean().optional(),
+    category: z.enum(LISTING_CATEGORIES),
+    /** Connector ids — the same slug shape as a sub-app id — at most five. */
+    requirements: z.array(z.string().regex(SUBAPP_ID_RE)).max(5).optional(),
+    publisher: z.object({ name: z.string().min(1).max(80) }).strict(),
+  })
+  .strict();
+export type ListingSpec = z.infer<typeof listingSpecSchema>;
+
 export const miniAppSpecSchema = z
   .object({
     /** Which shape to emit. Absent means `mini-app`: database-free, the
@@ -327,6 +354,9 @@ export const miniAppSpecSchema = z
      * spec that also says `profile: "table-backed"` gets a schema.ts. */
     tables: z.array(tableSpecSchema).optional(),
     workflow: workflowSpecSchema.optional(),
+    /** App-directory facts (apps-49). Absent means the manifest carries no
+     * `listing` block at all. */
+    listing: listingSpecSchema.optional(),
     domains: z.array(domainSpecSchema).min(1),
   })
   .strict();
