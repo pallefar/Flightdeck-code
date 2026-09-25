@@ -118,6 +118,12 @@ describe("the gate validates a manifest's listing facts (apps-49) instead of str
     expect(validateManifestData({ ...base, listing })).toEqual([]);
   });
 
+  it("refuses a malformed maxHostVersion and an integration carrying an unknown key (sdk-60, sdk-21)", () => {
+    expect(validateManifestData({ ...base, maxHostVersion: "6" }).map((i) => i.field)).toContain("maxHostVersion");
+    expect(validateManifestData({ ...base, maxHostVersion: "6.0.0" })).toEqual([]);
+    expect(validateManifestData({ ...base, integrations: [{ key: "x", url: "https://x" }] }).map((i) => i.field)).toContain("integrations");
+  });
+
   it("refuses copy, a URL or an unknown category inside listing — the host's block is .strict()", () => {
     for (const bad of [{ ...listing, tagline: "x" }, { ...listing, supportUrl: "https://x" }, { ...listing, category: "crm" }]) {
       expect(validateManifestData({ ...base, listing: bad }).map((i) => i.field)).toContain("listing");

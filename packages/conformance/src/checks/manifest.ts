@@ -13,7 +13,7 @@
 import type { Check } from "../check";
 import { ROUTE_PREFIX_RE, routePrefix } from "../derive";
 import { CANDIDATE_SCOPE, NO_POSITION, finding, type Finding } from "../finding";
-import { exceedsHostCeiling, validateManifestData } from "../manifest-schema";
+import { breaksHostBound, exceedsHostCeiling, validateManifestData } from "../manifest-schema";
 import type { ManifestSource } from "../manifest-read";
 import type { ScannedFile } from "../scan";
 
@@ -42,6 +42,8 @@ export const DATA_FIELDS: readonly string[] = [
   "label",
   "version",
   "minHostVersion",
+  // sdk-60: the optional exclusive upper host bound (strict semver).
+  "maxHostVersion",
   "icon",
   "navSection",
   "routePrefix",
@@ -56,6 +58,8 @@ export const DATA_FIELDS: readonly string[] = [
   // apps-01 / apps-49: the app-directory FACTS block, `.strict()` in the
   // host. Validated field by field (copy or a URL in it is FD-M003).
   "listing",
+  // sdk-21: declared outbound operations, `.strict()` shape transcribed.
+  "integrations",
 ];
 
 /** The function members the host calls on every manifest. Required. */
@@ -152,6 +156,12 @@ export const manifestCheck: Check = {
           evidence(offset),
         ),
       );
+    }
+
+    const boundProblem = breaksHostBound(manifest.data["maxHostVersion"], minHostVersion, hostVersion);
+    if (boundProblem) {
+      const offset = manifest.memberAt("maxHostVersion")?.valueOffset ?? manifest.declOffset;
+      out.push(finding("FD-M004", file, at(offset), boundProblem, evidence(offset)));
     }
 
     // ── Fields the host DERIVES from the id must equal the derivation. ──

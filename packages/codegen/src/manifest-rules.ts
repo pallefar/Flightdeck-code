@@ -51,6 +51,43 @@ export const subAppListingSchema = z
   })
   .strict();
 
+/** sdk-21 — the host's `subAppIntegrationSchema` (server/subapps/types.ts),
+ * transcribed: DECLARED outbound operations, a request that grants nothing.
+ * Every object is `.strict()` in the host (a target URL or a token FAILS
+ * LOUD at boot), so here too. `kind` is the host's shipped connector kinds
+ * (server/services/connectors/kinds.ts) — drift-tested in codegen's
+ * manifest-rules.test.ts. Cross-reference rules (secret roles per kind,
+ * schema files on disk, public egress hosts) are the host kit's
+ * `integration-*` checks, not shape. */
+export const CONNECTOR_KIND_IDS = ["teams", "power-automate", "atlas"] as const;
+const INTEGRATION_SLUG_RE = /^[a-z0-9][a-z0-9-]*$/;
+const EGRESS_HOST_RE = /^(?=.{1,253}$)[a-z0-9-]+(?:\.[a-z0-9-]+)*$/;
+const SUBAPP_EVENT_RE = /^subapp\.[a-z0-9][a-z0-9-]*\.[a-z0-9][a-z0-9-]*$/;
+const INTEGRATION_SCHEMA_FILE_RE = /^(?!.*\.\.)[a-z0-9][a-z0-9/_.-]*\.json$/;
+const LABEL_KEY_RE = /^[a-z0-9][a-z0-9-]*(?:\.[A-Za-z0-9_-]+)+$/;
+const INTEGRATION_MAX_BYTES = 262144;
+const integrationOperationSchema = z
+  .object({
+    key: z.string().regex(INTEGRATION_SLUG_RE),
+    event: z.string().regex(SUBAPP_EVENT_RE),
+    payloadSchema: z.string().regex(INTEGRATION_SCHEMA_FILE_RE),
+    responseSchema: z.string().regex(INTEGRATION_SCHEMA_FILE_RE).optional(),
+    maxBytes: z.number().int().positive().max(INTEGRATION_MAX_BYTES),
+  })
+  .strict();
+const subAppIntegrationSchema = z
+  .object({
+    key: z.string().regex(INTEGRATION_SLUG_RE),
+    kind: z.enum(CONNECTOR_KIND_IDS),
+    labelKey: z.string().regex(LABEL_KEY_RE),
+    egressHosts: z.array(z.string().regex(EGRESS_HOST_RE)).min(1).max(5),
+    secretRefs: z
+      .array(z.object({ name: z.string().regex(INTEGRATION_SLUG_RE), role: z.string().regex(INTEGRATION_SLUG_RE) }).strict())
+      .max(5),
+    operations: z.array(integrationOperationSchema).min(1).max(10),
+  })
+  .strict();
+
 /** Field-for-field with `server/subapps/types.ts#subAppManifestSchema`.
  * NOT `.strict()` — the host's is not either, and `widgets` is an optional
  * additive field this copy deliberately accepts without modelling (D-26's
@@ -60,6 +97,9 @@ export const subAppManifestSchema = z.object({
   label: z.string().min(1),
   version: z.string(),
   minHostVersion: z.string(),
+  /** sdk-60: the optional EXCLUSIVE upper bound of the host range, strict
+   * MAJOR.MINOR.PATCH as in the host (a malformed bound refuses to boot). */
+  maxHostVersion: z.string().regex(/^\d+\.\d+\.\d+$/).optional(),
   icon: z.string().min(1),
   navSection: z.enum(NAV_SECTIONS),
   routePrefix: z.string().regex(ROUTE_PREFIX_RE),
@@ -69,6 +109,8 @@ export const subAppManifestSchema = z.object({
   settingsPanel: settingsPanelSchema.optional(),
   generatedBy: z.literal(GENERATED_BY).optional(),
   listing: subAppListingSchema.optional(),
+  /** sdk-21: declared outbound operations (see subAppIntegrationSchema). */
+  integrations: z.array(subAppIntegrationSchema).max(5).optional(),
 });
 
 export type SubAppManifestData = z.infer<typeof subAppManifestSchema>;
@@ -106,6 +148,15 @@ export function assertManifestWouldBoot(candidate: unknown, hostVersion: string 
   }
   if (isVersionNewer(parsed.data.minHostVersion, hostVersion)) {
     const issue = `minHostVersion: requires host >= ${parsed.data.minHostVersion}, but the host is ${hostVersion}`;
+    throw new ManifestRuleError(`generated manifest would refuse to boot: ${issue}`, [issue]);
+  }
+  // sdk-60 `hostCompat.ts#checkHostCompat`: the bound is EXCLUSIVE and must
+  // sit above minHostVersion; a host at or above it refuses to boot.
+  const max = parsed.data.maxHostVersion;
+  if (max !== undefined && (!isVersionNewer(max, parsed.data.minHostVersion) || !isVersionNewer(max, hostVersion))) {
+    const issue = !isVersionNewer(max, parsed.data.minHostVersion)
+      ? `maxHostVersion: ${max} must be above minHostVersion ${parsed.data.minHostVersion} (it is exclusive)`
+      : `maxHostVersion: requires host < ${max}, but the host is ${hostVersion}`;
     throw new ManifestRuleError(`generated manifest would refuse to boot: ${issue}`, [issue]);
   }
   return parsed.data;

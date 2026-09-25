@@ -13,7 +13,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { assertManifestWouldBoot, subAppListingSchema, subAppManifestSchema } from "../manifest-rules";
+import { CONNECTOR_KIND_IDS, assertManifestWouldBoot, subAppListingSchema, subAppManifestSchema } from "../manifest-rules";
 import { LISTING_CATEGORIES } from "../spec-contract";
 import { NON_DATA_MEMBERS, readEmittedManifest } from "../testing/readEmittedManifest";
 import { HOST_ROOT, readInterfaceMembers, readStringArray, readZodObjectKeys } from "../../../guardrails/src/host-source";
@@ -58,6 +58,16 @@ describe.skipIf(!available)("the local schema copy agrees with the host's real m
     const types = fs.readFileSync(path.join(CONTRACT_SUBAPPS, "types.ts"), "utf8");
     expect(Object.keys(subAppListingSchema.shape).sort()).toEqual(readZodObjectKeys(types, "subAppListingSchema").sort());
     expect([...LISTING_CATEGORIES]).toEqual(readStringArray(types, "LISTING_CATEGORIES"));
+  });
+
+  /** sdk-21: the `integrations[].kind` enum is the host's shipped connector
+   * kinds, DERIVED there from `KINDS` in services/connectors/kinds.ts. The
+   * copy here is a transcribed constant, so it is read back off that file. */
+  it("transcribes the host's connector kind ids for integrations[].kind", () => {
+    const kinds = fs.readFileSync(path.join(HOST_ROOT, "flightdeck", "server", "services", "connectors", "kinds.ts"), "utf8");
+    const hostKinds = Array.from(kinds.matchAll(/^\s{4}kind: "([a-z0-9-]+)",$/gm), (m) => m[1]);
+    expect(hostKinds.length).toBeGreaterThan(0);
+    expect([...CONNECTOR_KIND_IDS]).toEqual(hostKinds);
   });
 
   /** ⭐ THE READER'S SKIP LIST IS A TRANSCRIBED CONSTANT, SO IT GETS A DRIFT
@@ -139,6 +149,27 @@ describe("the boot rules the host applies", () => {
     } catch (err) {
       expect((err as { issues: string[] }).issues.length).toBeGreaterThanOrEqual(3);
     }
+  });
+
+  it("maxHostVersion (sdk-60): an exclusive upper bound, strict semver, above minHostVersion", () => {
+    expect(assertManifestWouldBoot({ ...base, maxHostVersion: "6.0.0" }, "5.0.0").maxHostVersion).toBe("6.0.0");
+    expect(() => assertManifestWouldBoot({ ...base, minHostVersion: "4.0.0", maxHostVersion: "5.0.0" }, "5.0.0")).toThrow(/requires host < 5\.0\.0/);
+    expect(() => assertManifestWouldBoot({ ...base, maxHostVersion: "5.0.0" }, "5.0.0")).toThrow(/must be above minHostVersion/);
+    expect(() => assertManifestWouldBoot({ ...base, maxHostVersion: "6" })).toThrow(/maxHostVersion/);
+  });
+
+  it("integrations (sdk-21): validates the declared shape and refuses an unknown key or kind", () => {
+    const integration = {
+      key: "notify",
+      kind: "teams",
+      labelKey: "demo-app.integrations.notify",
+      egressHosts: ["example.com"],
+      secretRefs: [{ name: "hook", role: "webhook-url" }],
+      operations: [{ key: "post", event: "subapp.demo-app.posted", payloadSchema: "schemas/post.json", maxBytes: 1024 }],
+    };
+    expect(assertManifestWouldBoot({ ...base, integrations: [integration] }).integrations).toEqual([integration]);
+    expect(() => assertManifestWouldBoot({ ...base, integrations: [{ ...integration, url: "https://x" }] })).toThrow(/integrations/);
+    expect(() => assertManifestWouldBoot({ ...base, integrations: [{ ...integration, kind: "smtp" }] })).toThrow(/integrations/);
   });
 
   it("tolerates the optional additive fields the host allows (widgets)", () => {

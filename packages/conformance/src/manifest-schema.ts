@@ -39,6 +39,43 @@ const listingSchema = z
   })
   .strict();
 
+/** sdk-21 — the host's `subAppIntegrationSchema` (server/subapps/types.ts),
+ * transcribed: DECLARED outbound operations, a request that grants nothing.
+ * Every object is `.strict()` in the host (a target URL or a token FAILS
+ * LOUD at boot), so here too. `kind` is the host's shipped connector kinds
+ * (server/services/connectors/kinds.ts) — drift-tested in codegen's
+ * manifest-rules.test.ts. Cross-reference rules (secret roles per kind,
+ * schema files on disk, public egress hosts) are the host kit's
+ * `integration-*` checks, not shape. */
+export const CONNECTOR_KIND_IDS = ["teams", "power-automate", "atlas"] as const;
+const INTEGRATION_SLUG_RE = /^[a-z0-9][a-z0-9-]*$/;
+const EGRESS_HOST_RE = /^(?=.{1,253}$)[a-z0-9-]+(?:\.[a-z0-9-]+)*$/;
+const SUBAPP_EVENT_RE = /^subapp\.[a-z0-9][a-z0-9-]*\.[a-z0-9][a-z0-9-]*$/;
+const INTEGRATION_SCHEMA_FILE_RE = /^(?!.*\.\.)[a-z0-9][a-z0-9/_.-]*\.json$/;
+const LABEL_KEY_RE = /^[a-z0-9][a-z0-9-]*(?:\.[A-Za-z0-9_-]+)+$/;
+const INTEGRATION_MAX_BYTES = 262144;
+const integrationOperationSchema = z
+  .object({
+    key: z.string().regex(INTEGRATION_SLUG_RE),
+    event: z.string().regex(SUBAPP_EVENT_RE),
+    payloadSchema: z.string().regex(INTEGRATION_SCHEMA_FILE_RE),
+    responseSchema: z.string().regex(INTEGRATION_SCHEMA_FILE_RE).optional(),
+    maxBytes: z.number().int().positive().max(INTEGRATION_MAX_BYTES),
+  })
+  .strict();
+const subAppIntegrationSchema = z
+  .object({
+    key: z.string().regex(INTEGRATION_SLUG_RE),
+    kind: z.enum(CONNECTOR_KIND_IDS),
+    labelKey: z.string().regex(LABEL_KEY_RE),
+    egressHosts: z.array(z.string().regex(EGRESS_HOST_RE)).min(1).max(5),
+    secretRefs: z
+      .array(z.object({ name: z.string().regex(INTEGRATION_SLUG_RE), role: z.string().regex(INTEGRATION_SLUG_RE) }).strict())
+      .max(5),
+    operations: z.array(integrationOperationSchema).min(1).max(10),
+  })
+  .strict();
+
 export const subAppManifestSchema = z.object({
   /** Locked once shipped: the env var, the nav path and the table prefix
    * are all derived from it. */
@@ -47,6 +84,9 @@ export const subAppManifestSchema = z.object({
   label: z.string().min(1, "must not be empty"),
   version: z.string(),
   minHostVersion: z.string(),
+  /** sdk-60: the optional EXCLUSIVE upper bound of the host range, strict
+   * MAJOR.MINOR.PATCH as in the host (a malformed bound refuses to boot). */
+  maxHostVersion: z.string().regex(/^\d+\.\d+\.\d+$/).optional(),
   icon: z.string().min(1, "must not be empty"),
   /** Exact string match against the host's UI_NAV_SECTIONS. */
   navSection: z.enum(NAV_SECTIONS),
@@ -68,6 +108,8 @@ export const subAppManifestSchema = z.object({
   generatedBy: z.literal("flightdeck-studio").optional(),
   /** apps-01: optional app-directory facts (see listingSchema above). */
   listing: listingSchema.optional(),
+  /** sdk-21: declared outbound operations (see subAppIntegrationSchema). */
+  integrations: z.array(subAppIntegrationSchema).max(5).optional(),
 });
 
 export type SubAppManifestData = z.infer<typeof subAppManifestSchema>;
@@ -97,4 +139,18 @@ export function validateManifestData(data: unknown): ManifestIssue[] {
  * not get skipped, it stops the boot. */
 export function exceedsHostCeiling(minHostVersion: unknown, hostVersion: string = HOST_VERSION): boolean {
   return typeof minHostVersion === "string" && isVersionNewer(minHostVersion, hostVersion);
+}
+
+/** sdk-60 `hostCompat.ts#checkHostCompat`: `maxHostVersion` is an EXCLUSIVE
+ * upper bound that must sit above `minHostVersion`; a host at or above it
+ * refuses to boot the manifest. Returns why, or null when it would boot. */
+export function breaksHostBound(maxHostVersion: unknown, minHostVersion: unknown, hostVersion: string = HOST_VERSION): string | null {
+  if (typeof maxHostVersion !== "string" || !/^\d+\.\d+\.\d+$/.test(maxHostVersion)) return null; // the Zod shape reports a malformed bound
+  if (typeof minHostVersion === "string" && !isVersionNewer(maxHostVersion, minHostVersion)) {
+    return `maxHostVersion ${maxHostVersion} must be above minHostVersion ${minHostVersion} (it is exclusive) — checkHostCompat refuses it as malformed`;
+  }
+  if (!isVersionNewer(maxHostVersion, hostVersion)) {
+    return `maxHostVersion is "${maxHostVersion}" but the host is ${hostVersion} — checkHostCompat refuses to boot a manifest whose exclusive upper bound the host has reached`;
+  }
+  return null;
 }

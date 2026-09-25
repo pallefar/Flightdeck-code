@@ -113,6 +113,12 @@ const VIOLATIONS: readonly Violation[] = [
     build: () => editFile(conformingSubApp(), MANIFEST_PATH, `minHostVersion: "5.0.0"`, `minHostVersion: "5.1.0"`),
   },
   {
+    rule: "FD-M004",
+    what: "a maxHostVersion the host has already reached (sdk-60: the bound is exclusive)",
+    file: MANIFEST_PATH,
+    build: () => editFile(conformingSubApp(), MANIFEST_PATH, `minHostVersion: "5.0.0"`, `minHostVersion: "4.0.0",\n  maxHostVersion: "5.0.0"`),
+  },
+  {
     rule: "FD-M005",
     what: "a routePrefix that is not the one the id derives",
     file: MANIFEST_PATH,

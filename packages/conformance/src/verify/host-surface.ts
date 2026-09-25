@@ -98,6 +98,8 @@ export interface SubAppManifest {
   readonly label: string;
   readonly version: string;
   readonly minHostVersion: string;
+  /** sdk-60: optional exclusive upper host bound. */
+  readonly maxHostVersion?: string;
   readonly icon: string;
   readonly navSection: NavSection;
   readonly routePrefix: string;
@@ -117,6 +119,8 @@ export interface SubAppManifest {
     readonly requirements?: readonly string[];
     readonly publisher: { readonly name: string };
   };
+  /** sdk-21: declared outbound operations (shape only; grants nothing). */
+  readonly integrations?: readonly unknown[];
   initSchema(db: Db): void | Promise<void>;
   registerRoutes(app: FastifyInstance, ctx: RegisterRoutesCtx): void | Promise<void>;
   /** The host declares this (OS-04 host-surface contributions) and acts on

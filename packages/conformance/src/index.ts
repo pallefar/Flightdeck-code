@@ -77,7 +77,7 @@ export {
   type ImportTarget,
   type ResolvedImport,
 } from "./resolve";
-export { subAppManifestSchema, validateManifestData, exceedsHostCeiling, type SubAppManifestData } from "./manifest-schema";
+export { subAppManifestSchema, validateManifestData, exceedsHostCeiling, breaksHostBound, type SubAppManifestData } from "./manifest-schema";
 export { readManifestSource, parseLiteralText, type ManifestSource, type ManifestReadResult } from "./manifest-read";
 export { scanFile, type ScannedFile, type ImportRef, type StringLiteral } from "./scan";
 export { extractRouteHandlers, type RouteHandler, type HandlerScan } from "./handlers";
