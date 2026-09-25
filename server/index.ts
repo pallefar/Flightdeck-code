@@ -61,6 +61,7 @@ import { AnthropicProvider } from "../packages/providers/src/anthropic";
 import { anthropicConfigFromEnv, type ProviderConfigInput } from "../packages/providers/src/config";
 import { DEFAULT_MODEL } from "../packages/providers/src/models";
 import { plannerLlm } from "../packages/providers/src/planner-bridge";
+import { loadApprovedPrompt } from "../packages/spec/src/approved-prompts";
 import type { ModelProvider } from "../packages/providers/src/types";
 
 import { registerWorkbench } from "./static";
@@ -307,6 +308,9 @@ export interface ServerOptions {
    * its `index.html` does not exist.
    */
   readonly distDir?: string;
+  /** Where `loadApprovedPrompt` reads human-approved prompt texts. Tests only;
+   * production reads the reviewed files in `packages/spec/prompts/`. */
+  readonly approvedPromptsDir?: string;
 }
 
 /** `STUDIO_HOST`, or loopback. Unset is loopback; set-but-empty is NOT —
@@ -379,6 +383,8 @@ function harnessModeLabel(options: ServerOptions): StudioHarnessMode | "injected
   const read = harnessModeFromEnv(process.env);
   return "mode" in read ? read.mode : null;
 }
+
+const workflowDraftBody = z.object({ request: z.string().min(1).max(8_000) }).strict();
 
 export function createServer(options: ServerOptions): ReturnType<typeof Fastify> {
   const app = Fastify({
@@ -514,6 +520,42 @@ export function createServer(options: ServerOptions): ReturnType<typeof Fastify>
       },
     );
     return reply.send(outcome);
+  });
+
+  // ⭐ THE MODEL PATH FOR A WORKFLOW DRAFT, WHICH IS NOT OPEN YET — AND SAYS SO.
+  //
+  // Its model-facing text (`workflow-draft`) is human-owned: it loads only
+  // from an approved, hash-pinned file, and no code writes it (D-033 decision
+  // 13, D-035). Without one this answers 409 and names the path a person can
+  // use today without a model: the workbench's New workflow dialog. WITH one
+  // it still refuses (501): the request would have to go through the same
+  // pseudonymise-and-gate input boundary `buildSubAppFromPrompt` uses, and
+  // that pipeline is not built for workflows. Calling a model around it is not
+  // a fallback — it is the leak the gate exists to stop. Fails closed either way.
+  app.post("/api/studio/workflow/draft", async (request, reply) => {
+    if (!presentsOperatorToken(request.headers.authorization, options.operator.token)) {
+      return reply.code(401).send({ error: "operator token required" });
+    }
+    const parsed = workflowDraftBody.safeParse(request.body);
+    if (!parsed.success) {
+      return reply.code(400).send({ error: "malformed request", at: parsed.error.issues.map((i) => i.path.join(".")) });
+    }
+    const load = loadApprovedPrompt("workflow-draft", options.approvedPromptsDir);
+    if (!load.ok) {
+      return reply.code(409).send({
+        error: "the workflow-draft prompt text is not approved — prompt wording is human-owned",
+        code: "approved_prompt_unavailable",
+        prompt: "workflow-draft",
+        problem: load.problem,
+        fallback:
+          "Draft it without a model: Studio workbench → New workflow (a studio-workflow-definition/1 file from the Builder's own steps and field types).",
+      });
+    }
+    return reply.code(501).send({
+      error: "an approved workflow-draft text exists, but the gated workflow-draft pipeline is not built — nothing was sent to a model",
+      code: "workflow_draft_pipeline_not_built",
+      prompt: "workflow-draft",
+    });
   });
 
   // The workbench, AFTER the API: its routes are GET-only and never answer
