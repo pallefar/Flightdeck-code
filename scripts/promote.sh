@@ -199,6 +199,7 @@ else
 fi
 
 echo "==> [6/6] compliance record"
+write_record() {
 python3 - "$RECORD" "$STAMP" "$SPEC_HASH" "$PASSED" "$FAILED" "$SKIPPED" <<'PY'
 import json, sys
 record, stamp, spec_hash, passed, failed, skipped = sys.argv[1:7]
@@ -218,6 +219,8 @@ json.dump({
 }, open(record, "w"), indent=2)
 print(json.dumps(json.load(open(record)), indent=2))
 PY
+}
+write_record
 
 # ── THE PROVENANCE SIDECAR (studio-provenance/1) ─────────────────────────
 # NOT a manifest field: a field inside the tree would make the tree hash
@@ -231,8 +234,10 @@ PY
 # gate rewrites, are set aside), and refuses if the candidate, any other host
 # file, the host HEAD or the Studio checkout moved since. Written to the run dir
 # (which outlives the sandbox) and into the sandbox's app dir, its place.
-# A failed seal cannot appear in the record it digests, so it BLOCKS the run
-# below instead: a record without its sidecar is not promotable.
+# A failed seal cannot appear in the record it digests, so the record is
+# REWRITTEN as failed (provenance-seal in `failed`, readyForProduction false)
+# and the run BLOCKS: shipSubApp admits on the record alone, so a record left
+# green by a blocked run would still authorize writes (review round 3).
 PROVENANCE_OUT="$RUN_DIR/PROVENANCE.json"
 SEAL_FAILED=""
 if [ -f "$SUBJECT" ]; then
@@ -242,6 +247,9 @@ if [ -f "$SUBJECT" ]; then
     echo "provenance sidecar: $PROVENANCE_OUT"
   else
     SEAL_FAILED=1; rm -f "$PROVENANCE_OUT"; echo "provenance sidecar NOT written — see above"
+    note_fail provenance-seal
+    echo "==> [6/6] compliance record, rewritten: the seal failed"
+    write_record
   fi
 else
   echo "provenance sidecar NOT written — the subject step failed"

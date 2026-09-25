@@ -20,7 +20,7 @@ import path from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 
 import { PROVENANCE_SCHEMA, type Provenance } from "../provenance";
-import { recordDigest } from "../record";
+import { admitComplianceRecord, recordDigest } from "../record";
 import { rehashSubject } from "../subject";
 
 const STUDIO = path.resolve(__dirname, "..", "..", "..", "..");
@@ -132,7 +132,7 @@ describe("promote.sh and the provenance sidecar", () => {
     const placed = path.join(sandbox, "flightdeck", "server", "subapps", "wc-clock", "PROVENANCE.json");
     expect(fs.readFileSync(placed, "utf8")).toBe(fs.readFileSync(path.join(runDir, "PROVENANCE.json"), "utf8"));
     expect(fs.existsSync(path.join(sandbox, "app", "BRAIN-INDEX.md"))).toBe(true);
-    expect(rehashSubject(sandbox, sidecar.subject)).toEqual([]);
+    expect(rehashSubject(sandbox, sidecar.subject, sidecar.hostHead)).toEqual([]);
 
     // The manifest names none of it.
     const manifest = fs.readFileSync(path.join(sandbox, "flightdeck", "server", "subapps", "wc-clock", "manifest.ts"), "utf8");
@@ -164,5 +164,11 @@ describe("promote.sh and the provenance sidecar", () => {
     expect(output).toContain("BLOCKED — the provenance sidecar could not be sealed");
     expect(result.status).toBe(1);
     expect(fs.existsSync(path.join(runDir, "PROVENANCE.json"))).toBe(false);
+    // Review round 3: the record of a run whose seal failed must not admit. It used to stay
+    // readyForProduction:true with an empty failed list, and shipSubApp reads only the record.
+    const record = JSON.parse(fs.readFileSync(path.join(runDir, "compliance-record.json"), "utf8")) as unknown;
+    expect(record).toMatchObject({ readyForProduction: false, failed: expect.arrayContaining(["provenance-seal"]) });
+    const specSha256 = (record as { specSha256: string }).specSha256;
+    expect(admitComplianceRecord(record, { specSha256, now: Date.now() })).toMatchObject({ ok: false, code: "stacks-failed" });
   });
 });

@@ -90,6 +90,7 @@ function sandbox(name: string): string {
 
 const declared = () => declaredHostFiles(generateSubApp(SPEC).files);
 const derive = (root: string) => deriveSubject({ root, subappId: "wc-clock", version: "0.1.0", declaredHostFiles: declared() });
+const headOf = (root: string): string => git(root, "rev-parse", "HEAD").stdout.trim();
 const subjectOf = (root: string): ProvenanceSubject => {
   const result = derive(root);
   if (!result.ok) throw new Error(JSON.stringify(result.problems));
@@ -302,21 +303,21 @@ describe("rehashSubject — the seal re-discovers host changes, not just the sav
   it("⭐ a host file that was unchanged at step 3b and changed afterwards refuses the seal, naming it", () => {
     const root = sandbox("seal-late-edit");
     const subject = subjectOf(root);
-    expect(rehashSubject(root, subject)).toEqual([]);
+    expect(rehashSubject(root, subject, headOf(root))).toEqual([]);
     fs.appendFileSync(path.join(root, "flightdeck", "server", "index.ts"), "export const late = 1;\n");
-    expect(rehashSubject(root, subject)).toEqual([{ code: "host-file-changed-after-subject", path: "flightdeck/server/index.ts" }]);
+    expect(rehashSubject(root, subject, headOf(root))).toEqual([{ code: "host-file-changed-after-subject", path: "flightdeck/server/index.ts" }]);
   });
 
   it("a new untracked host file, or a deleted one, after step 3b refuses too", () => {
     const added = sandbox("seal-late-add");
     const s1 = subjectOf(added);
     fs.writeFileSync(path.join(added, "flightdeck", "server", "extra.ts"), "export {};\n");
-    expect(rehashSubject(added, s1)).toEqual([{ code: "host-file-changed-after-subject", path: "flightdeck/server/extra.ts" }]);
+    expect(rehashSubject(added, s1, headOf(added))).toEqual([{ code: "host-file-changed-after-subject", path: "flightdeck/server/extra.ts" }]);
 
     const deleted = sandbox("seal-late-delete");
     const s2 = subjectOf(deleted);
     fs.rmSync(path.join(deleted, "flightdeck", "server", "index.ts"));
-    expect(rehashSubject(deleted, s2)).toEqual([{ code: "host-file-changed-after-subject", path: "flightdeck/server/index.ts" }]);
+    expect(rehashSubject(deleted, s2, headOf(deleted))).toEqual([{ code: "host-file-changed-after-subject", path: "flightdeck/server/index.ts" }]);
   });
 
   it("the host's own runtime artifacts, written by the gate, are named and set aside — nothing else is", () => {
@@ -332,7 +333,7 @@ describe("rehashSubject — the seal re-discovers host changes, not just the sav
     for (const rel of runtime) fs.appendFileSync(path.join(root, rel), "written by the gate\n");
     fs.mkdirSync(path.join(root, "memory", "proposals"), { recursive: true });
     fs.writeFileSync(path.join(root, "memory", "proposals", "brain-lint-2026-09-25.md"), "lint\n");
-    expect(rehashSubject(root, subject)).toEqual([]);
+    expect(rehashSubject(root, subject, headOf(root))).toEqual([]);
 
     for (const p of [...runtime, "memory/proposals/brain-lint-2026-09-25.md"]) expect(isHostRuntimeArtifact(p)).toBe(true);
     for (const p of [
@@ -349,11 +350,27 @@ describe("rehashSubject — the seal re-discovers host changes, not just the sav
     }
   });
 
+  it("⭐ a commit made inside the sandbox after step 3b refuses: the check is against the captured host commit", () => {
+    // Review round 3: `git status` compares with the sandbox's CURRENT HEAD, so a host edit
+    // committed there after the subject was taken vanished from it and the seal named the old head.
+    const root = sandbox("seal-late-commit");
+    const derived = derive(root);
+    if (!derived.ok) throw new Error(JSON.stringify(derived));
+    expect(rehashSubject(root, derived.subject, derived.hostHead)).toEqual([]);
+    fs.appendFileSync(path.join(root, "flightdeck", "server", "index.ts"), "export const late = 1;\n");
+    git(root, "add", "flightdeck/server/index.ts");
+    git(root, "commit", "-q", "--no-gpg-sign", "-m", "late host edit, committed in the sandbox");
+    expect(rehashSubject(root, derived.subject, derived.hostHead)).toEqual([
+      { code: "sandbox-head-moved" },
+      { code: "host-file-changed-after-subject", path: "flightdeck/server/index.ts" },
+    ]);
+  });
+
   it("a sandbox whose git status cannot be read refuses rather than sealing blind", () => {
     const root = sandbox("seal-no-git");
     const subject = subjectOf(root);
     fs.rmSync(path.join(root, ".git"), { recursive: true, force: true });
-    expect(rehashSubject(root, subject).map((m) => m.code)).toContain("not-a-git-sandbox");
+    expect(rehashSubject(root, subject, headOf(root)).map((m) => m.code)).toContain("not-a-git-sandbox");
   });
 });
 

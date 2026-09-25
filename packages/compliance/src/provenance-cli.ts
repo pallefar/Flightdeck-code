@@ -155,7 +155,7 @@ function sealCommand(a: ReturnType<typeof args>): void {
   }
   const sandbox = a.opt("--sandbox");
   if (sandbox !== undefined) {
-    const moved = rehashSubject(sandbox, subject);
+    const moved = rehashSubject(sandbox, subject, hostHead);
     if (moved.length > 0) {
       for (const m of moved) console.error(`provenance: ${m.code}${m.path === undefined ? "" : ` ${m.path}`} — changed since the subject was derived`);
       throw new Refused("the candidate changed between mount and seal");

@@ -110,11 +110,16 @@ promoted candidate is and where it came from. `promote.sh` writes it as
   there again, so a host file that was unchanged at step 3b and changed
   later (by the build, a test or a concurrent edit) is found. It refuses if
   the candidate, any other host file or the host HEAD moved after step 3b.
-  Only the host's named runtime artifacts, which the gate rewrites, are set
+  The sandbox HEAD must still be the host commit captured with the subject,
+  and changes are taken against that commit, so a host edit committed inside
+  the sandbox during the run is found too (`sandbox-head-moved`). Only the host's named runtime artifacts, which the gate rewrites, are set
   aside: `app/BRAIN-INDEX.md`, `app/skills-index.json`, `audit/*.jsonl`,
   `subapps.json` and `memory/proposals/brain-lint-*.md`, each matched
   exactly (`isHostRuntimeArtifact`). A failed seal cannot appear in the
-  record it digests, so it blocks the run instead.
+  record it digests. Instead the record is rewritten as failed
+  (`provenance-seal` in `failed`, `readyForProduction: false`) and the run
+  blocks. `shipSubApp` admits on the record alone, so a blocked run must not
+  leave a green record behind.
 
 Who ran the checks is not proven by this file. The cosign attestation over
 it is `upd-studio-attestation`.

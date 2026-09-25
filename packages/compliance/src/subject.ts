@@ -160,7 +160,8 @@ export type RehashProblemCode =
   | "host-file-hash-mismatch"
   | "host-file-changed-after-subject"
   | "symlink-in-app-dir"
-  | "not-a-git-sandbox";
+  | "not-a-git-sandbox"
+  | "sandbox-head-moved";
 
 /**
  * Re-checks, at the seal, a subject derived EARLIER from the same sandbox and
@@ -177,9 +178,19 @@ export type RehashProblemCode =
  *   review round 2 only the saved list was re-hashed, so a host file that was
  *   unchanged at step 3b and edited during the gate was never looked at.)
  *
- * ⛔ FAILS CLOSED: a sandbox whose git status cannot be read is a problem.
+ * - the sandbox HEAD must still be `hostHead`, the commit captured with the
+ *   subject, and the change set is taken against THAT commit: a host edit
+ *   committed inside the sandbox after step 3b would otherwise drop out of
+ *   `git status` (which compares with the current HEAD) and the seal would
+ *   name a host commit that is not what was gated (review round 3).
+ *
+ * ⛔ FAILS CLOSED: a sandbox whose git status or HEAD cannot be read is a problem.
  */
-export function rehashSubject(rootIn: string, subject: ProvenanceSubject): { code: RehashProblemCode; path?: string }[] {
+export function rehashSubject(
+  rootIn: string,
+  subject: ProvenanceSubject,
+  hostHead: string,
+): { code: RehashProblemCode; path?: string }[] {
   const root = fs.realpathSync(rootIn);
   const out: { code: RehashProblemCode; path?: string }[] = [];
   const appDir = appDirOf(subject.subappId);
@@ -204,9 +215,26 @@ export function rehashSubject(rootIn: string, subject: ProvenanceSubject): { cod
     out.push({ code: "not-a-git-sandbox" });
     return out;
   }
+  const head = git(root, ["rev-parse", "--verify", "HEAD^{commit}"]);
+  const headNow = head.ok ? head.stdout.trim() : null;
+  const changed = new Set<string>();
+  if (headNow !== hostHead) {
+    out.push({ code: "sandbox-head-moved" });
+    // Whatever was committed since the captured host commit is a change too.
+    const committed = headNow === null || !/^[0-9a-f]{40}$/.test(hostHead)
+      ? { ok: false, stdout: "", stderr: "" }
+      : git(root, ["diff", "--name-only", "-z", "--no-renames", hostHead, headNow, "--"]);
+    if (!committed.ok) {
+      out.push({ code: "not-a-git-sandbox" });
+      return out;
+    }
+    for (const p of committed.stdout.split("\0")) if (p.length > 0) changed.add(p);
+  }
   for (const entry of status.stdout.split("\0")) {
     if (entry.length < 4) continue;
-    const p = entry.slice(3);
+    changed.add(entry.slice(3));
+  }
+  for (const p of changed) {
     if (p.startsWith(`${appDir}/`) || p.startsWith(CODEGEN_JOURNAL_PREFIX)) continue;
     if (listed.has(p) || isHostRuntimeArtifact(p)) continue;
     out.push({ code: "host-file-changed-after-subject", path: p });
