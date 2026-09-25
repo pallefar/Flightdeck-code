@@ -2,7 +2,7 @@
  * `main.tsx` so a test can drive it through the real store —
  * `src/__tests__/drive.test.ts`. `main.tsx` renders on import, so nothing
  * inside it can be run by a test; `wiring.ts` moved out for the same reason. */
-import { MINI_APP_FLOOR, planSubApp, type SubAppPlan } from "@codegen/pure";
+import { MINI_APP_FLOOR, pickStarter, planSubApp, specForPrompt, type SubAppPlan } from "@codegen/pure";
 
 import type { WorkbenchStore } from "./workbench/store";
 import type { Candidate } from "./workbench/types";
@@ -32,6 +32,32 @@ export function profileLines(plan: SubAppPlan): string {
   );
 }
 
+/** What a typed request becomes, without a model (ruling 8: the approved
+ * catalogue, never free-form code). A pasted JSON object is a spec and is
+ * used as written — the generator's own door refuses a bad one by name.
+ * Anything else picks a starter from `@codegen/starters` and names the app. */
+export type RequestSpec =
+  | { readonly source: "spec"; readonly spec: unknown }
+  | { readonly source: "starter"; readonly spec: unknown; readonly starter: string };
+
+export function requestToSpec(text: string): RequestSpec {
+  const trimmed = text.trim();
+  if (trimmed.startsWith("{")) {
+    try {
+      return { source: "spec", spec: JSON.parse(trimmed) as unknown };
+    } catch {
+      // Not JSON after all: read it as a request.
+    }
+  }
+  return { source: "starter", spec: specForPrompt(text), starter: pickStarter(text).title };
+}
+
+/** The id a spec names, for the emit step's label, before the planner runs. */
+function specId(spec: unknown): string {
+  const id = (spec as { id?: unknown } | null)?.id;
+  return typeof id === "string" && /^[a-z0-9][a-z0-9-]*$/.test(id) ? id : "sub-app";
+}
+
 export interface DriveOptions {
   /** Pause between steps, so a person can watch the run pane fill. `0` in tests. */
   readonly tickMs?: number;
@@ -50,7 +76,7 @@ export async function drive(
 
   store.plan(turnId, [
     { id: "plan", label: "plan against the contract" },
-    { id: "emit", label: "emit source", writes: ["server/subapps/wc-clock/manifest.ts"] },
+    { id: "emit", label: "emit source", writes: [`server/subapps/${specId(spec)}/manifest.ts`] },
     { id: "gate", label: "conformance gate" },
     { id: "tsc", label: "typecheck against the host surface" },
     { id: "mount", label: "mount probe" },

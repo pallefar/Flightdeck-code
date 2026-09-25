@@ -146,3 +146,11 @@ describe("⛔ the workbench gets no candidate from an invented proposal", () => 
     expect(candidateFrom(contractRunSpec).files.length).toBeGreaterThan(0);
   });
 });
+
+describe("the candidate carries its spec, so it can be downloaded and mounted", () => {
+  it("candidateFrom keeps the spec it generated from", async () => {
+    const { specForPrompt } = await import("@codegen/pure");
+    const spec = specForPrompt('an app called "Vendor Board"');
+    expect(candidateFrom(spec).spec).toEqual(spec);
+  });
+});

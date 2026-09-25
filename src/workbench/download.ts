@@ -188,3 +188,15 @@ export function saveInBrowser(download: CandidateDownload, host?: BrowserSaveHos
     setTimeout(() => urls.revokeObjectURL(url), 0);
   }
 }
+
+/** The spec behind a candidate, as a file — or null when the round has none.
+ * Mounting regenerates from this (ruling 8), so it is the one artifact a
+ * person carries from the browser to `scripts/mount-into-worktree.sh`. */
+export function specDownload(candidate: Candidate): CandidateDownload | null {
+  if (candidate.spec === undefined) return null;
+  return {
+    filename: `${candidate.manifest.id}.spec.json`,
+    mime: "application/json",
+    text: `${JSON.stringify(candidate.spec, null, 2)}\n`,
+  };
+}

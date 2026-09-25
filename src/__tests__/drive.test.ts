@@ -67,3 +67,32 @@ describe("⛔ the run pane reports no step as succeeded whose work did not run",
     expect(plan).not.toContain("no schema.ts");
   });
 });
+
+describe("a typed request becomes a spec without a model (starter catalogue, ruling 8)", () => {
+  it("a plain-language request picks a starter and names the app", async () => {
+    const { requestToSpec } = await import("../drive");
+    const picked = requestToSpec('Build an app called "Supplier Visits" to log visits and track status');
+    expect(picked.source).toBe("starter");
+    expect((picked.spec as { id: string }).id).toBe("supplier-visits");
+  });
+
+  it("a pasted JSON spec is used as-is (spec-first)", async () => {
+    const { requestToSpec } = await import("../drive");
+    const picked = requestToSpec(JSON.stringify(wcClockSpec));
+    expect(picked.source).toBe("spec");
+    expect(picked.spec).toEqual(wcClockSpec);
+  });
+
+  it("the emit step names the app's own manifest, not wc-clock's", async () => {
+    const { requestToSpec } = await import("../drive");
+    const store = createStore();
+    const text = 'an app called "Vendor Board" to list contract folders';
+    const turnId = store.prompt(text);
+    if (turnId === null) throw new Error("refused");
+    await drive(store, turnId, text, requestToSpec(text).spec, { tickMs: 0 });
+    const run = store.getState().runs.find((r) => r.turnId === turnId);
+    const emit = run?.steps.find((s) => s.id === "emit");
+    expect(JSON.stringify(emit)).toContain("server/subapps/vendor-board/manifest.ts");
+    expect(JSON.stringify(emit)).not.toContain("wc-clock");
+  });
+});

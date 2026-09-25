@@ -79,6 +79,11 @@ export interface Candidate {
   readonly rulesRun: readonly string[];
   /** Non-refusing notes from the generator (`GeneratedSubApp.warnings`). */
   readonly notes: readonly string[];
+  /** The spec this candidate was generated from, when the driver has one —
+   * what "Download spec" saves and `scripts/mount-into-worktree.sh` mounts.
+   * Ruling 8: an app reaches the host by regenerating from its spec, never
+   * from edited files. */
+  readonly spec?: unknown;
 }
 
 // ───────────────────────────── the gate ──────────────────────────────────

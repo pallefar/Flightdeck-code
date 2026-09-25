@@ -246,3 +246,18 @@ describe("how it leaves the browser", () => {
     }
   });
 });
+
+describe("Download spec — the file the mount script generates from", () => {
+  it("is null when the round carries no spec", async () => {
+    const { specDownload } = await import("../download");
+    expect(specDownload(candidate())).toBeNull();
+  });
+  it("is the spec as JSON, named after the app", async () => {
+    const { specDownload } = await import("../download");
+    const spec = { id: "vendor-board", label: "Vendor Board" };
+    const dl = specDownload({ ...candidate(), spec });
+    expect(dl?.filename).toBe(`${candidate().manifest.id}.spec.json`);
+    expect(JSON.parse(dl?.text ?? "null")).toEqual(spec);
+    expect(dl?.mime).toBe("application/json");
+  });
+});

@@ -28,7 +28,7 @@ import { LineIcon, type LineIconName } from "./components/LineIcon";
 import { PreviewPane } from "./components/PreviewPane";
 import { RunPane } from "./components/RunPane";
 import { ThemeToggle } from "./components/ThemeToggle";
-import { candidateDownload, downloadReadiness, runFileGate, saveInBrowser, type FileGate } from "./download";
+import { candidateDownload, downloadReadiness, runFileGate, saveInBrowser, specDownload, type FileGate } from "./download";
 import { buildPreview } from "./preview/state";
 import {
   activeRun,
@@ -313,6 +313,21 @@ export function Workbench({ store, onPrompt, onStop, theme = DEFAULT_THEME, onTh
             >
               <LineIcon name="download" size={16} />
               Download candidate
+            </button>
+          )}
+          {candidate !== null && candidate.spec !== undefined && (
+            <button
+              type="button"
+              className="fd-save"
+              style={{ whiteSpace: "nowrap" }}
+              title="Save the spec this app was generated from. scripts/mount-into-worktree.sh regenerates the app from it into an OS worktree — edited files never travel (ruling 8)."
+              onClick={() => {
+                const file = specDownload(candidate);
+                if (file !== null) saveInBrowser(file);
+              }}
+            >
+              <LineIcon name="download" size={16} />
+              Download spec
             </button>
           )}
           {round !== null && (

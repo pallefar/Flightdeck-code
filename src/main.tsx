@@ -26,7 +26,7 @@ import { Workbench } from "./workbench/Workbench";
 import { createStudioClient } from "./api/studioClient";
 import { createStore } from "./workbench/store";
 import { DEFAULT_THEME, THEME_STORAGE_KEY, isStudioTheme, type StudioTheme } from "./workbench/theme";
-import { drive } from "./drive";
+import { drive, requestToSpec } from "./drive";
 import { checkFiles } from "./wiring";
 import wcClockSpec from "../fixtures/wc-clock.spec.json";
 
@@ -76,8 +76,19 @@ function App() {
   );
 
   const started = useRef(false);
+  // A typed request becomes a spec WITHOUT a model: a pasted JSON spec is
+  // used as written, anything else picks a starter from the approved
+  // catalogue (ruling 8; `@codegen/starters`). The model path stays on the
+  // server behind the operator token.
   const onPrompt = useCallback((text: string, turnId: string) => {
-    void drive(store, turnId, text, wcClockSpec);
+    const picked = requestToSpec(text);
+    store.stream(
+      turnId,
+      picked.source === "spec"
+        ? "Using the spec you pasted, as written.\n\n"
+        : `Picked the starter "${picked.starter}" from the approved catalogue. Name it with: an app called "Your Name".\n\n`,
+    );
+    void drive(store, turnId, text, picked.spec);
   }, []);
 
   useEffect(() => {

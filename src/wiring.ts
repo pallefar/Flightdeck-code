@@ -53,6 +53,7 @@ export function candidateFrom(spec: unknown): Candidate {
     // guaranteed by the mismatch rather than by the candidate being clean.
     rulesRun: report.rules,
     notes: generated.warnings,
+    spec,
   };
 }
 

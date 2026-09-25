@@ -95,3 +95,13 @@ export {
   type TemplateResolution,
 } from "./proposal-templates";
 export * as naming from "./naming";
+export {
+  STARTERS,
+  pickStarter,
+  specForPrompt,
+  specFromStarter,
+  starterLabelFromPrompt,
+  type Starter,
+  type StarterId,
+  type StarterOptions,
+} from "./starters";
