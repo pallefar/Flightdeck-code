@@ -142,7 +142,9 @@ host file's own notes say each count is **re-counted from the live dictionary in
 a separate process, never derived by addition**. `packages/conformance/src/contract-doc-drift.test.ts`
 checks this table against `git show 9d25a078:…`. It also checks that the live
 host still freezes each named count as an integer constant and asserts the
-total with `toBe`.
+total with `toBe`. Since host D-044 (deck-i18n-seam) `TOTAL_KEYS` pins every
+key except `presentation-studio.*`, which is counted through its import, so
+the live total reads `toBe(TOTAL_KEYS + PRESENTATION_STUDIO_KEYS)`.
 
 The counts are **exact**, not `toBeGreaterThan`. So a generated sub-app that
 ships even one i18n key turns a host test red until the counts are updated in

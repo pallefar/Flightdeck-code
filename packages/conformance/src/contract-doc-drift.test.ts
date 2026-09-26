@@ -87,7 +87,12 @@ describe.skipIf(!available)("FLIGHTDECK-SUBAPP-CONTRACT.md against the host", ()
     expect(names).toContain("TOTAL_KEYS");
     const gone = names.filter((n) => !new RegExp(`^const ${n} = \\d+;$`, "m").test(live));
     expect(gone, "the host no longer freezes these counts as integer constants — re-derive §8").toEqual([]);
-    expect(live).toContain("expect(Object.keys(DICT).length).toBe(TOTAL_KEYS);");
+    // D-044 (host deck-i18n-seam): the host now pins every key EXCEPT
+    // presentation-studio.* with `TOTAL_KEYS` and counts that app through its
+    // import, so the total reads `toBe(TOTAL_KEYS + PRESENTATION_STUDIO_KEYS)`.
+    // Still exact equality on the whole dictionary, anchored on TOTAL_KEYS; a
+    // `toBeGreaterThan` or an unanchored total fails here.
+    expect(live).toMatch(/expect\(Object\.keys\(DICT\)\.length\)\.toBe\(TOTAL_KEYS(?: \+ [A-Z][A-Z0-9_]*)*\);/);
   });
 
   it("§11 names every scaffold generator the host's package.json declares, and no script it lacks", () => {

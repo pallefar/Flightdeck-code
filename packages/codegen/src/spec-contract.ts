@@ -56,7 +56,7 @@ export const HOST_VERSION = "5.0.0";
  * `SUBAPP_MANIFESTS` entry to its manifest's real `id` — knowledge-guardian's
  * is the constant `KNOWLEDGE_GUARDIAN_SUBAPP_ID` in its `guard.ts`, which is
  * how it went missing here while the host registered it. */
-export const RESERVED_SUBAPP_IDS = ["shell-reference", "docusign", "maps", "advantage", "knowledge-guardian"] as const;
+export const RESERVED_SUBAPP_IDS = ["shell-reference", "docusign", "maps", "advantage", "knowledge-guardian", "presentation-studio"] as const;
 
 /** The three columns codegen owns on every generated table. A spec declares
  * only its DOMAIN columns; these are always emitted first, so every
