@@ -60,6 +60,12 @@ export const DATA_FIELDS: readonly string[] = [
   "listing",
   // sdk-21: declared outbound operations, `.strict()` shape transcribed.
   "integrations",
+  // sdk-44: Builder palette steps, `.strict()` shape transcribed. Runs nothing.
+  "workflowSteps",
+  // sdk-63: declared Postgres migrations — codegen emits them for a
+  // table-backed app (mig-studio-emitted-migrations). Shape here; catalogue
+  // membership and owned effects are the host kit's migrations-* checks.
+  "migrations",
 ];
 
 /** The function members the host calls on every manifest. Required. */

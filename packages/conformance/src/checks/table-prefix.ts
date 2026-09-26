@@ -122,9 +122,56 @@ export const tablePrefixCheck: Check = {
       }
     }
 
+    // ── FD-S005: an emitted Postgres migration (mig-studio-emitted-migrations).
+    // It runs as supabase_admin in every workspace schema, so it is read
+    // statement by statement and every one must be an additive DDL shape
+    // codegen writes, on this app's prefix: CREATE TABLE / CREATE INDEX /
+    // ALTER TABLE … ADD COLUMN, each IF NOT EXISTS. A GRANT, a DO block, a
+    // DROP, another schema's or app's object — anything else — is refused.
+    for (const file of app.files) {
+      if (file.role !== "migration") continue;
+      const text = file.scan.text;
+      const body = text
+        .split("\n")
+        .map((line) => (line.trimStart().startsWith("--") ? " ".repeat(line.length) : line))
+        .join("\n");
+      let from = 0;
+      const pieces = body.split(";");
+      if (pieces.every((piece) => piece.trim().length === 0)) {
+        out.push(finding("FD-S005", file.path, file.scan.positionAt(0), "a migration with no statement in it", file.scan.lineTextAt(0)));
+      }
+      for (const piece of pieces) {
+        const offset = from + (piece.length - piece.trimStart().length);
+        from += piece.length + 1;
+        const statement = piece.replace(/\s+/g, " ").replace(/\( /g, "(").replace(/ \)/g, ")").trim();
+        if (statement.length === 0 || isAdditiveMigrationStatement(statement, prefix, indexes)) continue;
+        out.push(
+          finding(
+            "FD-S005",
+            file.path,
+            file.scan.positionAt(offset),
+            `is not an additive DDL statement on \`${prefix}*\` (CREATE TABLE / CREATE INDEX / ALTER TABLE … ADD COLUMN, each IF NOT EXISTS) — a migration runs as the database owner in every workspace, so anything else is a manual, reviewed step, never a generated one`,
+            file.scan.lineTextAt(offset),
+          ),
+        );
+      }
+    }
+
     return out;
   },
 };
+
+const PG_COLUMN = String.raw`"[a-z][a-z0-9_]*" (?:text|bigint|double precision)(?: PRIMARY KEY)?(?: NOT NULL)?(?: CHECK \("[a-z][a-z0-9_]*" IN \('[A-Za-z0-9_.-]+'(?:,'[A-Za-z0-9_.-]+')*\)\))?`;
+
+function isAdditiveMigrationStatement(statement: string, prefix: string, indexes: string): boolean {
+  if (!/^[a-z0-9_]+$/.test(prefix) || !/^[a-z0-9_]+$/.test(indexes)) return false;
+  const table = String.raw`:"schema"\."${prefix}[a-z0-9_]*"`;
+  return [
+    new RegExp(String.raw`^CREATE TABLE IF NOT EXISTS ${table} \(${PG_COLUMN}(?:, ${PG_COLUMN})*\)$`),
+    new RegExp(String.raw`^CREATE INDEX IF NOT EXISTS "${indexes}[a-z0-9_]*" ON ${table} \("[a-z][a-z0-9_]*"(?:, "[a-z][a-z0-9_]*")*\)$`),
+    new RegExp(String.raw`^ALTER TABLE ${table} ADD COLUMN IF NOT EXISTS ${PG_COLUMN}$`),
+  ].some((re) => re.test(statement));
+}
 
 function indexOfGroup(match: RegExpMatchArray, group: string, skip = 0): number {
   const base = match.index ?? 0;

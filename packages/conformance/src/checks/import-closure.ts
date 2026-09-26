@@ -102,7 +102,9 @@ export const importClosureCheck: Check = {
     }
 
     for (const file of app.files) {
-      if (file.reachable || file.role === "test" || file.role === "patch") continue;
+      // A migration and codegen's emitted-spec record are DATA the host reads
+      // by declaration (manifest.migrations, the catalogue), never by import.
+      if (file.reachable || file.role === "test" || file.role === "patch" || file.role === "migration" || file.role === "emitted-record") continue;
       const at = file.scan.firstMeaningfulOffset();
       out.push(
         finding(

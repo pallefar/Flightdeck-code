@@ -23,11 +23,16 @@ describe("the emitted file set", () => {
   it("emits the ceiling shape: manifest, guard, routes/ split, schema, web module, host test, patch", () => {
     // The HOST half. The standalone harness rides along in `files` and is
     // pinned by `standalone.test.ts`; this list is what a Flightdeck checkout
-    // receives, and it has not changed.
+    // receives. It changed once, deliberately: mig-studio-emitted-migrations
+    // added the Postgres migration and the emitted-spec record below.
     expect(full.files.filter((f) => f.kind !== "standalone").map((f) => f.path)).toEqual([
       "server/subapps/registry.ts.patch",
+      // mig-studio-emitted-migrations: the record the next generation evolves
+      // from, and the Postgres base migration of the same tables.
+      "server/subapps/wc-clock/.fd/emitted-spec.json",
       "server/subapps/wc-clock/guard.ts",
       "server/subapps/wc-clock/manifest.ts",
+      "server/subapps/wc-clock/migrations/subapp_wc-clock_0001_base.sql",
       "server/subapps/wc-clock/routes/clocks.ts",
       "server/subapps/wc-clock/routes/index.ts",
       "server/subapps/wc-clock/routes/review.ts",
@@ -66,6 +71,9 @@ describe("the emitted manifest", () => {
       visibleToRoles: ["hr_preparer", "hr_reviewer", "wc_liaison", "admin"],
       settingsPanel: { tier: "workspace-admin", webComponentId: "wc-clock", label: "Clock defaults" },
       generatedBy: "flightdeck-studio",
+      migrations: [
+        { node_id: "subapp_wc-clock_0001_base", file: "subapp_wc-clock_0001_base.sql", class: "immutable", phase: "expand" },
+      ],
     });
   });
 

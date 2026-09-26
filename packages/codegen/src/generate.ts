@@ -35,11 +35,13 @@
 import { emitGuard } from "./emitters/guard";
 import { emitHostTest } from "./emitters/hostTest";
 import { emitManifest } from "./emitters/manifest";
+import { emitMigrations } from "./emitters/migrations";
 import { emitDomainRoutes, emitRoutesIndex } from "./emitters/routes";
 import { emitSchema } from "./emitters/schema";
 import { emitStandalone } from "./emitters/standalone";
 import { emitWebModule } from "./emitters/web";
 import { CodegenInvariantError, checkEmittedInvariants, type GeneratedFile } from "./invariants";
+import { assertManifestWouldBoot } from "./manifest-rules";
 import { serverDir, webDir } from "./naming";
 import { planSubApp, type SubAppPlan } from "./plan";
 import type { ProposalTemplate } from "./proposal-templates";
@@ -55,6 +57,12 @@ export interface GenerateOptions {
   /** ⛔ TESTS ONLY — see `PlanOptions.proposalCatalogue` in `plan.ts`. Every production
    * caller passes nothing and generates from the approved catalogue. */
   proposalCatalogue?: readonly ProposalTemplate[];
+  /** The parsed `server/subapps/<id>/.fd/emitted-spec.json` of the previous
+   * generation, when there was one (mig-studio-emitted-migrations). With it, a
+   * table-backed app's migrations EVOLVE (an additive evolve migration per
+   * version bump); without it, the base migration is emitted. A record that is
+   * not what codegen wrote is refused, never ignored. */
+  previousEmitted?: unknown;
 }
 
 export interface GeneratedSubApp {
@@ -73,7 +81,14 @@ function camelFile(id: string): string {
 }
 
 export function generateSubApp(input: unknown, options: GenerateOptions = {}): GeneratedSubApp {
-  const plan = planSubApp(input, options.proposalCatalogue === undefined ? {} : { proposalCatalogue: options.proposalCatalogue });
+  const planned = planSubApp(input, options.proposalCatalogue === undefined ? {} : { proposalCatalogue: options.proposalCatalogue });
+  // The migrations are part of the manifest, so the manifest is re-checked
+  // against the boot rules WITH them before anything is emitted from it.
+  const evolution = emitMigrations(planned, options.previousEmitted);
+  const plan: SubAppPlan =
+    evolution.migrations === undefined
+      ? planned
+      : { ...planned, manifestData: assertManifestWouldBoot({ ...planned.manifestData, migrations: evolution.migrations }) };
   const server = serverDir(plan.id);
 
   const files: GeneratedFile[] = [
@@ -99,6 +114,9 @@ export function generateSubApp(input: unknown, options: GenerateOptions = {}): G
   if (plan.profile === "table-backed" && plan.tables.length > 0) {
     files.push({ path: `${server}/schema.ts`, contents: emitSchema(plan), kind: "schema" });
   }
+  // The Postgres side of the same tables: base + evolve migrations and the
+  // record the next generation diffs against. Empty for a mini-app.
+  files.push(...evolution.files);
 
   const registryPatch = buildRegistryPatch(plan);
   const warnings = [...plan.warnings];

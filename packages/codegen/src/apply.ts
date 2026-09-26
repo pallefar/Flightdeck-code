@@ -94,6 +94,8 @@ export interface WriteAction {
  * Nothing is dispatched in parallel, so a later step can never observe an
  * earlier step's file as absent. */
 const COMMIT_RANK: Record<GeneratedFile["kind"], number> = {
+  /** Beside the schema: the Postgres half of the same tables. */
+  migration: 0,
   schema: 0,
   guard: 1,
   "routes-domain": 2,
@@ -101,6 +103,8 @@ const COMMIT_RANK: Record<GeneratedFile["kind"], number> = {
   "web-module": 4,
   "host-test": 5,
   manifest: 6,
+  /** With the manifest: the record of what this generation emitted. */
+  "emitted-record": 6,
   patch: 7,
   /** Last, and after the patch on purpose: the harness is the only thing in
    * the set that can be written to a DIFFERENT root from everything else, and
