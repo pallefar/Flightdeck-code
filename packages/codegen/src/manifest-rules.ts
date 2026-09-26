@@ -143,6 +143,31 @@ export const subAppMigrationSchema = z
   .strict();
 export type SubAppMigration = z.infer<typeof subAppMigrationSchema>;
 
+/** sdk-42 — the host's `subAppWorkflowTemplateSchema` (server/subapps/types.ts),
+ * transcribed: optional starting processes for the Workflow Builder. The
+ * manifest carries only the key, label key and a bare `<slug>.process.json`
+ * file NAME; the host kit's `workflow-templates-valid` judges the file.
+ * `.strict()`, at most five, unique keys. Codegen emits none. */
+const WORKFLOW_TEMPLATE_FILE_RE = /^[a-z0-9][a-z0-9-]*\.process\.json$/;
+const subAppWorkflowTemplateSchema = z
+  .object({
+    key: z.string().regex(WORKFLOW_STEP_SLUG_RE),
+    labelKey: z.string().regex(LABEL_KEY_RE),
+    file: z.string().regex(WORKFLOW_TEMPLATE_FILE_RE),
+  })
+  .strict();
+
+/** upd-app-schema-range — the host's `subAppAppSchemaRangeSchema`, transcribed:
+ * an INCLUSIVE range of app schema versions, integers >= 1, `.strict()`,
+ * min <= max (a malformed range refuses to boot). Codegen emits none. */
+const subAppAppSchemaRangeSchema = z
+  .object({
+    min: z.number().int().min(1),
+    max: z.number().int().min(1),
+  })
+  .strict()
+  .refine((r) => r.min <= r.max, { message: "appSchema.min must not exceed appSchema.max" });
+
 /** Field-for-field with `server/subapps/types.ts#subAppManifestSchema`.
  * NOT `.strict()` — the host's is not either, and `widgets` is an optional
  * additive field this copy deliberately accepts without modelling (D-26's
@@ -168,8 +193,12 @@ export const subAppManifestSchema = z.object({
   integrations: z.array(subAppIntegrationSchema).max(5).optional(),
   /** sdk-44: optional Builder palette steps (see subAppWorkflowStepSchema). */
   workflowSteps: z.array(subAppWorkflowStepSchema).max(10).superRefine(uniqueKeys("workflow step")).optional(),
+  /** sdk-42: optional Builder starting processes (see subAppWorkflowTemplateSchema). */
+  workflowTemplates: z.array(subAppWorkflowTemplateSchema).max(5).superRefine(uniqueKeys("workflow template")).optional(),
   /** sdk-63: the app's Postgres migrations (see subAppMigrationSchema). */
   migrations: z.array(subAppMigrationSchema).optional(),
+  /** upd-app-schema-range: the app schema range this version needs (see subAppAppSchemaRangeSchema). */
+  appSchema: subAppAppSchemaRangeSchema.optional(),
 });
 
 export type SubAppManifestData = z.infer<typeof subAppManifestSchema>;

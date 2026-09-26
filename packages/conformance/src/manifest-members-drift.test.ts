@@ -124,6 +124,18 @@ describe("the gate validates a manifest's listing facts (apps-49) instead of str
     expect(validateManifestData({ ...base, integrations: [{ key: "x", url: "https://x" }] }).map((i) => i.field)).toContain("integrations");
   });
 
+  it("validates workflowTemplates (sdk-42) and appSchema (upd-app-schema-range) as the host does", () => {
+    const template = { key: "intake", labelKey: "demo-app.templates.intake", file: "intake.process.json" };
+    expect(validateManifestData({ ...base, workflowTemplates: [template] })).toEqual([]);
+    for (const bad of [[{ ...template, file: "../x.process.json" }], [template, template], [{ ...template, label: "x" }], Array.from({ length: 6 }, (_, i) => ({ ...template, key: `t${i}` }))]) {
+      expect(validateManifestData({ ...base, workflowTemplates: bad }).map((i) => i.field)).toContain("workflowTemplates");
+    }
+    expect(validateManifestData({ ...base, appSchema: { min: 1, max: 2 } })).toEqual([]);
+    for (const bad of [{ min: 0, max: 1 }, { min: 2, max: 1 }, { min: 1.5, max: 2 }, { min: 1, max: 2, extra: 1 }]) {
+      expect(validateManifestData({ ...base, appSchema: bad }).map((i) => i.field)).toContain("appSchema");
+    }
+  });
+
   it("refuses copy, a URL or an unknown category inside listing — the host's block is .strict()", () => {
     for (const bad of [{ ...listing, tagline: "x" }, { ...listing, supportUrl: "https://x" }, { ...listing, category: "crm" }]) {
       expect(validateManifestData({ ...base, listing: bad }).map((i) => i.field)).toContain("listing");

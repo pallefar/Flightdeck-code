@@ -60,6 +60,9 @@ import {
 
 const HOST_WORKFLOWS = path.join(HOST_ROOT, "flightdeck", "server", "routes", "workflows.ts");
 const present = fs.existsSync(HOST_WORKFLOWS);
+/** sdk-42 moved the Builder's `steps` rule into `builderStepsSchema`, shared with
+ * the template validator, in this file. */
+const HOST_WORKFLOW_TEMPLATES = path.join(HOST_ROOT, "flightdeck", "server", "subapps", "workflowTemplates.ts");
 const acknowledged = process.env[HOST_ABSENCE_ACK_ENV] === HOST_ABSENCE_ACK_VALUE;
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -180,6 +183,34 @@ function statementEnd(code: string, from: number): number {
     else if (ch === ";" && depth === 0) return i + 1;
   }
   throw new Error(`no end of statement after offset ${from}`);
+}
+
+/**
+ * The host's `definitionBody` as if the shared schemas it names were written
+ * inline. sdk-42 (aU5) replaced the inline `steps: z.array(...)...refine(...)`
+ * with `steps: builderStepsSchema.default(...)`, a schema exported from
+ * `server/subapps/workflowTemplates.ts` whose bounds are named constants. This
+ * splices that schema's expression (comments stripped, `export const NAME = N;`
+ * integer constants substituted) back in, so every reader below — bounds,
+ * first/last rule, rule vocabulary — still sees the rules the Builder applies.
+ * A host that names the schema but no longer exports it FAILS, never passes.
+ */
+function resolveSharedHostSchemas(source: string): string {
+  if (!/\bbuilderStepsSchema\b/.test(stripCommentLines(source))) return source;
+  if (!fs.existsSync(HOST_WORKFLOW_TEMPLATES)) {
+    throw new Error(`definitionBody names builderStepsSchema but ${HOST_WORKFLOW_TEMPLATES} is missing`);
+  }
+  const lib = stripCommentLines(fs.readFileSync(HOST_WORKFLOW_TEMPLATES, "utf8"));
+  const at = /export\s+const\s+builderStepsSchema\s*=\s*/.exec(lib);
+  if (at === null) throw new Error(`no "export const builderStepsSchema =" in ${HOST_WORKFLOW_TEMPLATES}`);
+  let expr = lib.slice(at.index + at[0].length, statementEnd(lib, at.index) - 1).trim();
+  for (const m of lib.matchAll(/export\s+const\s+([A-Z][A-Z0-9_]*)\s*=\s*(\d+)\s*;/g)) {
+    expr = expr.replace(new RegExp(`\\b${m[1]}\\b`, "g"), m[2] ?? "");
+  }
+  if (/\b[A-Z][A-Z0-9_]{2,}\b/.test(expr)) throw new Error(`builderStepsSchema names a constant this reader cannot resolve: ${expr}`);
+  const resolved = source.replace(/\bbuilderStepsSchema(?=\s*\.)/, expr);
+  if (resolved === source) throw new Error("definitionBody names builderStepsSchema in a form this reader cannot splice");
+  return resolved;
 }
 
 /** Every `.method(` call in a text, as sorted `method×count` tokens. */
@@ -439,7 +470,7 @@ describe("the host's Workflow Builder source, or an acknowledged absence", () =>
 });
 
 describe.skipIf(!present)("studio-workflow-definition/1 mirrors the host's definitionBody", () => {
-  const source = present ? fs.readFileSync(HOST_WORKFLOWS, "utf8") : "";
+  const source = present ? resolveSharedHostSchemas(fs.readFileSync(HOST_WORKFLOWS, "utf8")) : "";
 
   it("finds at least 8 host fields (non-vacuity) and every one of the Builder's rules the reader looks for", () => {
     const host = hostShape(source);

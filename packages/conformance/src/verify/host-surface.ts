@@ -131,6 +131,10 @@ export interface SubAppManifest {
     readonly phase?: "expand" | "backfill" | "validate" | "contract" | "unknown";
     readonly after?: readonly string[];
   }[];
+  /** sdk-42: Builder starting processes (shape only; scaffolds nothing). */
+  readonly workflowTemplates?: readonly { readonly key: string; readonly labelKey: string; readonly file: string }[];
+  /** upd-app-schema-range: the inclusive app schema range this version needs. */
+  readonly appSchema?: { readonly min: number; readonly max: number };
   initSchema(db: Db): void | Promise<void>;
   registerRoutes(app: FastifyInstance, ctx: RegisterRoutesCtx): void | Promise<void>;
   /** The host declares this (OS-04 host-surface contributions) and acts on

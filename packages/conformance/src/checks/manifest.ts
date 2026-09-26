@@ -66,6 +66,12 @@ export const DATA_FIELDS: readonly string[] = [
   // table-backed app (mig-studio-emitted-migrations). Shape here; catalogue
   // membership and owned effects are the host kit's migrations-* checks.
   "migrations",
+  // sdk-42: Builder starting processes, `.strict()` shape transcribed. The
+  // template FILE is the host kit's `workflow-templates-valid`. Scaffolds nothing.
+  "workflowTemplates",
+  // upd-app-schema-range: the inclusive app schema range, `.strict()` with
+  // min <= max, transcribed. Grants nothing; gates the app's routes per workspace.
+  "appSchema",
 ];
 
 /** The function members the host calls on every manifest. Required. */

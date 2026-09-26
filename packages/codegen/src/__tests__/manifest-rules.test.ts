@@ -158,6 +158,16 @@ describe("the boot rules the host applies", () => {
     expect(() => assertManifestWouldBoot({ ...base, maxHostVersion: "6" })).toThrow(/maxHostVersion/);
   });
 
+  it("workflowTemplates (sdk-42) and appSchema (upd-app-schema-range): the host's shapes", () => {
+    const template = { key: "intake", labelKey: "demo-app.templates.intake", file: "intake.process.json" };
+    expect(assertManifestWouldBoot({ ...base, workflowTemplates: [template] }).workflowTemplates).toEqual([template]);
+    expect(() => assertManifestWouldBoot({ ...base, workflowTemplates: [template, template] })).toThrow(/duplicate workflow template key/);
+    expect(() => assertManifestWouldBoot({ ...base, workflowTemplates: [{ ...template, file: "x.json" }] })).toThrow(/workflowTemplates/);
+    expect(assertManifestWouldBoot({ ...base, appSchema: { min: 1, max: 3 } }).appSchema).toEqual({ min: 1, max: 3 });
+    expect(() => assertManifestWouldBoot({ ...base, appSchema: { min: 3, max: 1 } })).toThrow(/appSchema\.min must not exceed appSchema\.max/);
+    expect(() => assertManifestWouldBoot({ ...base, appSchema: { min: 0, max: 1 } })).toThrow(/appSchema/);
+  });
+
   it("integrations (sdk-21): validates the declared shape and refuses an unknown key or kind", () => {
     const integration = {
       key: "notify",
