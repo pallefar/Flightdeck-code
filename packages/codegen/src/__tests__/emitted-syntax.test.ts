@@ -53,6 +53,35 @@ function jsonErrors(path: string, source: string): string[] {
   }
 }
 
+/** Not a SQL parser — what actually breaks an emitted migration under psql:
+ * an unterminated statement, unbalanced parentheses or quotes, or a statement
+ * that is not one of the DDL kinds codegen writes (mig-studio-emitted-migrations;
+ * the full statement shapes are the "migration-sql" invariant's job). */
+function sqlErrors(path: string, source: string): string[] {
+  const out: string[] = [];
+  const body = source
+    .split("\n")
+    .filter((line) => !line.trimStart().startsWith("--"))
+    .join("\n")
+    .trim();
+  if (body.length === 0) return [`${path}: no statement`];
+  if (!body.endsWith(";")) out.push(`${path}: the last statement is not terminated with ;`);
+  if ((body.match(/'/g) ?? []).length % 2 !== 0) out.push(`${path}: unbalanced single quotes`);
+  for (const statement of body.split(";").map((st) => st.trim()).filter((st) => st.length > 0)) {
+    let depth = 0;
+    for (const ch of statement) {
+      if (ch === "(") depth++;
+      if (ch === ")") depth--;
+      if (depth < 0) break;
+    }
+    if (depth !== 0) out.push(`${path}: unbalanced parentheses in "${statement.slice(0, 60)}"`);
+    if (!/^(CREATE TABLE IF NOT EXISTS|CREATE INDEX IF NOT EXISTS|ALTER TABLE) /.test(statement)) {
+      out.push(`${path}: "${statement.slice(0, 60)}" is not a statement kind codegen writes`);
+    }
+  }
+  return out;
+}
+
 /** Not a CSS parser — a brace counter, which is what actually breaks a
  * generated stylesheet, plus a check that it defines something at all. */
 function cssErrors(path: string, source: string): string[] {
@@ -96,6 +125,7 @@ function checkerFor(path: string): (p: string, s: string, emitted: readonly stri
   if (path.endsWith(".css")) return (p, s) => cssErrors(p, s);
   if (path.endsWith(".html")) return htmlErrors;
   if (path.endsWith(".md")) return (p, s) => markdownErrors(p, s);
+  if (path.endsWith(".sql")) return (p, s) => sqlErrors(p, s);
   // ⛔ NOT A DEFAULT-PASS. An extension nobody thought about is a file whose
   // syntax nothing checks, and that is a decision, not an oversight.
   return (p) => [`${p}: no syntax check exists for this extension — add one to checkerFor`];

@@ -48,6 +48,14 @@ export type FileRole =
   | "web-other"
   | "test"
   | "patch"
+  /** `server/subapps/<id>/migrations/subapp_<id>_NNNN_(base|evolve).sql` — a
+   * Postgres migration codegen emits for a table-backed app. SQL, never
+   * imported: the host reaches it through `manifest.migrations` and its
+   * catalogue entry. Judged by FD-S005, statement by statement. */
+  | "migration"
+  /** `server/subapps/<id>/.fd/emitted-spec.json` — codegen's record of what it
+   * emitted, which the next generation evolves the migrations from. Data. */
+  | "emitted-record"
   | "foreign";
 
 export interface AnalyzedFile {
@@ -215,6 +223,8 @@ function roleOf(path: string, manifestPath: string, id: string, webModuleId: str
     if (rest === "guard.ts" || rest === "guard.tsx") return "guard";
     if (rest === "schema.ts") return "schema";
     if (rest === "routes.ts" || rest.startsWith("routes/")) return "route";
+    if (new RegExp(`^migrations/subapp_${id.replace(/[^a-z0-9-]/g, "")}_\\d{4}_(?:base|evolve)\\.sql$`).test(rest)) return "migration";
+    if (rest === ".fd/emitted-spec.json") return "emitted-record";
     return "server-other";
   }
 

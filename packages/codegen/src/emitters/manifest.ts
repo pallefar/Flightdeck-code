@@ -114,6 +114,25 @@ export function emitManifest(plan: SubAppPlan): string {
     });
   }
 
+  // mig-studio-emitted-migrations / host sdk-63: the app's Postgres
+  // migrations, one data literal per line. A declaration the host's catalogue
+  // and executor act on; it runs nothing by itself.
+  if (m.migrations && m.migrations.length > 0) {
+    const entry = (d: NonNullable<typeof m.migrations>[number]): string => {
+      const parts = [`node_id: ${str(d.node_id)}`, `file: ${str(d.file)}`, `class: ${str(d.class)}`];
+      if (d.phase !== undefined) parts.push(`phase: ${str(d.phase)}`);
+      if (d.after !== undefined) parts.push(`after: ${tsStringArray(d.after)}`);
+      return `    { ${parts.join(", ")} },`;
+    };
+    fields.push({
+      key: "migrations",
+      value: `[\n${m.migrations.map(entry).join("\n")}\n  ]`,
+      comment: [
+        "Postgres never runs initSchema, so these are how this app's tables exist there (host sdk-63). Each is emitted under ./migrations/ and moves to db/migrations/ with its catalogue entry (owner subapp:<id>) at mount; the host's migrations-cataloged check fails until it does. Immutable once catalogued: a spec change adds an evolve migration, and a drop or retype is a manual contract step codegen refuses to write.",
+      ],
+    });
+  }
+
   fields.push(
     hasTables
       ? {

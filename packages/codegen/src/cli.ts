@@ -39,6 +39,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { applyGeneratedFiles, applyWrites, fingerprint, planWrites, type ApplyReport } from "./apply";
+import { emittedRecordPath } from "./emitters/migrations";
 import { generateSubApp } from "./generate";
 import { MINI_APP_FLOOR } from "./profile";
 import { CodegenInvariantError } from "./invariants";
@@ -147,9 +148,28 @@ export function main(): void {
   const registryAbs = path.join(outRoot, REGISTRY_PATH);
   const registrySource = fs.existsSync(registryAbs) ? fs.readFileSync(registryAbs, "utf8") : undefined;
 
+  // mig-studio-emitted-migrations: what the last generation of this sub-app
+  // emitted, so its migrations EVOLVE rather than restart. Read, never
+  // written here; an unreadable record is a refusal, not "no record".
+  const specId = (spec as { id?: unknown }).id;
+  let previousEmitted: unknown;
+  if (typeof specId === "string" && /^[a-z0-9-]+$/.test(specId)) {
+    const recordAbs = path.join(outRoot, emittedRecordPath(specId));
+    if (fs.existsSync(recordAbs)) {
+      try {
+        previousEmitted = JSON.parse(fs.readFileSync(recordAbs, "utf8"));
+      } catch (err) {
+        fail(`${emittedRecordPath(specId)} is not readable JSON (${(err as Error).message}) — codegen will not guess at the migrations it emitted before`);
+      }
+    }
+  }
+
   let generated;
   try {
-    generated = generateSubApp(spec, registrySource === undefined ? {} : { registrySource });
+    generated = generateSubApp(spec, {
+      ...(registrySource === undefined ? {} : { registrySource }),
+      ...(previousEmitted === undefined ? {} : { previousEmitted }),
+    });
   } catch (err) {
     if (err instanceof SpecRejectedError || err instanceof CodegenInvariantError) fail(err.message);
     throw err;

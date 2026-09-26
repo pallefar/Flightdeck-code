@@ -121,6 +121,16 @@ export interface SubAppManifest {
   };
   /** sdk-21: declared outbound operations (shape only; grants nothing). */
   readonly integrations?: readonly unknown[];
+  /** sdk-44: Builder palette steps (shape only; runs nothing). */
+  readonly workflowSteps?: readonly unknown[];
+  /** sdk-63: declared Postgres migrations, the host's subAppMigrationSchema. */
+  readonly migrations?: readonly {
+    readonly node_id: string;
+    readonly file: string;
+    readonly class: "immutable" | "generated";
+    readonly phase?: "expand" | "backfill" | "validate" | "contract" | "unknown";
+    readonly after?: readonly string[];
+  }[];
   initSchema(db: Db): void | Promise<void>;
   registerRoutes(app: FastifyInstance, ctx: RegisterRoutesCtx): void | Promise<void>;
   /** The host declares this (OS-04 host-surface contributions) and acts on

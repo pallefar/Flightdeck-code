@@ -179,6 +179,28 @@ export interface SubAppManifestData {
   visibleToRoles: WorkspaceRole[];
   /** D-036: stamped by Flightdeck Studio on every manifest it generates. */
   generatedBy?: "flightdeck-studio";
+  /** Every OPTIONAL member the manifest emitter can write must be declared
+   * here too, or the standalone tree fails TS2353 while the host compiles —
+   * \`standalone-typecheck.test.ts\` compiles the tree to hold that. */
+  settingsPanel?: { tier: "workspace-admin" | "super-admin"; webComponentId: string; label: string };
+  /** apps-01 / apps-49: the app-directory FACTS block. */
+  listing?: {
+    availability: string;
+    discoverable: boolean;
+    category: string;
+    requirements?: string[];
+    publisher: { name: string };
+  };
+  /** Host sdk-63: declared Postgres migrations (the host's SubAppMigration). */
+  migrations?: SubAppMigration[];
+}
+
+export interface SubAppMigration {
+  node_id: string;
+  file: string;
+  class: "immutable" | "generated";
+  phase?: "expand" | "backfill" | "validate" | "contract" | "unknown";
+  after?: string[];
 }
 
 export interface SubAppManifest extends SubAppManifestData {

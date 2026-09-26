@@ -185,6 +185,12 @@ const VIOLATIONS: readonly Violation[] = [
     file: "server/subapps/wc-clock/helpers.ts",
     build: () => withFile(conformingSubApp(), "server/subapps/wc-clock/helpers.ts", `export const ROUNDING = 15;\n`),
   },
+  {
+    rule: "FD-I005",
+    what: "a stray .sql file that is not a named migration",
+    file: "server/subapps/wc-clock/setup.sql",
+    build: () => withFile(conformingSubApp(), "server/subapps/wc-clock/setup.sql", `CREATE TABLE IF NOT EXISTS subapp_wc_clock_x (id TEXT);\n`),
+  },
 
   {
     rule: "FD-C001",
@@ -362,6 +368,28 @@ const VIOLATIONS: readonly Violation[] = [
         ROUTES_PATH,
         `"SELECT id, ticket, minutes, created_at FROM subapp_wc_clock_entries ORDER BY created_at DESC LIMIT 200",`,
         "`SELECT id, ticket, minutes FROM subapp_wc_clock_entries ORDER BY ${sortColumn}`,",
+      ),
+  },
+  {
+    rule: "FD-S005",
+    what: "a migration that GRANTs instead of creating this app's tables",
+    file: "server/subapps/wc-clock/migrations/subapp_wc-clock_0001_base.sql",
+    build: () =>
+      withFile(
+        conformingSubApp(),
+        "server/subapps/wc-clock/migrations/subapp_wc-clock_0001_base.sql",
+        `-- base\nCREATE TABLE IF NOT EXISTS :"schema"."subapp_wc_clock_entries" (\n  "id" text PRIMARY KEY\n);\nGRANT ALL ON :"schema"."subapp_wc_clock_entries" TO public;\n`,
+      ),
+  },
+  {
+    rule: "FD-S005",
+    what: "a migration that alters another app's table",
+    file: "server/subapps/wc-clock/migrations/subapp_wc-clock_0002_evolve.sql",
+    build: () =>
+      withFile(
+        conformingSubApp(),
+        "server/subapps/wc-clock/migrations/subapp_wc-clock_0002_evolve.sql",
+        `ALTER TABLE :"schema"."subapp_maps_layers" ADD COLUMN IF NOT EXISTS "x" text;\n`,
       ),
   },
   {

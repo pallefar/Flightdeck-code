@@ -72,6 +72,7 @@ const CATALOG = {
   "FD-S002": { severity: "error", title: "queries stay under the sub-app table prefix", contract: "§3" },
   "FD-S003": { severity: "error", title: "index names stay under the sub-app prefix", contract: "§3" },
   "FD-S004": { severity: "error", title: "no table name the gate cannot read", contract: "§3" },
+  "FD-S005": { severity: "error", title: "a migration is additive DDL under the sub-app prefix", contract: "§3" },
 
   // ── Would it actually mount? ────────────────────────────────────────
   "FD-X001": { severity: "warning", title: "the registry edit ships with the app", contract: "§7" },

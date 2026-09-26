@@ -18,7 +18,7 @@
  * already thought of; the next one is not on it. The allowlist says what an
  * emitted file of each kind may reach, full stop, and anything else is a
  * violation whether or not it looked dangerous. */
-import { tablePrefix, underscored } from "./naming";
+import { serverDir, tablePrefix, underscored } from "./naming";
 import { GENERATED_BY } from "./manifest-rules";
 import { isMiniApp } from "./profile";
 import type { SubAppPlan } from "./plan";
@@ -36,6 +36,13 @@ export interface GeneratedFile {
     | "web-module"
     | "host-test"
     | "patch"
+    /** A Postgres migration under `server/subapps/<id>/migrations/`
+     * (`emitters/migrations.ts`). SQL, not TypeScript: judged by
+     * "migration-sql" instead of the import and runtime rules. */
+    | "migration"
+    /** `server/subapps/<id>/.fd/emitted-spec.json`, the record the next
+     * generation evolves the migrations from. Data, never loaded by the host. */
+    | "emitted-record"
     /** The standalone harness. Emitted for every sub-app, applied to a host
      * checkout NEVER — two of these sit at host paths and would overwrite the
      * real registry and the real capability types. See `emitters/standalone.ts`
@@ -87,6 +94,8 @@ function allowedImports(plan: SubAppPlan, file: GeneratedFile): readonly string[
         `../../../server/subapps/${plan.id}/manifest.js`,
       ];
     case "patch":
+    case "migration":
+    case "emitted-record":
       return null;
     case "standalone":
       // ⭐ A DIFFERENT RULE, AND THE REASON IS THE POINT OF THE HARNESS.
@@ -118,6 +127,16 @@ export function checkEmittedInvariants(files: readonly GeneratedFile[], plan: Su
 
   for (const file of files) {
     if (file.kind === "patch") continue;
+    // Not TypeScript: `stripComments` and the import/runtime rules do not
+    // apply. A migration is judged statement by statement instead.
+    if (file.kind === "emitted-record") {
+      checkEmittedRecordPath(file, plan, add);
+      continue;
+    }
+    if (file.kind === "migration") {
+      checkMigrationSql(file, plan, add);
+      continue;
+    }
     checkImports(file, codeOf(file), plan, add);
     // The runtime checks apply to the sub-app's own code. The emitted host
     // test is a test: it reads source from disk and quotes the very
@@ -165,6 +184,52 @@ export function checkEmittedInvariants(files: readonly GeneratedFile[], plan: Su
 }
 
 type Add = (file: string, rule: string, detail: string) => void;
+
+/** ⛔ "migration-sql" (mig-studio-emitted-migrations): an emitted migration
+ * runs as supabase_admin in every workspace schema, and earlier ones are
+ * re-emitted verbatim from `.fd/emitted-spec.json` — text that came from disk.
+ * So every statement is read back and must be one of the three additive
+ * shapes codegen writes, on this app's own prefix, with a column definition
+ * codegen could have produced: `CREATE TABLE IF NOT EXISTS`,
+ * `CREATE INDEX IF NOT EXISTS`, `ALTER TABLE … ADD COLUMN IF NOT EXISTS`.
+ * A GRANT, a DO block, a function, a DROP, another app's table — anything
+ * else — refuses the whole generation. */
+const PG_COLUMN = String.raw`"[a-z][a-z0-9_]*" (?:text|bigint|double precision)(?: PRIMARY KEY)?(?: NOT NULL)?(?: CHECK \("[a-z][a-z0-9_]*" IN \('[A-Za-z0-9_.-]+'(?:,'[A-Za-z0-9_.-]+')*\)\))?`;
+function checkMigrationSql(file: GeneratedFile, plan: SubAppPlan, add: Add): void {
+  const prefix = tablePrefix(plan.id);
+  const table = String.raw`:"schema"\."(${prefix}[a-z0-9_]*)"`;
+  const shapes = [
+    new RegExp(String.raw`^CREATE TABLE IF NOT EXISTS ${table} \(${PG_COLUMN}(?:, ${PG_COLUMN})*\)$`),
+    new RegExp(String.raw`^CREATE INDEX IF NOT EXISTS "idx_${underscored(plan.id)}_[a-z0-9_]*" ON ${table} \("[a-z][a-z0-9_]*"(?:, "[a-z][a-z0-9_]*")*\)$`),
+    new RegExp(String.raw`^ALTER TABLE ${table} ADD COLUMN IF NOT EXISTS ${PG_COLUMN}$`),
+  ];
+  if (plan.profile !== "table-backed" || !file.path.startsWith(`${serverDir(plan.id)}/migrations/subapp_${plan.id}_`) || !file.path.endsWith(".sql")) {
+    add(file.path, "migration-sql", `a migration is emitted only for a table-backed app, as ${serverDir(plan.id)}/migrations/subapp_${plan.id}_NNNN_*.sql`);
+  }
+  const body = file.contents
+    .split("\n")
+    .filter((line) => !line.trimStart().startsWith("--"))
+    .join("\n");
+  if (/\/\*|\$\$/.test(body)) {
+    add(file.path, "migration-sql", "carries a block comment or a dollar-quoted body — codegen writes neither");
+  }
+  const statements = body
+    .split(";")
+    .map((st) => st.replace(/\s+/g, " ").replace(/\( /g, "(").replace(/ \)/g, ")").trim())
+    .filter((st) => st.length > 0);
+  if (statements.length === 0) add(file.path, "migration-sql", "contains no statement");
+  for (const statement of statements) {
+    if (!shapes.some((re) => re.test(statement))) {
+      add(file.path, "migration-sql", `statement is not an additive DDL codegen writes on ${prefix}*: ${statement.slice(0, 160)}`);
+    }
+  }
+}
+
+function checkEmittedRecordPath(file: GeneratedFile, plan: SubAppPlan, add: Add): void {
+  if (file.path !== `${serverDir(plan.id)}/.fd/emitted-spec.json`) {
+    add(file.path, "emitted-record", `the emitted-spec record lives at ${serverDir(plan.id)}/.fd/emitted-spec.json only`);
+  }
+}
 
 /** ⛔ D-036 (option b, fail-closed): A GENERATED MINI-APP IS OFF BY DEFAULT AT
  * THE LAUNCHER LAYER. Read off the files, like everything else here.

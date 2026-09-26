@@ -76,6 +76,60 @@ const subAppIntegrationSchema = z
   })
   .strict();
 
+/** sdk-44 — the host's `subAppWorkflowStepSchema`, transcribed: optional
+ * Builder palette steps, `.strict()` with unique keys. Declaring one runs
+ * nothing (the palette lists it; only a human starts a run). */
+const WORKFLOW_STEP_SLUG_RE = /^[a-z0-9][a-z0-9-]*$/;
+const WORKFLOW_STEP_INPUT_TYPES = ["text", "number", "contractRef", "date"] as const;
+const uniqueKeys =
+  (what: string) =>
+  (items: ReadonlyArray<{ key: string }>, ctx: z.RefinementCtx): void => {
+    const seen = new Set<string>();
+    for (const [i, it] of items.entries()) {
+      if (seen.has(it.key)) ctx.addIssue({ code: "custom", path: [i, "key"], message: `duplicate ${what} key "${it.key}"` });
+      seen.add(it.key);
+    }
+  };
+const workflowStepInputSchema = z
+  .object({
+    key: z.string().regex(WORKFLOW_STEP_SLUG_RE),
+    labelKey: z.string().regex(LABEL_KEY_RE),
+    type: z.enum(WORKFLOW_STEP_INPUT_TYPES),
+    required: z.boolean(),
+  })
+  .strict();
+const subAppWorkflowStepSchema = z
+  .object({
+    key: z.string().regex(WORKFLOW_STEP_SLUG_RE),
+    labelKey: z.string().regex(LABEL_KEY_RE),
+    descriptionKey: z.string().regex(LABEL_KEY_RE),
+    input: z.array(workflowStepInputSchema).max(10).superRefine(uniqueKeys("input")),
+    action: z.union([
+      z.object({ proposalTemplateId: z.string().regex(WORKFLOW_STEP_SLUG_RE) }).strict(),
+      z.object({ handler: z.literal(true) }).strict(),
+    ]),
+    gate: z.enum(["human", "statutory"]),
+  })
+  .strict();
+
+/** sdk-63 — the host's `subAppMigrationSchema`, transcribed regex for regex:
+ * a DECLARED Postgres migration (`node_id` in the host's ONE catalogue,
+ * `file` under db/migrations/). `.strict()` in the host, so SQL text or any
+ * other key fails loud. Pinned by hash to the host block in codegen's
+ * `schema-migration.test.ts`. Whether the file is catalogued and touches only
+ * this app's objects is the HOST kit's `migrations-*` checks, not shape. */
+const MIGRATION_NODE_ID_RE = /^[a-z0-9][a-z0-9_.-]*$/;
+const MIGRATION_FILE_RE = /^(?!.*\.\.)[A-Za-z0-9_][A-Za-z0-9_./-]*\.sql$/;
+export const subAppMigrationSchema = z
+  .object({
+    node_id: z.string().regex(MIGRATION_NODE_ID_RE),
+    file: z.string().regex(MIGRATION_FILE_RE),
+    class: z.enum(["immutable", "generated"]),
+    phase: z.enum(["expand", "backfill", "validate", "contract", "unknown"]).optional(),
+    after: z.array(z.string().regex(MIGRATION_NODE_ID_RE)).optional(),
+  })
+  .strict();
+
 export const subAppManifestSchema = z.object({
   /** Locked once shipped: the env var, the nav path and the table prefix
    * are all derived from it. */
@@ -110,6 +164,10 @@ export const subAppManifestSchema = z.object({
   listing: listingSchema.optional(),
   /** sdk-21: declared outbound operations (see subAppIntegrationSchema). */
   integrations: z.array(subAppIntegrationSchema).max(5).optional(),
+  /** sdk-44: optional Builder palette steps (see subAppWorkflowStepSchema). */
+  workflowSteps: z.array(subAppWorkflowStepSchema).max(10).superRefine(uniqueKeys("workflow step")).optional(),
+  /** sdk-63: declared Postgres migrations (see subAppMigrationSchema). */
+  migrations: z.array(subAppMigrationSchema).optional(),
 });
 
 export type SubAppManifestData = z.infer<typeof subAppManifestSchema>;
