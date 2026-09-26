@@ -194,6 +194,65 @@ describe("what codegen refuses — a manual contract step, never a generated one
   });
 });
 
+/** Review round 3: what SQLite accepts but PostgreSQL refuses or silently
+ * mangles must be refused at generation, never shipped as a migration that
+ * fails (or worse, half-applies) on the tier the product runs on. */
+describe("what Postgres itself would refuse — rejected before a migration is written", () => {
+  const withCols = (cols: Table["columns"], version = "0.1.0"): Spec => twoTables(version, [], cols);
+  const accepts = (spec: Spec, previousEmitted?: unknown) => generateSubApp(spec, previousEmitted === undefined ? {} : { previousEmitted });
+
+  it("refuses a column name longer than 63 bytes (Postgres truncates it, so two long names collide)", () => {
+    const a = `${"x".repeat(63)}a`;
+    const b = `${"x".repeat(63)}b`;
+    const issues = rejection(withCols([...NOTES, { name: a, type: "text" }, { name: b, type: "text" }]), undefined).issues.join("\n");
+    expect(issues).toMatch(new RegExp(`column "${a}".*63`));
+    expect(issues).toMatch(new RegExp(`column "${b}".*63`));
+  });
+
+  it("refuses a table name longer than 63 bytes once prefixed", () => {
+    const bare = "t".repeat(64 - "subapp_wc_clock_".length);
+    const spec = { ...twoTables(), tables: [...twoTables().tables!, { name: bare, columns: NOTES }] };
+    expect(rejection(spec, undefined).issues.join("\n")).toMatch(new RegExp(`table "subapp_wc_clock_${bare}".*63`));
+  });
+
+  it("refuses an index name longer than 63 bytes, even when every column name fits", () => {
+    const c1 = "a".repeat(30);
+    const c2 = "b".repeat(30);
+    const spec = {
+      ...twoTables(),
+      tables: [...twoTables().tables!, { name: "wide", columns: [{ name: c1, type: "text" as const }, { name: c2, type: "text" as const }], indexes: [{ on: [c1, c2] }] }],
+    };
+    expect(rejection(spec, undefined).issues.join("\n")).toMatch(/index "idx_wc_clock_wide_a+_b+".*63/);
+  });
+
+  it("accepts an identifier of exactly 63 bytes", () => {
+    expect(() => accepts(withCols([...NOTES, { name: "y".repeat(63), type: "text" }]))).not.toThrow();
+  });
+
+  it("refuses an integer column whose CHECK values are not bigint literals", () => {
+    const issues = rejection(withCols([...NOTES, { name: "rating", type: "integer", values: ["1.0", "2.0"] }]), undefined).issues.join("\n");
+    expect(issues).toMatch(/column "rating".*"1\.0".*bigint/);
+    expect(issues).toMatch(/column "rating".*"2\.0".*bigint/);
+    expect(rejection(withCols([...NOTES, { name: "rating", type: "integer", values: ["9223372036854775808"] }]), undefined).issues.join("\n")).toMatch(/bigint/);
+  });
+
+  it("refuses a real column whose CHECK values are not double precision literals", () => {
+    const issues = rejection(withCols([...NOTES, { name: "score", type: "real", values: ["1.5", "high"] }]), undefined).issues.join("\n");
+    expect(issues).toMatch(/column "score".*"high".*double precision/);
+    expect(issues).not.toMatch(/"1\.5"/);
+  });
+
+  it("accepts numeric CHECK values Postgres can cast", () => {
+    expect(() => accepts(withCols([...NOTES, { name: "rating", type: "integer", values: ["1", "-2", "10"] }]))).not.toThrow();
+    expect(() => accepts(withCols([...NOTES, { name: "score", type: "real", values: ["1.5", "-2", "3e2", ".5"] }]))).not.toThrow();
+  });
+
+  it("refuses the same on the evolve path (an ADD COLUMN)", () => {
+    const issues = rejection(twoTables("0.2.0", [{ name: "rating", type: "integer", values: ["1.0"] }]), recordOf(base)).issues.join("\n");
+    expect(issues).toMatch(/column "rating".*bigint/);
+  });
+});
+
 /** ⭐ The two local copies of the host's manifest schema (codegen's boot rules
  * and the conformance gate's) must carry the host's `migrations` shape
  * exactly. The host block is hashed against a pinned fixture, so a change to

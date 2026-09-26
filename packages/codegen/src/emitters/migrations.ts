@@ -102,6 +102,7 @@ export function emitMigrations(plan: SubAppPlan, previousEmitted: unknown): Emit
   const tables = plan.profile === "table-backed" ? plan.tables.map(toRecord) : [];
   const previous = previousEmitted === undefined ? null : readRecord(plan, previousEmitted);
   if (previous === null && tables.length === 0) return { files: [], migrations: undefined };
+  assertPostgresSafe(plan.id, tables);
 
   const chain = previous === null ? [] : previous.migrations.map((m) => ({ ...m }));
   if (previous === null) {
@@ -220,6 +221,61 @@ function evolve(before: readonly TableRecord[], after: readonly TableRecord[], i
     }
   }
   return out;
+}
+
+/** PostgreSQL's NAMEDATALEN - 1. A longer identifier is TRUNCATED, quoted or
+ * not (SQLite never truncates), so two long column names collide
+ * (duplicate-column error) and two long table or index names collide
+ * silently under IF NOT EXISTS — one of them is never created. Identifiers
+ * here are ASCII (/^[a-z][a-z0-9_]*$/), so characters are bytes. */
+export const PG_MAX_IDENTIFIER_BYTES = 63;
+
+/** bigint literals: an optional minus and digits, within int8's range. */
+const PG_BIGINT_MIN = -(2n ** 63n);
+const PG_BIGINT_MAX = 2n ** 63n - 1n;
+/** double precision literals in the spec's value alphabet (no "+", no
+ * whitespace). NaN/Infinity are refused: a CHECK on them is never meant. */
+const PG_DOUBLE_RE = /^-?(\d+(\.\d*)?|\.\d+)([eE]-?\d+)?$/;
+
+function checkValueIssue(c: ColumnRecord, v: string): string | null {
+  if (c.sqlType === "INTEGER") {
+    const ok = /^-?\d+$/.test(v) && BigInt(v) >= PG_BIGINT_MIN && BigInt(v) <= PG_BIGINT_MAX;
+    return ok ? null : "is not a bigint literal";
+  }
+  if (c.sqlType === "REAL") {
+    return PG_DOUBLE_RE.test(v) && Number.isFinite(Number(v)) ? null : `is not a finite double precision literal`;
+  }
+  return null;
+}
+
+/** Everything SQLite accepts but PostgreSQL refuses or mangles, refused by
+ * name BEFORE a migration is written (review round 3). The CHECK values are
+ * validated, never normalised: rewriting "1.0" to "1" would make the SQLite
+ * and Postgres constraints disagree. */
+function assertPostgresSafe(id: string, tables: readonly TableRecord[]): void {
+  const issues: string[] = [];
+  const tooLong = (kind: string, name: string, where = ""): void => {
+    const bytes = new TextEncoder().encode(name).length;
+    if (bytes > PG_MAX_IDENTIFIER_BYTES) {
+      issues.push(`${kind} "${name}"${where} is ${bytes} bytes; PostgreSQL truncates identifiers to ${PG_MAX_IDENTIFIER_BYTES} bytes — shorten it`);
+    }
+  };
+  for (const t of tables) {
+    tooLong("table", t.name);
+    for (const c of t.columns) {
+      tooLong("column", c.name, ` of "${t.name}"`);
+      for (const v of c.values ?? []) {
+        const why = checkValueIssue(c, v);
+        if (why !== null) {
+          issues.push(`column "${c.name}" of "${t.name}": CHECK value "${v}" ${why} — PostgreSQL cannot cast it to ${PG_TYPE[c.sqlType]}`);
+        }
+      }
+    }
+    for (const i of t.indexes) tooLong("index", i.name);
+  }
+  if (issues.length > 0) {
+    throw new SpecRejectedError(`MiniAppSpec "${id}" declares a schema PostgreSQL would refuse or truncate`, issues);
+  }
 }
 
 function qualified(table: string): string {
