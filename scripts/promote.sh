@@ -62,6 +62,8 @@ note_skip() { SKIPPED="$SKIPPED $1"; echo "SKIP: $1 — $2"; }
 
 [ -d "$REPO/flightdeck/server/subapps" ] || { echo "not a Flightdeck repo: $REPO" >&2; exit 2; }
 [ -f "$SPEC" ] || { echo "no spec at $SPEC" >&2; exit 2; }
+# Only a mini-app can be certified (table_backed_needs_migration otherwise).
+sandbox_require_certifiable "$STUDIO" "$SPEC" || exit 2
 
 sandbox_new_run_dir "$STUDIO" promote || exit 2
 RUN_DIR="$SANDBOX_RUN_DIR"

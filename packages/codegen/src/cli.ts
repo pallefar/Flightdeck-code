@@ -8,6 +8,14 @@
  *
  *   npx tsx packages/codegen/src/cli.ts --spec <spec.json|-> --out <host-repo> [--dry-run] [--force]
  *                                        [--standalone <dir>]
+ *   npx tsx packages/codegen/src/cli.ts --check-certifiable --spec <spec.json|->
+ *
+ * `--check-certifiable` writes nothing and needs no `--out`: it answers
+ * whether the host's gate can certify this spec at all (`certifiableProfile`
+ * in profile.ts) — exit 0 for a mini-app, exit 2 with the refusal code
+ * (`table_backed_needs_migration`, `profile_unrecognised`) otherwise.
+ * `scripts/promote.sh` and `scripts/mount-in-host.sh` ask it first, before
+ * they build a sandbox.
  *
  * `--standalone <dir>` ALSO writes the harness that runs this sub-app outside
  * Flightdeck OS, into a root of its own. It is a separate root on purpose and
@@ -40,7 +48,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { applyGeneratedFiles, applyWrites, fingerprint, planWrites, type ApplyReport } from "./apply";
 import { generateSubApp } from "./generate";
-import { MINI_APP_FLOOR } from "./profile";
+import { certifiableProfile, MINI_APP_FLOOR } from "./profile";
 import { CodegenInvariantError } from "./invariants";
 import { serverDir, webDir } from "./naming";
 import { SpecRejectedError } from "./plan";
@@ -133,6 +141,12 @@ export function main(): void {
   const specPath = opt("--spec");
   const outRoot = opt("--out");
   if (specPath === undefined) fail("--spec <spec.json> is required");
+  if (has("--check-certifiable")) {
+    const verdict = certifiableProfile(parseSpec(specPath, readSpecText(specPath)));
+    if (!verdict.ok) fail(`${verdict.code} — ${verdict.reason}`);
+    console.log(`codegen: certifiable — profile "${verdict.profile}", database-free; the host gate can take it`);
+    return;
+  }
   if (outRoot === undefined) fail("--out <host-repo-root> is required");
   const standaloneRoot = opt("--standalone");
   const dryRun = has("--dry-run");

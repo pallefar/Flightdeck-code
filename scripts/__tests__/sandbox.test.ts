@@ -34,6 +34,7 @@ import os from "node:os";
 import path from "node:path";
 import { execFileSync, spawnSync } from "node:child_process";
 import { afterAll, describe, expect, it } from "vitest";
+import { wcClockSpec } from "../../packages/codegen/src/fixtures/specs";
 
 const STUDIO = path.resolve(__dirname, "..", "..");
 const SECRET = "fixture-secret-must-never-be-printed";
@@ -318,6 +319,42 @@ describe("scripts/mount-in-host.sh enforces its own comparison", () => {
     const { status, out } = mount("cmp-none", [" Tests  10 passed (10)"], ["Error: the suite crashed"]);
     expect(status).toBe(1);
     expect(out).toContain("MOUNT FAILED");
+  }, 60_000);
+});
+
+describe("⛔ promote.sh and mount-in-host.sh refuse a table-backed spec before any sandbox exists", () => {
+  // On Postgres the host skips every sub-app initSchema, and its
+  // schemaMigrationParity fence fails a runtime CREATE TABLE with no
+  // migration. Codegen emits schema.ts for profile "table-backed" and no
+  // migration, so such a candidate cannot be certified; both scripts ask
+  // `cli.ts --check-certifiable` first and stop with exit 2 and the code.
+  const tableBacked = path.join(work, "table-backed.spec.json");
+  fs.writeFileSync(tableBacked, JSON.stringify(wcClockSpec, null, 2));
+
+  function refused(script: string, hostVar: "HOST_REPO" | "REPO", name: string) {
+    const host = makeHost(name, true);
+    const before = hostState(host);
+    const tmp = fs.mkdtempSync(path.join(work, "tmpdir-"));
+    const runs = path.join(work, `${name}-runs`);
+    const named = path.join(work, `${name}-root`);
+    for (const env of [{}, { SANDBOX: named }]) {
+      const { status, out } = run(script, { [hostVar]: host, SPEC: tableBacked, TMPDIR: tmp, STUDIO_RUNS_DIR: runs, ...env });
+      expect(status, out).toBe(2);
+      expect(out).toContain("table_backed_needs_migration");
+      // No sandbox, no mktemp parent, no run directory: refused before all of them.
+      expect(fs.existsSync(named)).toBe(false);
+      expect(ls(tmp)).toEqual([]);
+      expect(fs.existsSync(runs)).toBe(false);
+      expect(hostState(host)).toBe(before);
+    }
+  }
+
+  it("promote.sh exits 2 and prints table_backed_needs_migration", () => {
+    refused("promote.sh", "HOST_REPO", "tb-promote-host");
+  }, 60_000);
+
+  it("mount-in-host.sh exits 2 and prints table_backed_needs_migration", () => {
+    refused("mount-in-host.sh", "REPO", "tb-mount-host");
   }, 60_000);
 });
 

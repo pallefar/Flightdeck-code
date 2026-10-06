@@ -68,6 +68,23 @@ SANDBOX_RUN_DIR=""
 SANDBOX_PG_ENV_FILES=""
 SANDBOX_TRAP_ARMED=""
 
+# sandbox_require_certifiable STUDIO SPEC — refuses, BEFORE any run directory
+# or sandbox exists, a spec the host's gate cannot certify: codegen's
+# `cli.ts --check-certifiable` (profile.ts certifiableProfile). A table-backed
+# spec gets table_backed_needs_migration — on Postgres the host skips every
+# sub-app initSchema and codegen emits no migration, so its tables would not
+# exist there. The CLI prints the code; this returns 2. Fails closed: any
+# non-zero exit, including a check that could not run at all, is a refusal.
+# tsx by path, not `npx tsx`: a PATH that shadows npx must not answer for it.
+# SPEC resolves from $STUDIO, as the generate step's `--spec` does.
+sandbox_require_certifiable() {
+  local studio="$1" spec="$2" rc=0
+  ( cd "$studio" && ./node_modules/.bin/tsx packages/codegen/src/cli.ts --check-certifiable --spec "$spec" ) || rc=$?
+  [ "$rc" -eq 0 ] && return 0
+  echo "refused before any sandbox was built: $spec cannot be certified (exit $rc; the reason is above). Nothing was created." >&2
+  return 2
+}
+
 # sandbox_new_parent — SANDBOX_PARENT := a fresh mode-700 mktemp directory,
 # removed on exit by sandbox_cleanup (armed here). The sandbox goes in
 # "$SANDBOX_PARENT/sandbox".

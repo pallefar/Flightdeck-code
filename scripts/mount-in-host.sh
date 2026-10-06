@@ -41,6 +41,8 @@ STUDIO="$(cd "$(dirname "$0")/.." && pwd)"
 [ -d "$REPO/$HOST_REL/server/subapps" ] || { echo "not a Flightdeck repo: $REPO" >&2; exit 2; }
 [ "$(ls "$REPO/$HOST_REL/node_modules" 2>/dev/null | wc -l)" -gt 10 ] || {
   echo "host deps missing — run: (cd $REPO/$HOST_REL && npm install)" >&2; exit 2; }
+# Only a mini-app can be certified (table_backed_needs_migration otherwise).
+sandbox_require_certifiable "$STUDIO" "$SPEC" || exit 2
 
 sandbox_new_run_dir "$STUDIO" mount || exit 2
 RUN_DIR="$SANDBOX_RUN_DIR"
