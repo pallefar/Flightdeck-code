@@ -13,6 +13,16 @@ it('offers an explicit Canvas / Stacked view choice without changing the default
  expect(JSON.stringify(graph)).toBe(before);
 });
 
+it('reserves the shared title row without claiming any result before a local run',()=>{
+ const graph=editor.createWorkflowTemplate('branch'),before=JSON.stringify(graph);
+ const html=renderToStaticMarkup(createElement(editor.WorkflowEditor,{initialGraph:graph})).replace(/<style>[\s\S]*?<\/style>/g,'');
+ expect(html.match(/class="wf-node-title"/g)??[]).toHaveLength(graph.nodes.length);
+ expect(html.match(/class="wf-node-label"/g)??[]).toHaveLength(graph.nodes.length);
+ expect(html).not.toContain('data-local-run-status=');
+ expect(html).not.toMatch(/aria-describedby="[^"]*-local-/);
+ expect(JSON.stringify(graph)).toBe(before);
+});
+
 it('keeps Registry outside the scrollable view controls with native keyboard targets',()=>{
  const html=renderToStaticMarkup(createElement(editor.WorkflowEditor,{initialGraph:editor.createWorkflowTemplate('branch')}));
  const bar=html.split('<div class="wf-canvasbar">')[1]?.split('<div class="wf-presentation ')[0]??'';

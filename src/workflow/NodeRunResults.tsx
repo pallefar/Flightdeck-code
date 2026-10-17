@@ -2,9 +2,19 @@ import {type RunResult,type TraceEntry,type TraceDetails} from '../../packages/w
 import {type Json} from '../../packages/workflow/graph';
 export type LocalTraceDetails=TraceDetails;
 export function localDetails(entry:TraceEntry|undefined):LocalTraceDetails|undefined{return entry?.details;}
+export function localNodeRunEntry(nodeId:string,run:RunResult|null):TraceEntry|undefined{return [...(run?.trace??[])].reverse().find(t=>t.nodeId===nodeId);}
+export function NodeRunStatus({nodeId,run,id}:{nodeId:string;run:RunResult|null;id?:string}){
+ if(!run)return null;
+ const entry=localNodeRunEntry(nodeId,run);
+ const status=entry?.status??'not-reached';
+ const label=entry?entry.status[0]!.toUpperCase()+entry.status.slice(1):'Not reached';
+ const selectedPort=entry?.details?.selectedPort;
+ const description='Last local result for this applied graph; changes to execution input or unapplied settings have not been rerun.'+(selectedPort==='true'||selectedPort==='false'?` Observed branch: ${selectedPort}.`:'');
+ return <span className="wf-node-run-status" data-local-run-status={status} id={id} title={description}>{label}<span className="wf-sr-only"> — {description}</span></span>;
+}
 function bounded(value:Json):string {const text=JSON.stringify(value,null,2);return text.length>12000?text.slice(0,12000)+'\n… Display truncated':text;}
 export function NodeRunResults({nodeId,run}:{nodeId:string;run:RunResult|null}){
- const entry=[...(run?.trace??[])].reverse().find(t=>t.nodeId===nodeId),details=localDetails(entry);
+ const entry=localNodeRunEntry(nodeId,run),details=localDetails(entry);
  return <section className="wf-results" aria-label="Node run results"><p role="status">{!run?'Not run — run the current graph locally.':!entry?'Not reached in this run':entry.status[0]!.toUpperCase()+entry.status.slice(1)}</p>
  <p>Graph edits clear local results. These are actual local measurements, not model estimates. Captured input/output is privacy-filtered: identity fields may be removed, text scrubbed, and oversized data omitted.</p>
  {entry?.message&&<p role={entry.status==='blocked'?'alert':undefined}>{entry.message}</p>}

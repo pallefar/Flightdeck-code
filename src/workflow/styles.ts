@@ -54,6 +54,12 @@ export const WORKFLOW_CSS=`
 .wf-node-head{height:82px;overflow:hidden;display:flex;flex-direction:column;gap:10px;width:100%;text-align:left;border:0!important;background:transparent!important;padding:14px!important;cursor:grab!important;touch-action:none}
 .wf-node-head:active{cursor:grabbing!important}
 .wf-node-head strong{font-size:13px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;width:100%}
+.wf-node-head .wf-node-title{display:flex;align-items:center;gap:5px;min-width:0;overflow:visible}
+.wf-node-label{display:block;flex:1;min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.wf-node-run-status{display:inline-flex;align-items:center;flex:none;white-space:nowrap;font-size:9px;font-weight:600;line-height:1.25;padding:2px 4px;border:1px solid currentColor;border-radius:4px;color:var(--wf-muted);background:color-mix(in srgb,currentColor 7%,var(--wf-panel));pointer-events:none}
+.wf-node-run-status[data-local-run-status='completed']{color:var(--wf-success)}
+.wf-node-run-status[data-local-run-status='paused']{color:var(--wf-warning)}
+.wf-node-run-status[data-local-run-status='blocked']{color:var(--wf-danger)}
 .wf-node-meta{font-size:10px;color:var(--wf-muted);padding:0 14px 12px}
 .wf-ports{position:absolute;bottom:0;left:0;width:100%;height:38px;display:flex;justify-content:space-between;border-top:1px solid var(--wf-border);padding:5px;gap:3px}
 .wf-ports button{font-size:10px;padding:5px 7px;border:0;background:transparent;color:var(--wf-success)}

@@ -1,9 +1,11 @@
-// Browser-only local DEVELOPMENT fixture. The actual editor/runner, no API or adapters.
+// Browser-only local DEVELOPMENT fixture. No network adapters, API or providers.
+// Deferred tests inject only an owned DEVELOPMENT promise; no connector is contacted.
 import {createRoot} from 'react-dom/client';
 import {flushSync} from 'react-dom';
 import {createRef} from 'react';
 import {WorkflowEditor,createWorkflowTemplate,type WorkflowEditorHandle} from '../WorkflowEditor';
 import {createEmptyGraph,graphSchema,type Graph} from '../../../packages/workflow/graph';
+import type {ExecutionAdapters} from '../../../packages/workflow/engine';
 const wait=(ms=65)=>new Promise(resolve=>setTimeout(resolve,ms));
 export function button(root:Element,name:string){const b=[...root.querySelectorAll<HTMLButtonElement>('button')].find(b=>b.getAttribute('aria-label')===name||b.textContent?.trim()===name);if(!b)throw new Error(`Missing button: ${name}`);return b;}
 function check(value:unknown,message:string):asserts value{if(!value)throw new Error(message);}
@@ -21,9 +23,9 @@ export function example(kind='branch'):Graph{
 const container=document.querySelector<HTMLElement>('#preview')!,root=createRoot(container),handle=createRef<WorkflowEditorHandle>();
 let graph:Graph=example(),changes=0;
 export function mount(kind='branch'){return mountGraph(example(kind));}
-export function mountGraph(initialGraph:Graph){
+export function mountGraph(initialGraph:Graph,executionAdapters?:ExecutionAdapters){
  changes=0;
- flushSync(()=>root.render(<WorkflowEditor key={`fixture:${++version}`} ref={handle} initialGraph={initialGraph} onChange={g=>{graph=g;changes++;}}/>));
+ flushSync(()=>root.render(<WorkflowEditor key={`fixture:${++version}`} ref={handle} initialGraph={initialGraph} {...(executionAdapters?{executionAdapters}:{})} onChange={g=>{graph=g;changes++;}}/>));
  return initialGraph;
 }
 let version=0;mount();
@@ -75,5 +77,121 @@ export async function registryPlacement(view:'canvas'|'stacked'='stacked'){
   return {view,position:getComputedStyle(panel).position,pageScrollDelta:delta,panelScrollTop:panel.scrollTop,contained:true,movesWithEditor:true,historyUnchanged:true};
  }finally{container.querySelector<HTMLDetailsElement>('.wf-manifest')!.open=false;container.style.marginTop=priorMargin;window.scrollTo(0,priorY);}
 }
-Object.assign(window,{stackedTests:{mount,mountGraph,button,wait,type,theme,topology,retainedSettings,execution,viewRetention,approval,entryFocus,registryPlacement,get graph(){return graph;},get changes(){return changes;},handle,container}});
+// Reachable, delayed local-run freshness witness; the adapter below has no transport.
+export async function pendingRunFreshness(mode:'rename'|'undo'|'view'='undo'){
+ const initialGraph=graphSchema.parse({...createEmptyGraph('DEVELOPMENT deferred result freshness'),nodes:[
+  {id:'start',type:'manual',label:'Manual trigger',config:{},position:{x:80,y:100}},
+  {id:'held',type:'http',label:'DEVELOPMENT owned promise',config:{url:'https://example.invalid/development-only',method:'GET',service:'generic',credentialRef:'DEVELOPMENT-ONLY'},position:{x:360,y:100}},
+  {id:'finish',type:'output',label:'Return DEVELOPMENT fixture',config:{},position:{x:640,y:100}}
+ ],edges:[{id:'first',source:'start',target:'held'},{id:'last',source:'held',target:'finish'}]});
+ let release!:()=>void,calls=0;
+ const held=new Promise<void>(resolve=>{release=resolve;});
+ mountGraph(initialGraph,{http:async()=>{calls++;await held;return {developmentOnly:true};}});await wait();
+ const applied=graph,before=JSON.stringify(graph),count=changes;
+ try{
+  const runButton=button(container,'Run locally');runButton.click();await wait();
+  check(calls===1&&runButton.disabled,'Actual local adapter did not remain pending');
+  if(mode==='view'){
+   button(container,'Stacked view').click();await wait();
+   button(container,'Zoom out').click();await wait();
+   check(JSON.stringify(graph)===before&&changes===count,'View-only change edited the graph');
+  }else{
+   type(container.querySelector<HTMLInputElement>('[aria-label="Workflow name"]')!,'Edited during DEVELOPMENT execution');await wait();
+   check(graph!==applied&&changes>count,'Rename did not reach the real editor store');
+   if(mode==='undo'){button(container,'Undo').click();await wait();check(graph===applied,'Undo did not restore the original graph object');}
+  }
+  release();
+  for(let i=0;i<20&&runButton.disabled;i++)await wait(25);
+  check(!runButton.disabled,'Owned local adapter did not settle');
+  const result=container.querySelector('.wf-run strong')?.textContent??null;
+  if(mode==='view')check(result==='COMPLETED','View-only changes discarded the matching pending local result');
+  else check(result===null,'An edited graph accepted a stale pending local result');
+  return {mode,adapterCalls:calls,originalGraphRestored:graph===applied,result,providerCalls:0,networkAdapter:false};
+ }finally{release();}
+}
+export async function localRunStatuses(){
+ const observations=[];
+ for(const view of ['canvas','stacked'] as const){
+  mount('join');await wait();if(view==='stacked'){button(container,'Stacked view').click();await wait();}
+  const before=JSON.stringify(graph),count=changes;
+  check(!container.querySelector('[data-local-run-status]'),'Unexecuted nodes acquired a result badge');
+  for(const approved of [true,false]){
+   type(container.querySelector<HTMLTextAreaElement>('[aria-label="Local input JSON"]')!,JSON.stringify({approved}));await wait();
+   button(container,'Run locally').click();await wait();
+   check(container.querySelector('.wf-run strong')?.textContent==='COMPLETED','Actual branch run did not complete');
+   const expected:Record<string,string>={node0:'completed',node1:'completed',node2:approved?'completed':'skipped',node3:approved?'skipped':'completed',finish:'completed'};
+   const cards=[...container.querySelectorAll<HTMLElement>('.wf-node')],statuses:Record<string,string>={};
+   check(cards.length===graph.nodes.length,'Card inventory differs from actual graph');
+   graph.nodes.forEach((node,index)=>{
+    const card=cards[index]!,badge=card.querySelector<HTMLElement>('[data-local-run-status]'),head=card.querySelector('.wf-node-head')!;
+    check(badge&&badge.dataset.localRunStatus===expected[node.id],`Missing truthful ${expected[node.id]} badge for ${node.id}`);
+    check(badge.id&&head.getAttribute('aria-describedby')?.split(/\s+/).includes(badge.id),'Header does not expose its local-result description');
+    check(/local result/i.test(badge.title)&&!badge.querySelector('button,a,input,[tabindex]')&&!badge.hasAttribute('tabindex')&&!badge.hasAttribute('aria-live'),'Badge is not a bounded noninteractive local-result description');
+    check([...container.querySelectorAll('.wf-run li')].some(entry=>entry.textContent===`${node.id} · ${expected[node.id]}`),'Badge disagrees with actual local trace');
+    statuses[node.id]=badge.dataset.localRunStatus!;
+   });
+   const branch=cards[1]!.querySelector<HTMLElement>('[data-local-run-status]')!;
+   check(/branch/i.test(branch.title)&&branch.title.includes(String(approved)),'Observed branch description did not match actual runner metadata');
+   check(JSON.stringify(graph)===before&&changes===count&&button(container,'Undo').disabled,'Badges edited the graph or history');
+   observations.push({view,approved,statuses});
+  }
+ }
+ return {actualRuns:observations,providerCalls:0,graphAndHistoryUnchanged:true};
+}
+function statusSummary(){
+ const cards=[...container.querySelectorAll('.wf-node')];
+ return Object.fromEntries(graph.nodes.map((node,index)=>[node.id,cards[index]?.querySelector<HTMLElement>('[data-local-run-status]')?.dataset.localRunStatus??null]));
+}
+export async function localRunStatusGates(){
+ const observations=[];
+ for(const view of ['canvas','stacked'] as const){
+  mount('approval');await wait();if(view==='stacked'){button(container,'Stacked view').click();await wait();}
+  const gate=graph.nodes.find(node=>node.type==='approval')!,start=graph.nodes.find(node=>node.type==='manual')!,end=graph.nodes.find(node=>node.type==='output')!;
+  button(container,'Run locally').click();await wait();let statuses=statusSummary();
+  check(container.querySelector('.wf-run strong')?.textContent==='BLOCKED'&&statuses[start.id]==='completed'&&statuses[gate.id]==='blocked'&&statuses[end.id]==='not-reached','Unconfigured approval badges misrepresent actual gate/downstream execution');
+  observations.push({view,phase:'unconfigured-approval',statuses});
+  button(container,`${view==='stacked'?'Select':'Select and drag'} ${gate.label}`).click();await wait();
+  type(container.querySelector<HTMLInputElement>('[aria-label="Reviewer"]')!,'DEVELOPMENT review queue (not authenticated)');await wait();button(container,'Apply settings').click();await wait();
+  check(!container.querySelector('[data-local-run-status]'),'Applied reviewer settings retained a previous result');
+  button(container,'Run locally').click();await wait();statuses=statusSummary();
+  check(container.querySelector('.wf-run strong')?.textContent==='PAUSED'&&statuses[start.id]==='completed'&&statuses[gate.id]==='paused'&&statuses[end.id]==='not-reached','Paused gate leaked its overall state to unexecuted downstream nodes');
+  check(![...container.querySelectorAll('button')].some(b=>/^(approve|resume)$/i.test(b.textContent??'')),'Badge introduced human approval authority');
+  observations.push({view,phase:'configured-approval',statuses});
+  const disconnected=example('join');disconnected.nodes.push({id:'isolated',type:'set',label:'Unconnected DEVELOPMENT block',config:{fields:{}},position:{x:80,y:700}});
+  mountGraph(disconnected);await wait();if(view==='stacked'){button(container,'Stacked view').click();await wait();}
+  check(!container.querySelector('[data-local-run-status]'),'Document replacement retained old badges');
+  button(container,'Run locally').click();await wait();statuses=statusSummary();
+  check(container.querySelector('.wf-run strong')?.textContent==='BLOCKED'&&!container.querySelector('.wf-run li')&&Object.values(statuses).every(status=>status==='not-reached'),'Trace-less admission refusal invented per-node Blocked records');
+  observations.push({view,phase:'trace-less-admission',statuses});
+ }
+ return {actualRuns:observations,providerCalls:0,approvalAuthority:false};
+}
+export async function localRunStatusRetention(){
+ mount('join');await wait();button(container,'Select and drag Prepare accepted request').click();await wait();
+ const parameter=container.querySelector<HTMLInputElement>('[aria-label="Field 1 value"]')!;
+ type(parameter,JSON.stringify('DEVELOPMENT unapplied parameter'));button(container,'Inputs').click();await wait();button(container,'Add mapping').click();await wait();
+ const mapping=container.querySelector<HTMLInputElement>('[aria-label="Mapping 1 target"]')!;type(mapping,'draftPayload');await wait();
+ const before=JSON.stringify(graph),count=changes,cards=[...container.querySelectorAll('.wf-node')];
+ type(container.querySelector<HTMLTextAreaElement>('[aria-label="Local input JSON"]')!,JSON.stringify({approved:true}));await wait();button(container,'Run locally').click();await wait();
+ check(container.querySelectorAll('[data-local-run-status]').length===graph.nodes.length,'Actual run did not produce per-card status');
+ check(JSON.parse(container.querySelector('.wf-run pre')!.textContent!).route==='accepted','Run silently applied pending parameter or mapping drafts');
+ button(container,'Stacked view').click();await wait();const display=container.querySelector<HTMLSelectElement>('[aria-label="Block display"]')!;display.value='compact';display.dispatchEvent(new Event('change',{bubbles:true}));await wait();
+ button(container,'Zoom out').click();await wait();button(container,'Fit stacked workflow width').click();await wait();
+ button(container,'Select Prepare other request').click();await wait();button(container,'Select Prepare accepted request').click();await wait();
+ button(container,'Open block settings').click();await wait();check(container.querySelector<HTMLDialogElement>('dialog[open]')?.open,'Retained settings did not open in native modal');
+ check(parameter.isConnected&&parameter.value===JSON.stringify('DEVELOPMENT unapplied parameter')&&mapping.isConnected&&mapping.value==='draftPayload','Badge/view/modal updates remounted or erased a genuine unapplied draft');
+ button(container,'Close block settings').click();await wait();button(container,'Canvas view').click();await wait();
+ check(cards.every((card,index)=>card===container.querySelectorAll('.wf-node')[index]),'Badges or view changes remounted shared node cards');
+ check(JSON.stringify(graph)===before&&changes===count&&button(container,'Undo').disabled,'Result/presentation operations changed the applied graph or history');
+ check(container.querySelectorAll('[data-local-run-status]').length===graph.nodes.length,'Result was lost across presentation-only updates');
+ type(container.querySelector<HTMLTextAreaElement>('[aria-label="Local input JSON"]')!,JSON.stringify({approved:false}));await wait();
+ check(container.querySelectorAll('[data-local-run-status]').length===graph.nodes.length,'Changing an unexecuted seed erased last-local-result history');
+ button(container,'Parameters').click();await wait();button(container,'Apply settings').click();await wait();
+ check(JSON.stringify(graph)!==before&&!container.querySelector('[data-local-run-status]'),'Applied parameter edit failed to invalidate displayed results');
+ check(graph.nodes.find(node=>node.id==='node2')!.inputMappings===undefined&&mapping.isConnected&&mapping.value==='draftPayload','Applying Parameters silently applied or erased the independent Inputs draft');
+ button(container,'Undo').click();await wait();check(JSON.stringify(graph)===before&&!container.querySelector('[data-local-run-status]'),'Undo revived a completed result from an older editor snapshot');
+ button(container,'Redo').click();await wait();check(!container.querySelector('[data-local-run-status]')&&mapping.isConnected&&mapping.value==='draftPayload','Redo revived a result or erased independent pending Inputs');
+ return {pendingParametersRetained:true,pendingInputsRetained:true,noImplicitApply:true,cardIdentityRetained:true,presentationHistoryUnchanged:true,parameterApplySeparate:true,undoRedoCannotReviveResult:true,providerCalls:0};
+}
+Object.assign(window,{stackedTests:{mount,mountGraph,button,wait,type,theme,topology,retainedSettings,execution,viewRetention,approval,entryFocus,registryPlacement,pendingRunFreshness,localRunStatuses,localRunStatusGates,localRunStatusRetention,get graph(){return graph;},get changes(){return changes;},handle,container}});
 setTimeout(()=>button(container,'Stacked view').click(),0);
