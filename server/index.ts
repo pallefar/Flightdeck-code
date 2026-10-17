@@ -38,8 +38,19 @@
  */
 import { createHash, timingSafeEqual } from "node:crypto";
 import { pathToFileURL } from "node:url";
+import { join, resolve } from "node:path";
+import { ResourceStore, ResourceError } from "../packages/resources/store";
+import { jsonValue } from "../packages/workflow/graph";
+import { ResourceRegistry, type CredentialResolver } from "../packages/resources/registry";
+import { loadResourceConfig } from "./resource-config";
+import { registerProductionAssets } from "./production-assets";
+import { RequestAdmission, admissionRefused, admittedModel, type RequestAdmissionOptions } from "./request-admission";
+import { registerReadinessRoute } from "./readiness";
+import { createRequestAuthoring, NATIVE_REQUEST_POLICY } from './authoring-run';
+import { createAnthropicSessionSetup, type AnthropicSessionSetupOptions } from "./anthropic-session-setup";
+import { registerWorkflowResourceRoutes, type WorkflowResourceDependencies } from "./workflow-resources";
 
-import Fastify from "fastify";
+import Fastify, { type RouteShorthandOptions } from "fastify";
 import { z } from "zod";
 
 import {
@@ -53,10 +64,17 @@ import {
 } from "../packages/approvals/src/index";
 import { isNamedHuman } from "../packages/guardrails/src/approval-pure";
 import { buildSubAppFromPrompt } from "../packages/pipeline/src/build-subapp";
-import { AnthropicProvider } from "../packages/providers/src/anthropic";
-import { anthropicConfigFromEnv } from "../packages/providers/src/config";
-import { DEFAULT_MODEL } from "../packages/providers/src/models";
-import { plannerLlm } from "../packages/providers/src/planner-bridge";
+import { proposeStudioBlock } from "../packages/pipeline/src/propose-block";
+import { createStudioFromPrompt, type StudioSkillSourceState } from "../packages/pipeline/src/create-studio";
+import { projectSkillsSchema, type ProjectSkillSource } from "../packages/spec/src/studio-create";
+import { loadProjectSkillsFile } from "./project-skill-source";
+import { registerWorkflowWorkspaceRoutes } from "./workflow-workspace";
+import { registerSubappWorkspaceRoutes } from './subapp-workspace';
+import { createFileSubappWorkspaceStore, type SubappWorkspaceStore } from './subapp-workspace-store';
+import type { WorkflowApprovalDependencies } from "./workflow-approval";
+import { createFileWorkflowWorkspaceStore, type WorkflowWorkspaceStore } from "./workflow-workspace-store";
+import { createModelConnections, MODEL_CONNECTION_IDS, type ModelConnectionRegistry } from "./model-connections";
+
 
 /** SHA-256 over UTF-8 — the Node half, so `node:crypto` is allowed here.
  * Injected rather than imported by the packages, which is what lets them
@@ -112,6 +130,7 @@ export function presentsOperatorToken(header: string | undefined, token: string)
 
 const buildBody = z
   .object({
+    connectionId: z.enum(MODEL_CONNECTION_IDS).optional(),
     prompt: z.string().min(1).max(8_000),
     answers: z.record(z.string().max(2_000)).optional(),
     registrySource: z.string().max(200_000).optional(),
@@ -147,17 +166,53 @@ const buildBody = z
   })
   .strict();
 
+const createBody = buildBody.extend({
+  /** Explicit private native tool-loop opt-in; omission preserves the JSON planner. */
+  authoringEngine: z.literal('native-v1').optional(),
+  answers: z.record(z.string().max(120), z.string().max(2_000)).refine(a => Object.keys(a).length <= 20).optional(),
+  projectSkills: projectSkillsSchema.optional(),
+  reviewedSkillHash: z.string().regex(/^[a-f0-9]{64}$/).optional(),
+}).strict();
+
 export interface ServerOptions {
+  /** Trusted private opt-in. Does not select a provider, send data, execute or deploy. */
+  readonly nativeAuthoringEnabled?: boolean;
+  /** Trusted process-local zero-queue concurrency/deadline limits; never browser input. */
+  readonly requestAdmission?: RequestAdmissionOptions;
+  /** Opt-in trusted read-only Vite build directory, snapshotted at startup. */
+  readonly productionAssetRoot?: string;
+  /** Opt-in same-origin document mic policy only. Browser consent is still required;
+   * no audio transport, voice commands, model selection or execution authority. */
+  readonly productionVoiceInput?: boolean;
   readonly operator: OperatorIdentity;
+  /** Server-owned registry. Selection/configuration never comes from browser overrides. */
+  readonly modelConnections?: ModelConnectionRegistry;
+  /** Private, explicitly enabled server-memory setup; never browser input. */
+  readonly anthropicSessionSetup?: Omit<AnthropicSessionSetupOptions, "baseRegistry" | "authenticate">;
   /** Injected so the tests drive the whole route without a key or a socket. */
   readonly llm?: Parameters<typeof buildSubAppFromPrompt>[1]["llm"];
+  /** Required with llm: trusted destination/model/policy revision, explicit even in fixture tests. */
+  readonly llmBindingId?: string;
   /** Where grants live. Defaults to the file named by `STUDIO_GRANTS_FILE`. */
   readonly store?: GrantStore;
   /** Who the subject ids resolve to. Defaults to the operator, alone. */
   readonly directory?: IdentityDirectory;
+  /** Server-owned project binding; browser-supplied skills are reference context only. */
+  readonly projectSkillSource?: ProjectSkillSource;
+  /** Private local authoring store; not a host project-authorization claim. */
+  readonly workflowWorkspaceStore?: WorkflowWorkspaceStore;
+  /** Private local source drafts only; never a generated-file application or host grant. */
+  readonly subappWorkspaceStore?: SubappWorkspaceStore;
+  /** Opt-in trusted independent reviewer authentication/policy and private checkpoint journal. */
+  readonly workflowApprovals?: WorkflowApprovalDependencies;
+  /** Trusted startup-only dependencies. Default authoring is local single-operator partitioning,
+   * NOT host project authorization. Execution is closed without an explicit project policy. */
+  readonly workflowResources?: Partial<Pick<WorkflowResourceDependencies, "store" | "registry" | "authorize">> & { readonly credentialResolver?: CredentialResolver };
 }
 
 export function createServer(options: ServerOptions): ReturnType<typeof Fastify> {
+  const nativeAuthoringEnabled = options.nativeAuthoringEnabled ?? process.env['STUDIO_NATIVE_AUTHORING'] === '1';
+  const admission = new RequestAdmission(options.requestAdmission);
   const app = Fastify({
     // ⚠ NO REQUEST LOGGING. The body is a prompt, and a prompt is the one
     // thing in this system most likely to contain a person's name — that is
@@ -165,18 +220,45 @@ export function createServer(options: ServerOptions): ReturnType<typeof Fastify>
     // access log would write it to disk before any of that ran.
     logger: false,
     bodyLimit: 1_000_000,
+    requestTimeout: 30000,
   });
 
-  const llm =
-    options.llm ??
-    // ⚠ NOT `gatedPlannerLlm`. That wrapper pseudonymises and gates
-    // `request.user` — the prompt the PLANNER assembles, scaffolding and all
-    // — which assesses as tier 4 and sends nothing; the measured symptom was
-    // a guardrail refusal reported as `invalid_draft`. `buildSubAppFromPrompt`
-    // gates the INPUT boundary instead, before the planner builds anything,
-    // and its own tests assert the model is never called on a refusal. So the
-    // raw bridge is correct here, and double-gating would break the path.
-    plannerLlm(new AnthropicProvider(anthropicConfigFromEnv().config));
+  app.addHook("preClose", async () => { admission.stop(); sessionSetup.close(); await admission.close(); });
+  app.addHook("onClose", async () => { await admission.close(); });
+  registerReadinessRoute(app, admission);
+
+  // Construct once at startup; descriptor access and resolution remain auth-first.
+  if (options.llm && options.modelConnections) throw new Error("Choose a registry or a trusted LLM injection, not both");
+  if (options.llm && (!options.llmBindingId?.trim() || options.llmBindingId.length > 500 || /[\r\n]/.test(options.llmBindingId))) throw new Error("Trusted LLM injection requires a model binding");
+  const baseRegistry = options.modelConnections ?? createModelConnections(options.llm ? { env: {} } : {});
+  const sessionSetup = createAnthropicSessionSetup({
+    ...options.anthropicSessionSetup,
+    enabled: options.anthropicSessionSetup?.enabled ?? process.env["STUDIO_ANTHROPIC_SESSION_SETUP"] === "1",
+    baseRegistry,
+    authenticate: header => presentsOperatorToken(header, options.operator.token),
+  });
+  sessionSetup.register(app);
+  // Retain the facade itself: spreading it would freeze live descriptors.
+  const modelConnections = sessionSetup.registry;
+  app.get("/api/studio/model-connections", async (request, reply) => {
+    if (!presentsOperatorToken(request.headers.authorization, options.operator.token)) return reply.code(401).send({ error: "operator token required" });
+    return reply.send({ connections: modelConnections.descriptors, selectedId: modelConnections.selectedId ?? null });
+  });
+
+  // Call only after authentication and strict body parsing. The resolved
+  // client and exact destination binding stay local to this one request.
+  function selectModel(connectionId: string | undefined) {
+    if (options.llm && connectionId === undefined) return { llm: options.llm, modelBindingId: digest(JSON.stringify(["studio-trusted-injection-v1", options.llmBindingId])) };
+    const id = connectionId ?? modelConnections.selectedId;
+    if (id === undefined) return { status: "model-connection-unselected" as const, error: "select a model connection" };
+    try {
+      const resolved = modelConnections.resolve(id);
+      if (!resolved.bindingId || !resolved.descriptor.model || resolved.descriptor.id !== id || resolved.descriptor.status !== "configured") throw new Error();
+      return { llm: resolved.llm, connection: resolved, modelBindingId: digest(JSON.stringify(["studio-resolved-model-v1", resolved.descriptor.id, resolved.descriptor.model, resolved.bindingId])) };
+    } catch {
+      return { status: "model-connection-unavailable" as const, error: "selected model connection unavailable" };
+    }
+  }
 
   // ⭐ ONE OPERATOR, AND THE DIRECTORY SAYS SO.
   //
@@ -192,22 +274,25 @@ export function createServer(options: ServerOptions): ReturnType<typeof Fastify>
     ]);
   const store = options.store ?? createFileGrantStore(process.env["STUDIO_GRANTS_FILE"] ?? ".studio/grants.json");
 
-  app.get("/api/studio/health", async () => ({
-    ok: true,
-    // ⚠ THE EFFECTIVE MODEL, not the override.
-    //
-    // This read `anthropicConfigFromEnv().config.model`, which is populated
-    // only when FLIGHTDECK_MODEL is in the environment — so a perfectly
-    // healthy default install answered `"model": null` while the provider
-    // would in fact use DEFAULT_MODEL. A health endpoint that says "none"
-    // about the thing it is going to use is worse than one that says
-    // nothing. Found by booting the server and reading its own answer.
-    model: anthropicConfigFromEnv().config.model ?? DEFAULT_MODEL,
-    // Whether a key EXISTS, never anything about it.
-    modelKeyConfigured: (process.env["ANTHROPIC_API_KEY"] ?? "").length > 0,
-  }));
+  app.get("/api/studio/health", async request => {
+    // Public liveness reads no model configuration. Authenticated details
+    // describe configuration only; they never probe or claim live service.
+    if (!presentsOperatorToken(request.headers.authorization, options.operator.token)) return { ok: true };
+    const selectedId = modelConnections.selectedId ?? null;
+    const descriptor = selectedId === null ? undefined : modelConnections.descriptors.find(connection => connection.id === selectedId);
+    return { ok: true, selectedId, model: descriptor?.model ?? null, modelStatus: descriptor?.status ?? "unselected", verification: "not-probed" };
+  });
 
-  app.post("/api/studio/build", async (request, reply) => {
+  const modelIntake: RouteShorthandOptions = {
+    onRequest: async (request, reply) => {
+      if (!presentsOperatorToken(request.headers.authorization, options.operator.token)) return reply.code(401).send({ error: "operator token required" });
+    },
+  };
+  app.get('/api/studio/authoring', modelIntake, async (_request, reply) => {
+    reply.header('Cache-Control', 'no-store');
+    return { ...NATIVE_REQUEST_POLICY, enabled: nativeAuthoringEnabled, connectionIds: ['anthropic'] };
+  });
+  app.post("/api/studio/build", modelIntake, async (request, reply) => {
     if (!presentsOperatorToken(request.headers.authorization, options.operator.token)) {
       // Fail closed. Not a downgrade to third-party: an unauthenticated
       // request that still ran would spend the operator's model budget.
@@ -219,6 +304,11 @@ export function createServer(options: ServerOptions): ReturnType<typeof Fastify>
       // and the offending value here is a prompt.
       return reply.code(400).send({ error: "malformed request", at: parsed.error.issues.map((i) => i.path.join(".")) });
     }
+    const release = admission.acquire(options.operator.actor, parsed.data.projectId, request);
+    if (!release) return admissionRefused(reply);
+    try {
+    const model = selectModel(parsed.data.connectionId);
+    if ("status" in model) return reply.code(409).send(model);
 
     // ⭐ THE GRANT, AT INTAKE — BEFORE A MODEL CALL IS SPENT ON THE DATA.
     //
@@ -273,7 +363,7 @@ export function createServer(options: ServerOptions): ReturnType<typeof Fastify>
         ...(parsed.data.registrySource === undefined ? {} : { registrySource: parsed.data.registrySource }),
       },
       {
-        llm,
+        llm: admittedModel(model.llm, release),
         ctx: { actor: options.operator.actor },
         digest,
         // ⭐ FROM CONFIG, NEVER FROM THE BODY. See this file's header: these
@@ -283,8 +373,140 @@ export function createServer(options: ServerOptions): ReturnType<typeof Fastify>
       },
     );
     return reply.send(outcome);
+    } finally { void release.release(); }
   });
 
+  app.get<{ Params: { projectId: string } }>("/api/studio/projects/:projectId/skills", async (request, reply) => {
+    if (!presentsOperatorToken(request.headers.authorization, options.operator.token)) return reply.code(401).send({ error: "operator token required" });
+    const projectId = request.params.projectId;
+    if (!buildBody.shape.projectId.unwrap().safeParse(projectId).success) return reply.code(400).send({ error: "malformed project identity", at: ["projectId"] });
+    try {
+      const source = options.projectSkillSource ?? loadProjectSkillsFile(process.env["STUDIO_PROJECT_SKILLS_FILE"]);
+      const skills = projectSkillsSchema.parse(await source(projectId));
+      return reply.send({ projectId, skillSourceState: skills.length > 0 ? "loaded" : "empty", skillSources: skills.map(s => ({ id: s.id, version: s.version, contentHash: digest(s.content) })) });
+    } catch {
+      return reply.send({ projectId, skillSourceState: "unavailable", skillSources: [], issues: ["project skill source unavailable"] });
+    }
+  });
+
+  app.post("/api/studio/create", modelIntake, async (request, reply) => {
+    if (!presentsOperatorToken(request.headers.authorization, options.operator.token)) return reply.code(401).send({ error: "operator token required" });
+    const parsed = createBody.safeParse(request.body);
+    if (!parsed.success) return reply.code(400).send({ error: "malformed request", at: ["request"] });
+    if (parsed.data.authoringEngine && !nativeAuthoringEnabled) return reply.code(409).send({ status: 'native-authoring-unavailable', error: 'Native authoring is not enabled for this connection. No fallback is attempted.' });
+    const release = admission.acquire(options.operator.actor, parsed.data.projectId, request);
+    if (!release) return admissionRefused(reply);
+    try {
+    const model = selectModel(parsed.data.connectionId);
+    if ("status" in model) return reply.code(409).send(model);
+    if (parsed.data.datasource && !parsed.data.projectId) return reply.code(400).send({ error: "a datasource needs a projectId", at: ["projectId"] });
+    if (parsed.data.authoringEngine && (!model.connection || model.connection.nativeAuthoring?.kind !== 'anthropic-messages-v1')) return reply.code(409).send({ status: 'native-authoring-unavailable', error: 'Native authoring is not enabled for this connection. No fallback is attempted.' });
+    let skillSourceState: StudioSkillSourceState = "not-loaded";
+    try {
+      const source = options.projectSkillSource ?? loadProjectSkillsFile(process.env["STUDIO_PROJECT_SKILLS_FILE"]);
+      const lazySource: ProjectSkillSource = async projectId => {
+        try {
+          const skills = projectSkillsSchema.parse(await source(projectId));
+          skillSourceState = skills.length > 0 ? "loaded" : "empty";
+          return skills;
+        } catch {
+          skillSourceState = "unavailable";
+          throw new Error("project skill source unavailable");
+        }
+      };
+      const checkGrant = async (skills?: Awaited<ReturnType<ProjectSkillSource>>) => {
+        if (!parsed.data.datasource || !parsed.data.projectId) return undefined;
+        const toolId = parsed.data.toolId ?? "studio-create";
+        const relevantInput = { ...parsed.data, toolId, ...(skills === undefined ? {} : { serverProjectSkills: skills }) };
+        return effectiveGrant({ store, directory, toolId, toolContent: relevantInput, projectId: parsed.data.projectId, datasource: parsed.data.datasource, payload: JSON.stringify(relevantInput), requestedBy: { kind: "human", id: options.operator.actor, displayName: options.operator.actor } });
+      };
+      // First grant covers ALL caller input before classification. A second,
+      // workflow-only decision binds the actual server-loaded skill content.
+      const intakeGrant = await checkGrant();
+      if (intakeGrant && !intakeGrant.allowed) return reply.send({ status: "grant-refused", decision: intakeGrant, skillSourceState });
+      const body = parsed.data;
+      let authorizedSkills: Awaited<ReturnType<ProjectSkillSource>> | undefined;
+      const authorizeWorkflowContext = async (skills: Awaited<ReturnType<ProjectSkillSource>>) => {
+        const decision = await checkGrant(skills);
+        if (!decision || decision.allowed) authorizedSkills = skills;
+        return decision;
+      };
+      const authoring = body.authoringEngine && model.connection ? createRequestAuthoring({
+        connection: model.connection, permit: release, actor: options.operator.actor, projectId: body.projectId,
+        reauthorize: async () => { const decision = await checkGrant(authorizedSkills); return !decision || decision.allowed; },
+      }) : undefined;
+      const outcome = await createStudioFromPrompt({
+        prompt: body.prompt,
+        ...(body.answers === undefined ? {} : { answers: body.answers }),
+        ...(body.projectId === undefined ? {} : { projectId: body.projectId }),
+        ...(body.toolId === undefined ? {} : { toolId: body.toolId }),
+        ...(body.registrySource === undefined ? {} : { registrySource: body.registrySource }),
+        ...(body.projectSkills === undefined ? {} : { projectSkills: body.projectSkills }),
+        ...(body.reviewedSkillHash === undefined ? {} : { reviewedSkillHash: body.reviewedSkillHash }),
+        ...(body.datasource === undefined ? {} : { datasource: { kind: body.datasource.kind, id: body.datasource.id, ...(body.datasource.scope === undefined ? {} : { scope: body.datasource.scope }) } }),
+      }, { llm: authoring?.llm ?? admittedModel(model.llm, release), modelBindingId: model.modelBindingId,
+        ...(authoring ? { nativeAuthoring: authoring.nativeAuthoring } : {}),
+        ctx: { actor: options.operator.actor }, digest, authorship: "first-party-operator", projectSkills: [], projectSkillSource: lazySource, authorizeWorkflowContext, graphDrafts: true });
+      return reply.send({ ...outcome, skillSourceState });
+    } catch {
+      // No provider, loader, filesystem path or grant-store error is exposed.
+      return reply.send({ status: "invalid_determination", issues: ["studio context unavailable"], skillSourceState: "unavailable" });
+    }
+    } finally { void release.release(); }
+  });
+
+  app.post("/api/studio/blocks/propose", modelIntake, async (request, reply) => {
+    if (!presentsOperatorToken(request.headers.authorization, options.operator.token)) return reply.code(401).send({ error: "operator token required" });
+    const parsed = z.object({ prompt: z.string().trim().min(1).max(2000), connectionId: z.enum(MODEL_CONNECTION_IDS).optional() }).strict().safeParse(request.body);
+    if (!parsed.success) return reply.code(400).send({ error: "malformed block request" });
+    const release = admission.acquire(options.operator.actor, undefined, request);
+    if (!release) return admissionRefused(reply);
+    try {
+    const model = selectModel(parsed.data.connectionId);
+    if ("status" in model) return reply.code(409).send(model);
+    return reply.send(await proposeStudioBlock(parsed.data.prompt, { llm: admittedModel(model.llm, release), ctx: { actor: options.operator.actor }, digest, authorship: "first-party-operator" }));
+    } finally { void release.release(); }
+  });
+
+  const resourceConfig = options.workflowResources?.registry || options.workflowResources?.authorize ? undefined : loadResourceConfig(process.env["STUDIO_RESOURCE_CONFIG_FILE"], options.workflowResources?.credentialResolver);
+  const resourceStore = options.workflowResources?.store ?? new ResourceStore(process.env["STUDIO_RESOURCE_DIR"] ?? join(process.env["STUDIO_STATE_DIR"] ?? ".studio", "resources"));
+  const resourceRegistry = options.workflowResources?.registry ?? resourceConfig?.registry ?? new ResourceRegistry([], {});
+  const authorizeResource: WorkflowResourceDependencies["authorize"] = options.workflowResources?.authorize ?? resourceConfig?.authorize ?? (async (actor, _projectId, action) => actor === options.operator.actor && action !== "execute");
+  registerWorkflowResourceRoutes(app, {
+    admission,
+    store: resourceStore,
+    registry: resourceRegistry,
+    authenticate: async header => presentsOperatorToken(header, options.operator.token) ? { actor: options.operator.actor } : null,
+    authorize: authorizeResource,
+  });
+
+  registerSubappWorkspaceRoutes(app, {
+    actor: options.operator.actor,
+    authenticate: header => presentsOperatorToken(header, options.operator.token),
+    store: options.subappWorkspaceStore ?? createFileSubappWorkspaceStore(resolve(process.env['STUDIO_SUBAPP_WORKSPACE_FILE'] ?? join(process.env['STUDIO_STATE_DIR'] ?? '.studio', 'subapp-workspace.json'))),
+  });
+
+  registerWorkflowWorkspaceRoutes(app, {
+    admission,
+    ...(options.workflowApprovals ? { approvals: options.workflowApprovals } : {}),
+    actor: options.operator.actor,
+    adaptersFor: ({ actor, projectId }) => ({ resource: async request => {
+      if (!await authorizeResource(actor, projectId, "execute")) throw new ResourceError(403);
+      const record = await resourceStore.get(projectId, request.resourceId);
+      if (record.revision !== request.revision || record.state !== "active") throw new ResourceError(409);
+      // The run context, not graph/browser fields, owns actor/project. Recheck at effect time.
+      if (!await authorizeResource(actor, projectId, "execute")) throw new ResourceError(403);
+      const current = await resourceStore.get(projectId, request.resourceId);
+      if (current.revision !== request.revision || current.state !== "active") throw new ResourceError(409);
+      const result = await resourceRegistry.execute(current, request.functionId, request.parameters, actor, request.signal);
+      return jsonValue.parse(result.output);
+    } }),
+    authenticate: header => presentsOperatorToken(header, options.operator.token),
+    store: options.workflowWorkspaceStore ?? createFileWorkflowWorkspaceStore(process.env["STUDIO_WORKSPACE_FILE"] ?? ".studio/workflow-workspace.json"),
+  });
+
+  const productionAssetRoot = options.productionAssetRoot ?? process.env["STUDIO_FRONTEND_ASSET_ROOT"];
+  if (productionAssetRoot !== undefined) registerProductionAssets(app, productionAssetRoot, options.productionVoiceInput ?? process.env["STUDIO_VOICE_INPUT"] === "1");
   return app;
 }
 

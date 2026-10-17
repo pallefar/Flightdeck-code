@@ -1,0 +1,20 @@
+# Allowlist: never send local keys, .env, .studio, git or node_modules.
+**
+!package.json
+!package-lock.json
+!tsconfig.json
+!server/
+!server/**
+!packages/
+!packages/**
+!deploy/
+!deploy/studio-docker/
+!deploy/studio-docker/**
+**/node_modules
+**/.env*
+**/*.pem
+**/*.key
+**/.studio
+**/.git
+**/credentials*
+**/secrets.json

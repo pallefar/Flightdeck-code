@@ -1,0 +1,37 @@
+name: flightdeck-studio-companion
+services:
+  studio-backend:
+    image: flightdeck-studio-backend:local
+    build:
+      context: .
+      dockerfile: deploy/studio-docker/Dockerfile
+    user: "1000:1000"
+    init: true
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    pids_limit: 128
+    mem_limit: 768m
+    restart: unless-stopped
+    environment:
+      STUDIO_OPERATOR: ${STUDIO_OPERATOR:-Karsten Haldan}
+      STUDIO_HOST: 0.0.0.0
+      PORT: "8787"
+      STUDIO_STATE_DIR: /state
+      STUDIO_GRANTS_FILE: /state/grants.json
+      STUDIO_WORKSPACE_FILE: /state/workflow-workspace.json
+      STUDIO_MODEL_CONNECTION: ${STUDIO_MODEL_CONNECTION:-anthropic}
+    ports:
+      - "127.0.0.1:8787:8787"
+    volumes:
+      - studio-private:/state
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=64m,mode=1777
+    healthcheck:
+      test: [CMD, node, -e, "fetch('http://127.0.0.1:8787/api/studio/health').then(async r=>{const j=await r.json();if(!r.ok||j.ok!==true||Object.keys(j).length!==1)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 3s
+      retries: 6
+      start_period: 10s
+volumes:
+  studio-private:

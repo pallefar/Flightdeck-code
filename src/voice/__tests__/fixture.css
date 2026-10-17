@@ -1,0 +1,18 @@
+#fixture { --bg: #f3f6f7; --surface: #fff; --surface2: #f8fafb; --ink: #253d4b; --muted: #586e7c; --line: #d5dfe5; --te: #e98300; font: 14px/1.5 Arial, Helvetica, sans-serif; color: var(--ink); min-height: calc(100dvh - 16px); background: var(--bg); }
+#fixture * { box-sizing: border-box; }
+#fixture .fixture-shell { max-width: 1200px; margin: auto; padding: 18px 24px; }
+#fixture header { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 8px; border-bottom: 1px solid var(--line); padding: 12px 0 16px; }
+#fixture header strong { font-size: 12px; letter-spacing: 1.5px; }
+#fixture header span { font-size: 11px; color: var(--muted); }
+#fixture .fixture-layout { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 40px; padding: 30px 0; align-items: start; }
+#fixture .fixture-composer { min-width: 0; }
+#fixture h2 { margin: 0 0 8px; font-size: 23px; letter-spacing: -.4px; }
+#fixture p { color: var(--muted); }
+#fixture textarea { width: 100%; min-height: 115px; resize: vertical; font: inherit; padding: 12px; color: var(--ink); background: var(--surface); border: 1px solid var(--line); border-radius: 6px; margin-bottom: 8px; }
+#fixture .fixture-standby { text-align: center; padding-top: 14px; }
+#fixture .fixture-standby h2 { font-size: 18px; margin: 12px 0 6px; }
+#fixture output { display: block; font-size: 11px; color: var(--muted); overflow-wrap: anywhere; }
+#fixture nav { display: flex; flex-wrap: wrap; gap: 6px; padding: 10px 0; border-top: 1px solid var(--line); }
+#fixture nav button { font: 11px/1.3 Arial, Helvetica, sans-serif; min-height: 44px; border: 1px solid var(--line); color: var(--ink); background: var(--surface); border-radius: 4px; padding: 6px 10px; cursor: pointer; }
+#fixture button:focus-visible, #fixture textarea:focus-visible { outline: 2px solid var(--te); outline-offset: 3px; }
+@media (max-width: 750px) { #fixture .fixture-shell { padding: 12px; } #fixture .fixture-layout { grid-template-columns: minmax(0, 1fr); gap: 16px; padding: 20px 0; } #fixture .fixture-standby { display: none; } #fixture h2 { font-size: 20px; } }

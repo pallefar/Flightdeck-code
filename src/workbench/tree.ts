@@ -29,7 +29,7 @@
  * Pure and DOM-free — `tree.test.ts` runs it in node. */
 import type { GeneratedFile, GeneratedFileKind } from "./types";
 
-export type Tier = "server" | "web" | "tests" | "host-edit" | "other";
+export type Tier = "server" | "web" | "tests" | "host-edit" | "standalone" | "other";
 
 export interface TierInfo {
   readonly id: Tier;
@@ -72,14 +72,16 @@ export const TIERS: Readonly<Record<Tier, TierInfo>> = {
     blurb: "NOT a new file — a change to a file the host already owns.",
     flat: true,
   },
-  other: { id: "other", label: "Other", blurb: "Outside the three known tiers.", flat: false },
+  standalone: { id: "standalone", label: "Standalone harness", blurb: "Development harness and shims — not host files or installed packages.", flat: true },
+  other: { id: "other", label: "Other", blurb: "Outside the known tiers.", flat: false },
 };
 
 /** Tier order as the tree lists them: what you read, then what you must
  * remember to apply. */
-export const TIER_ORDER: readonly Tier[] = ["server", "web", "tests", "host-edit", "other"];
+export const TIER_ORDER: readonly Tier[] = ["server", "web", "tests", "host-edit", "standalone", "other"];
 
 export function classifyTier(file: Pick<GeneratedFile, "path" | "kind">): Tier {
+  if (file.kind === "standalone" || file.path.startsWith("standalone/")) return "standalone";
   if (file.kind === "patch" || file.path.endsWith(".patch")) return "host-edit";
   if (file.path.startsWith("server/subapps/")) return "server";
   if (file.path.startsWith("web/src/subapps/")) return "web";
@@ -140,7 +142,7 @@ export type TreeNode = TreeTierNode | TreeDirNode | TreeFileNode;
  * rows below it show the part that differs. */
 export function tierRoot(tier: Tier, paths: readonly string[]): string {
   if (paths.length === 0) return "";
-  if (tier === "host-edit" || tier === "other") return "";
+  if (tier === "host-edit" || tier === "standalone" || tier === "other") return "";
   const split = paths.map((path) => path.split("/"));
   const first = split[0];
   if (first === undefined) return "";
@@ -290,4 +292,11 @@ export function buildTree(
  * Directory and tier rows are skipped: they toggle, they do not open. */
 export function visibleFilePaths(nodes: readonly TreeNode[]): string[] {
   return nodes.filter((node): node is TreeFileNode => node.type === "file").map((node) => node.path);
+}
+
+/** Search the entire authoritative file set, not only expanded rows.
+ * Searching temporarily reveals matches; clearing restores collapse state. */
+export function searchTree(files: readonly GeneratedFile[], query: string, collapsed: ReadonlySet<string> = new Set()): TreeNode[] {
+  const needle = query.trim().toLowerCase();
+  return needle.length === 0 ? buildTree(files, collapsed) : buildTree(files.filter(file => file.path.toLowerCase().includes(needle)));
 }

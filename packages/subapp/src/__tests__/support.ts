@@ -66,7 +66,7 @@ export function fakeCapabilities(seed: readonly string[] = []): FakeCapabilities
       require_("read:contracts");
       return [];
     },
-    writeInboxProposal(fileName: string, content: unknown): string {
+    async writeInboxProposal(fileName: string, content: unknown): Promise<string> {
       calls.push({ method: "writeInboxProposal", args: [fileName, content] });
       require_("write:inbox-proposal");
       written.set(fileName, content);
@@ -95,6 +95,7 @@ export interface HarnessOptions {
   readonly workspace?: boolean;
   readonly principal?: { username: string; displayName: string } | null;
   readonly caps?: FakeCapabilities;
+  readonly resolveCapabilities?: (workspaceId: string, req: import("fastify").FastifyRequest) => Promise<SubAppCapabilities>;
 }
 
 export interface Harness {
@@ -127,9 +128,9 @@ export async function buildHarness(options: HarnessOptions = {}): Promise<Harnes
   const caps = options.caps ?? fakeCapabilities();
   const adapterRequests: string[] = [];
   const ctx: RegisterRoutesCtx = {
-    capabilitiesFor: async (workspaceId: string) => {
+    capabilitiesFor: async (workspaceId: string, req: import("fastify").FastifyRequest) => {
       adapterRequests.push(workspaceId);
-      return caps;
+      return options.resolveCapabilities ? options.resolveCapabilities(workspaceId, req) : caps;
     },
   };
 

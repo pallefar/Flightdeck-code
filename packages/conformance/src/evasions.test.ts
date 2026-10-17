@@ -48,6 +48,21 @@ describe("a route path built by concatenation", () => {
 });
 
 describe("imports that are not written as imports", () => {
+  it.each([
+    ['const edge = `${import("../../registry.js")}`;', "FD-I002"],
+    ['const edge = `${require("node:fs")}`;', "FD-C001"],
+    ['const edge = `${`nested ${import("unauthorized-package")}`}`;', "FD-C005"],
+    ['const edge = `${ { child: require("../../../subapps/docusign/fields.js") } }`;', "FD-I001"],
+  ])("rejects executable dependency edges in template expressions: %s", (edge, rule) => {
+    const app = inRoutes(
+      `      const rows = await rt.db.all(`,
+      `      ${edge}\n      const rows = await rt.db.all(`,
+    );
+    const report = runConformanceGate(app);
+    expect(report.ok).toBe(false);
+    expect(report.errors.map((finding) => finding.rule)).toContain(rule);
+  });
+
   it("a dynamic import of the registry is still an import of the registry", () => {
     const app = inRoutes(
       `      const rows = await rt.db.all(`,

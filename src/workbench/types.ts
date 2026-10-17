@@ -37,6 +37,7 @@ export type GeneratedFileKind =
   | "web-module"
   | "host-test"
   | "patch"
+  | "standalone"
   | "unknown";
 
 export interface GeneratedFile {

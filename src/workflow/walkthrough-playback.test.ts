@@ -1,0 +1,71 @@
+import {it,expect,vi,afterEach} from 'vitest';
+import * as playback from './walkthrough-playback';
+import {createWalkthrough} from './walkthrough';
+import {createWorkflowTemplate} from './WorkflowEditor';
+afterEach(()=>vi.useRealTimers());
+it('starts a fresh decorative assembly cycle even when replaying the same paused first group',()=>{
+ vi.useFakeTimers();const plan=createWalkthrough(createWorkflowTemplate('branch'));
+ const player=new playback.WalkthroughPlayback(plan,'graph',()=>({binding:'graph',available:true,motion:true}));
+ player.replayCreation();player.pause();
+ const first=player.getSnapshot() as playback.PlaybackState&{creationCycle?:number};
+ expect(first.creationCycle).toBe(1);
+ player.replayCreation();expect(player.getSnapshot()).toMatchObject({creationCycle:2,revealed:1,playing:true});
+ vi.advanceTimersByTime(2000);expect(player.getSnapshot()).toMatchObject({mode:'idle',creationCycle:2});
+ expect(vi.getTimerCount()).toBe(0);player.dispose();
+});
+it('plays a bounded creation reveal with real pause, resume, skip and replay controls',()=>{
+ vi.useFakeTimers();expect(playback).toHaveProperty('WalkthroughPlayback');
+ const plan=createWalkthrough(createWorkflowTemplate('branch'));
+ const player=new playback.WalkthroughPlayback(plan,'graph',()=>({binding:'graph',available:true,motion:true}));
+ player.replayCreation();expect(player.getSnapshot()).toMatchObject({mode:'creation',playing:true,revealed:1});
+ vi.advanceTimersByTime(500);expect(player.getSnapshot().revealed).toBe(2);
+ player.pause();vi.advanceTimersByTime(5000);expect(player.getSnapshot().revealed).toBe(2);
+ player.resume();vi.advanceTimersByTime(2000);expect(player.getSnapshot()).toMatchObject({mode:'idle',playing:false,revealed:4});
+ player.replayCreation();player.skip();expect(player.getSnapshot()).toMatchObject({mode:'idle',revealed:4});
+ expect(vi.getTimerCount()).toBe(0);
+ player.dispose();
+});
+it('explains manually or at a legible pace with next, previous, pause, stop and replay',()=>{
+ vi.useFakeTimers();const plan=createWalkthrough(createWorkflowTemplate('branch'));
+ const player=new playback.WalkthroughPlayback(plan,'graph',()=>({binding:'graph',available:true,motion:true}));
+ expect(player).toHaveProperty('startTour');
+ player.startTour();expect(player.getSnapshot()).toMatchObject({mode:'tour',index:0,playing:false});
+ player.previous();expect(player.getSnapshot().index).toBe(0);
+ player.next();expect(player.getSnapshot().index).toBe(1);
+ player.resume();vi.advanceTimersByTime(1999);expect(player.getSnapshot().index).toBe(1);
+ vi.advanceTimersByTime(1);expect(player.getSnapshot().index).toBe(2);
+ player.pause();vi.advanceTimersByTime(10000);expect(player.getSnapshot().index).toBe(2);
+ player.resume();vi.advanceTimersByTime(4000);expect(player.getSnapshot()).toMatchObject({mode:'tour',index:3,playing:false});
+ player.next();expect(player.getSnapshot().index).toBe(3);
+ player.startTour();expect(player.getSnapshot().index).toBe(0);
+ player.stop();expect(player.getSnapshot()).toMatchObject({mode:'idle',index:-1,playing:false});expect(vi.getTimerCount()).toBe(0);
+ player.dispose();
+});
+it.each(['binding','available','motion'] as const)('rechecks %s before timers and commands, cancelling old highlights',field=>{
+ vi.useFakeTimers();const plan=createWalkthrough(createWorkflowTemplate('branch'));
+ const context={binding:'graph',available:true,motion:true};
+ const player=new playback.WalkthroughPlayback(plan,'graph',()=>context);player.startTour();player.resume();
+ if(field==='binding')context.binding='changed';else context[field]=false;
+ vi.advanceTimersByTime(2000);
+ if(field==='binding')expect(player.getSnapshot()).toMatchObject({mode:'idle',index:-1,playing:false});
+ else expect(player.getSnapshot()).toMatchObject({mode:'tour',index:0,playing:false});
+ expect(vi.getTimerCount()).toBe(0);
+ player.replayCreation();expect(player.getSnapshot()).toMatchObject({mode:'idle',playing:false,revealed:4});
+ player.dispose();
+});
+it('reduces motion to final creation while keeping intentional manual walkthrough available',()=>{
+ vi.useFakeTimers();const plan=createWalkthrough(createWorkflowTemplate('branch'));
+ const player=new playback.WalkthroughPlayback(plan,'graph',()=>({binding:'graph',available:true,motion:false}));
+ player.replayCreation();expect(player.getSnapshot()).toMatchObject({mode:'idle',revealed:4});
+ player.startTour();player.next();player.resume();vi.advanceTimersByTime(9000);
+ expect(player.getSnapshot()).toMatchObject({mode:'tour',index:1,playing:false});expect(vi.getTimerCount()).toBe(0);player.dispose();
+});
+it('resets on graph edits and deletion but retains the exact step on equivalent snapshots',()=>{
+ vi.useFakeTimers();const graph=createWorkflowTemplate('branch'),plan=createWalkthrough(graph);let binding=JSON.stringify(graph);
+ const player=new playback.WalkthroughPlayback(plan,binding,()=>({binding,available:true,motion:true}));
+ player.startTour();player.next();player.resume();
+ expect(player).toHaveProperty('sync');player.sync(createWalkthrough(structuredClone(graph)),binding);
+ expect(player.getSnapshot()).toMatchObject({mode:'tour',index:1,playing:true});
+ graph.nodes.pop();graph.edges.pop();binding=JSON.stringify(graph);player.sync(createWalkthrough(graph),binding);
+ expect(player.getSnapshot()).toMatchObject({mode:'idle',index:-1,revealed:3,playing:false});expect(vi.getTimerCount()).toBe(0);player.dispose();
+});

@@ -39,6 +39,10 @@ export function emitManifest(plan: SubAppPlan): string {
     },
     { key: "version", value: str(m.version) },
     {
+      key: "generatedBy", value: str("flightdeck-studio"),
+      comment: ["Host Studio-generated classification: default-off launcher policy and proposal-only contribution rules. This marker grants no capability or installation permission."],
+    },
+    {
       key: "minHostVersion",
       value: str(m.minHostVersion),
       comment: [

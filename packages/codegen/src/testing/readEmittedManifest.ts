@@ -14,11 +14,11 @@
  * trailing commas, and the result is JSON.
  *
  * ⚠ It is a reader for THIS shape — manifests whose data fields are
- * literals. That covers every hand-written manifest in the host today
- * (`__tests__/manifest-rules.test.ts` runs all four through it), and a
- * manifest that computed a field would throw here rather than quietly
- * validate. Throwing is the right answer: a computed data field is exactly
- * what must not be shipped. */
+ * literals. Hand-written host manifests may additionally carry computed
+ * optional contributions/callbacks; those are NOT admitted by this reader.
+ * Live-source core metadata conformance uses readHostManifestMetadata with
+ * an explicit omission ledger and authoritative AST drift checks instead.
+ * A generated computed data field must still throw here. */
 export class ManifestReadError extends Error {}
 
 const FUNCTION_MEMBERS = ["initSchema", "registerRoutes"];

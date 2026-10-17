@@ -5,14 +5,17 @@
  * changed, and a dot for each finding the gate raised in that file. A tree
  * that shows only names makes a person open twelve files to find the two
  * that matter. */
+import { useEffect, useId, useRef, useState } from "react";
 import type { FileChange } from "../diff";
 import type { DraftState } from "../editing";
-import { TIERS, type TreeNode } from "../tree";
+import { searchTree, TIERS, type TreeNode } from "../tree";
 import type { Finding, GeneratedFile } from "../types";
 import { EditorPane, type EditorPaneProps } from "./EditorPane";
 
 interface Props {
   readonly nodes: readonly TreeNode[];
+  /** Search only the complete authoritative file set, never fake buffers. */
+  readonly files?: readonly GeneratedFile[];
   readonly selectedPath: string | null;
   readonly changes: ReadonlyMap<string, FileChange>;
   readonly findings: ReadonlyMap<string, readonly Finding[]>;
@@ -30,6 +33,11 @@ interface Props {
   /** Everything the editor half needs. Omitted entirely in a read-only
    * embedding, which is how the pane renders with no store at all. */
   readonly editor?: Omit<EditorPaneProps, "file" | "findings">;
+  /** Retained source editors need their own authoritative draft/baseline. */
+  readonly editorFor?: (path: string) => Omit<EditorPaneProps, "file" | "findings">;
+  readonly receivedPaths?: ReadonlySet<string> | null;
+  readonly focused?: boolean;
+  readonly onExitFocus?: () => void;
 }
 
 const MARK: Readonly<Record<DraftState, string>> = {
@@ -41,6 +49,7 @@ const MARK: Readonly<Record<DraftState, string>> = {
 
 export function FileTreePane({
   nodes,
+  files,
   selectedPath,
   changes,
   findings,
@@ -52,13 +61,56 @@ export function FileTreePane({
   draftStates,
   locks,
   editor,
+  editorFor,
+  receivedPaths = null,
+  focused = false,
+  onExitFocus,
 }: Props) {
+  const [query, setQuery] = useState("");
+  const [explorerOpen, setExplorerOpen] = useState(true);
+  const toggle = useRef<HTMLButtonElement>(null);
+  const opened = useRef<string[]>([]);
+  const editorPaths = useRef(new Set<string>());
+  const id = useId();
+  useEffect(() => {
+    const media = window.matchMedia("(max-width: 680px)");
+    const update = () => setExplorerOpen(!media.matches);
+    update();
+    media.addEventListener("change", update);
+    return () => media.removeEventListener("change", update);
+  }, []);
+  if (selectedPath !== null && !opened.current.includes(selectedPath)) opened.current = [...opened.current, selectedPath].slice(-8);
+  if (selectedPath !== null) editorPaths.current.add(selectedPath);
+  const sourceTabs = opened.current.filter(path => files?.some(source => source.path === path) ?? path === selectedPath);
+  const visibleNodes = files === undefined ? nodes : searchTree(files, query, collapsedDirs);
+  const choose = (path: string) => {
+    onSelect(path);
+    if (window.matchMedia("(max-width: 680px)").matches) {
+      setExplorerOpen(false);
+      toggle.current?.focus();
+    }
+  };
   return (
     <div className="fd-files">
-      <nav className="fd-tree" aria-label="Generated files">
-        {nodes.map((node) => {
+      <div className="fd-source-tabs" role="group" aria-label="Open sources">
+        <button ref={toggle} type="button" className="fd-explorer-toggle" aria-label="Toggle file explorer" aria-expanded={explorerOpen && !focused} aria-controls={`${id}-explorer`} onClick={() => { if (focused) { onExitFocus?.(); setExplorerOpen(true); } else setExplorerOpen(open => !open); }}><span aria-hidden="true">☷</span> Files</button>
+        {sourceTabs.map(path => <button type="button" className="fd-source-tab" key={path} title={path} aria-pressed={path === selectedPath} onClick={() => choose(path)}>{path.split("/").pop()}<span className="fd-source-tab__dot" aria-hidden="true">{draftStates?.get(path) === "dirty" ? "●" : draftStates?.get(path) === "saved" ? "◆" : ""}</span></button>)}
+      </div>
+      <div className="fd-files__workspace">
+      <aside className="fd-explorer" id={`${id}-explorer`} hidden={!explorerOpen || focused} inert={!explorerOpen || focused}>
+        {files !== undefined && <div className="fd-explorer__search"><label><span className="fd-explorer__caption">EXPLORER <span>{files.length} sources</span></span><input type="search" value={query} onChange={event => setQuery(event.target.value)} placeholder="Search source paths…" aria-label="Search source paths" /></label>{query.length > 0 && <button type="button" onClick={() => setQuery("")} aria-label="Clear source search">Clear</button>}</div>}
+      <nav className="fd-tree" aria-label="Generated files" onKeyDown={event => {
+        const buttons = Array.from(event.currentTarget.querySelectorAll<HTMLButtonElement>("button"));
+        const current = buttons.indexOf(document.activeElement as HTMLButtonElement);
+        const index = event.key === "ArrowDown" ? Math.min(current + 1, buttons.length - 1) : event.key === "ArrowUp" ? Math.max(current - 1, 0) : event.key === "Home" ? 0 : event.key === "End" ? buttons.length - 1 : null;
+        if (index === null) return;
+        event.preventDefault();
+        buttons[index]?.focus();
+      }}>
+        {visibleNodes.length === 0 && <p className="fd-note">No source paths match this search.</p>}
+        {visibleNodes.map((node) => {
           if (node.type === "tier") {
-            const collapsed = collapsedDirs.has(node.path);
+            const collapsed = query.trim().length === 0 && collapsedDirs.has(node.path);
             return (
               <button
                 type="button"
@@ -80,7 +132,7 @@ export function FileTreePane({
           }
 
           if (node.type === "dir") {
-            const collapsed = collapsedDirs.has(node.path);
+            const collapsed = query.trim().length === 0 && collapsedDirs.has(node.path);
             return (
               <button
                 type="button"
@@ -109,7 +161,8 @@ export function FileTreePane({
               className={`fd-tree__row${dim ? " fd-tree__row--dim" : ""}`}
               style={{ paddingLeft: 12 + node.depth * 13 }}
               aria-current={node.path === selectedPath}
-              onClick={() => onSelect(node.path)}
+              data-received-highlight={receivedPaths === null ? undefined : receivedPaths.has(node.path)}
+              onClick={() => choose(node.path)}
               title={node.path}
             >
               {locked && (
@@ -136,15 +189,15 @@ export function FileTreePane({
           );
         })}
       </nav>
-      {/* Keyed by path so the editor's own view state — read/edit mode,
-          the reason a keystroke was refused — belongs to the file it was
-          about, rather than following a person to the next one. */}
-      <EditorPane
-        key={file?.path ?? "(none)"}
-        {...(editor ?? {})}
-        file={file}
-        findings={file === null ? [] : findings.get(file.path) ?? []}
-      />
+      </aside>
+      {/* Reference navigation retains visited textareas, their selection,
+          mode and undo buffer. Hidden sources are inert, not reparented.
+          A scoped store reset removes the entire candidate pane. */}
+      {editorFor !== undefined && files !== undefined ? [...editorPaths.current].flatMap(path => {
+        const source = files.find(item => item.path === path);
+        return source === undefined ? [] : [<div className="fd-source-slot" data-source-path={path} key={path} hidden={selectedPath !== path} inert={selectedPath !== path}><EditorPane {...editorFor(path)} file={source} findings={findings.get(path) ?? []} /></div>];
+      }) : <EditorPane key={file?.path ?? "(none)"} {...(editor ?? {})} file={file} findings={file === null ? [] : findings.get(file.path) ?? []} />}
+      </div>
     </div>
   );
 }

@@ -1,0 +1,52 @@
+{
+  "schema_version": 1,
+  "date": "2026-10-14",
+  "verdict": "engineering-source-and-candidate-verified-production-blocked",
+  "supersedes_source_and_toolchain_results": "studio-verification-2026-10-14.json",
+  "full_suite": {
+    "command": "FLIGHTDECK_HOST_ROOT=/Users/te451223/project-contract npm test -- --maxWorkers=4",
+    "framework": "vitest 4.1.11",
+    "vitest_files_passed": 187,
+    "vitest_tests_passed": 2867,
+    "vitest_failed": 0,
+    "vitest_skipped": 0,
+    "node_tests_passed": 16,
+    "node_failed": 0,
+    "exit_code": 0,
+    "typecheck": "passed",
+    "production_build": "passed",
+    "diff_whitespace_check": "passed",
+    "removed_cli_option": "Do not use --minWorkers with Vitest 4."
+  },
+  "independent_parent_audits": {
+    "full_development_known_application_dependency_findings": 0,
+    "production_lock_known_application_dependency_findings": 0,
+    "candidate_image_known_application_dependency_findings": 0,
+    "os_and_global_tool_scan": "not performed",
+    "general_security_guarantee": false
+  },
+  "candidate": {
+    "tag": "flightdeck-studio-devchain-check:local",
+    "image_id": "sha256:7b848670876de7dd5df3c38c9ae894355460555bb37ad485b7c9f5dd0da260ab",
+    "parent_physical_verification": "passed",
+    "installed_application_packages": 63,
+    "unnecessary_development_tools_absent": true,
+    "test_sources_absent": true,
+    "installed_lock_graph_valid": true,
+    "node": "v22.23.3",
+    "uid": 1000,
+    "network_none_ephemeral_private_bootstrap_smoke": "passed",
+    "provider_call": false,
+    "live_cutover": false
+  },
+  "unchanged_running_staging": {
+    "origin": "http://127.0.0.1:8790",
+    "image_id": "sha256:53ce57e036909d5ac4330255b519569971a32f40daea1515e1b8066f2f2debfc",
+    "started_at": "2026-10-14T12:00:27.25009846Z",
+    "status": "healthy",
+    "note": "Frozen earlier engineering artifact retained during development-only migration; do not attribute the new source lock/test framework to this existing image. UI and production dependency entries were not changed by the migration."
+  },
+  "companion_and_os": "IDs and start times independently rechecked unchanged; no restart or host mutation",
+  "production_release": "blocked pending trusted identity/project/reviewer integration, HTTPS/origin deployment, live model verification, operational recovery and the other open audit gates",
+  "evidence_detail": "studio-development-supply-chain.md"
+}

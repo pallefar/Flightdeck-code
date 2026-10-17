@@ -1,0 +1,13 @@
+.studio-shell .studio-voice-menu{display:flex;align-items:center;gap:4px;flex:none}
+.studio-shell .studio-voice-open{display:flex;align-items:center;gap:6px;padding:2px 8px!important;font-size:11px;background:var(--surface2,#f8fafb)}
+.studio-shell .studio-voice-open .fd-voice-core{width:30px;height:30px;flex:none}
+.studio-shell .studio-voice-quick-stop{padding:4px 8px!important;color:var(--te,#e98300)}
+.studio-shell .studio-voice-dialog{width:min(520px,calc(100vw - 28px));max-height:calc(100dvh - 40px);padding:0;border:1px solid var(--line,#d5dfe5);border-radius:12px;background:var(--surface,#fff);color:var(--ink,#253d4b);overflow:auto;box-shadow:0 24px 80px #0004}
+.studio-shell .studio-voice-dialog::backdrop{background:#101b2b80}
+.studio-shell .studio-voice-dialog>header{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px;border-bottom:1px solid var(--line,#d5dfe5)}
+.studio-shell .studio-voice-dialog h2{font-size:18px;margin:4px 0 0}
+.studio-shell .studio-voice-dialog>.fd-voice-controls{padding:14px}
+.studio-shell .studio-voice-dialog .fd-voice-options-grid label{margin-bottom:0}
+.studio-shell .studio-voice-dialog .fd-voice-consent{flex-direction:row}
+.studio-shell .studio-voice-dialog .fd-voice-consent input{width:16px;height:16px;flex:none}
+@media(max-width:480px){.studio-shell .studio-voice-menu{order:1;margin-left:auto}.studio-shell .studio-voice-open>span:not(.fd-voice-core){display:none}.studio-shell .studio-voice-open{padding:2px 6px!important}.studio-shell .studio-voice-menu .studio-voice-quick-stop{padding:2px 6px!important}.studio-shell .studio-voice-dialog{max-height:calc(100dvh - 24px)}}

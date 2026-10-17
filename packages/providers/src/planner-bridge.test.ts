@@ -53,6 +53,20 @@ describe("the bridge satisfies @spec's PlannerLlm seam", () => {
 /* ── 2. what the bridge sends ────────────────────────────────────────────── */
 
 describe("the bridge's request", () => {
+  it("forwards the exact trusted cancellation signal without adding it to model content", async () => {
+    const provider = new FakeProvider(() => ({ output: "{}" }));
+    const controller = new AbortController();
+    const request = { system: "STABLE", user: "VOLATILE", purpose: "draft" as const, attempt: 1, signal: controller.signal };
+    await plannerLlm(provider)(request);
+    const sent = provider.calls[0]?.request;
+    expect(sent?.signal).toBe(controller.signal);
+    expect(sent?.signal?.aborted).toBe(false);
+    expect(sent?.messages).toEqual([{role: "user", content: "VOLATILE"}]);
+    expect(sent?.system).toBe("STABLE");
+    controller.abort();
+    expect(sent?.signal?.aborted).toBe(true);
+  });
+
   it("passes system stably and the volatile prompt as the one user turn", async () => {
     const provider = new FakeProvider(() => ({ output: "{}" }));
 

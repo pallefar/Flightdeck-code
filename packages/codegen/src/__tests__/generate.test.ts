@@ -187,7 +187,7 @@ describe("the rules a generated sub-app must never break", () => {
   it("audits only through the injected adapter, and names fields rather than values", () => {
     const clocks = fileAt(full, "server/subapps/wc-clock/routes/clocks.ts");
     expect(clocks).not.toContain("appendFlightdeckAudit");
-    expect(clocks).toContain("const caps = await ctx.capabilitiesFor(rt.id);");
+    expect(clocks).toContain("const caps = await ctx.capabilitiesFor(rt.id, req);");
     expect(clocks).toContain("fields: Object.keys(parsed.data).sort()");
     const auditBody = clocks.slice(clocks.indexOf("caps.auditAppend({"), clocks.indexOf("return reply.code(201)"));
     expect(auditBody).not.toContain("parsed.data.");

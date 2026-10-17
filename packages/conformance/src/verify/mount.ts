@@ -47,6 +47,8 @@ export interface MountContext {
 }
 
 export interface MountOptions {
+  /** Recorder-only revocation simulation for SDK effect-time tests. */
+  readonly capabilityScenario?: ProbeInput["capabilityScenario"];
   readonly repoRoot: string;
   /** The host's leaf modules as executable recorders, keyed by
    * extensionless repo-relative path. Staged beside the candidate so
@@ -122,6 +124,7 @@ export async function mountProbe(
     expectedRoutePrefix: context.routePrefix,
     expectedTablePrefix: context.tablePrefix,
     handlerTimeoutMs: options.handlerTimeoutMs ?? 2_000,
+    ...(options.capabilityScenario === undefined ? {} : { capabilityScenario: options.capabilityScenario }),
   };
 
   const staged = await stage({
@@ -149,7 +152,7 @@ export async function mountProbe(
   }
 
   const probe = parseProbe(run.stdout);
-  if (probe === null) {
+  if (probe === null || !run.ok) {
     return {
       ran: false,
       findings: [probeFailure(context, describeFailure(run))],

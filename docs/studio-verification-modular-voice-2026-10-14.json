@@ -1,0 +1,243 @@
+{
+  "recordedAt": "2026-10-14T19:41:04Z",
+  "scope": "private local staging; not public production or installed-host deployment",
+  "head": "f80ad1f05018b8a38e720c3df59bff5ff0950cba",
+  "image": "sha256:dbb044500ad9c7963cb17b7887bee7bb550ce59fc8899cdb9f77ccd22f944cac",
+  "imageTag": "flightdeck-studio-staging:modular-voice-final-20261014",
+  "sourceSnapshot": {
+    "fileCount": 556,
+    "sha256": "a642dbebe3de2ba8a335da9b90b1a6715bc77fcfb507a6426964296661681c40",
+    "encoding": "sorted relative path + NUL + file SHA256 + newline; explicit Docker source/build inputs",
+    "unsigned": true
+  },
+  "tests": {
+    "vitest": 2986,
+    "vitestFiles": 208,
+    "node": 16,
+    "failures": 0,
+    "skips": 0,
+    "typecheckBuildDiffExit": 0,
+    "realRouteAssertions": 51,
+    "uniqueRealRouteAssertions": 49,
+    "liveProviderInRouteFixture": false
+  },
+  "runtime": {
+    "installedCount": 63,
+    "installedGraphValid": true,
+    "noDevelopmentTools": true,
+    "noTestSources": true,
+    "npmFindings": 0,
+    "actualBootstrap": {
+      "health": 200,
+      "unauthorized": 401,
+      "authenticatedModels": 200,
+      "modelDescriptors": 4,
+      "noSelectionBuild": 409,
+      "entry": 200,
+      "builtAssets": 2,
+      "noSourceOrApiFallback": true,
+      "noVendorCalls": true
+    }
+  },
+  "deployment": {
+    "image": "sha256:dbb044500ad9c7963cb17b7887bee7bb550ce59fc8899cdb9f77ccd22f944cac",
+    "stagingAfter": {
+      "verified": true,
+      "records": [
+        {
+          "file": "docker-approval-default-smoke.json",
+          "draftId": "0c7137d1-c9a1-445c-bd10-c0abe9886ad9",
+          "revision": 1,
+          "runId": "fce4619d-b183-46e8-b36a-0672b0c0d1a4",
+          "state": "paused",
+          "resumable": false
+        },
+        {
+          "file": "docker-mapping-smoke-record.json",
+          "draftId": "bf05f311-49f4-46b4-8b2a-c8d230bab5a9",
+          "revision": 1,
+          "runId": "6c817f93-0427-429c-98b9-6b979a5d72d7",
+          "state": "completed",
+          "resumable": false
+        }
+      ],
+      "files": [
+        {
+          "name": "docker-approval-default-smoke.json",
+          "sha256": "ca468728a7c94f157f44d4fa45b7f476cbd1cfa58fdcfe9e471d8e32db0ac19a",
+          "bytes": 2430,
+          "mode": 384
+        },
+        {
+          "name": "docker-mapping-smoke-record.json",
+          "sha256": "644f74ce6d9ae17a0cc8718b0548bb462eeb0b7ca2549215372c5ad9297096a2",
+          "bytes": 3729,
+          "mode": 384
+        },
+        {
+          "name": "workflow-workspace.json",
+          "sha256": "e01cc55b2128ea51c269a1f4878fee4d05d3779eea137f39f7b52bfe5c751c22",
+          "bytes": 5962,
+          "mode": 384
+        }
+      ],
+      "policy": "camera=(), microphone=(self), on-device-speech-recognition=(self), geolocation=(), payment=(), usb=()",
+      "csp": "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; frame-src 'self' about:; form-action 'none'",
+      "assets": [
+        "/assets/index-cXoAr4tm.js",
+        "/assets/index-BqGLrwcs.css"
+      ],
+      "effectsRerun": false,
+      "publicHealth": 200,
+      "unauthorizedModels": 401,
+      "selectedModel": null,
+      "credentialsLogged": false
+    },
+    "containersBefore": {
+      "flightdeck-studio-staging-studio-staging-1": {
+        "id": "2cc140278991d627e21369daa0bc69f1ab27dcc6eac609e886bad0278b7f927e",
+        "image": "sha256:53ce57e036909d5ac4330255b519569971a32f40daea1515e1b8066f2f2debfc",
+        "startedAt": "2026-10-14T12:00:27.25009846Z",
+        "mounts": [
+          {
+            "name": "flightdeck-studio-staging_staging-private",
+            "destination": "/state"
+          }
+        ]
+      },
+      "flightdeck-studio-companion-studio-backend-1": {
+        "id": "cd43c2be987bf201256a2cc10d49435a689c37c3a9105deb77d195c796236973",
+        "image": "sha256:eda86b657b175767030f7a755650b3240e793673c5304bfee465745c9ad956e1",
+        "startedAt": "2026-10-14T09:46:56.211076293Z",
+        "mounts": [
+          {
+            "name": "flightdeck-studio-companion_studio-private",
+            "destination": "/state"
+          }
+        ]
+      },
+      "wt-integration-flightdeck-1": {
+        "id": "31ed1059114fad7413ad6b42437f6845e03b75e4017496f67f9103a9f020b0df",
+        "image": "sha256:7907b42917fb26fdf653ffa5fdf350db5c268a4bebf2cec27507af47a21b7f2d",
+        "startedAt": "2026-10-11T08:51:27.76866243Z",
+        "mounts": [
+          {
+            "name": "wt-integration_flightdeck-audit",
+            "destination": "/app/audit"
+          },
+          {
+            "name": "wt-integration_flightdeck-contracts",
+            "destination": "/app/contracts"
+          },
+          {
+            "name": null,
+            "destination": "/app/desktop-dist"
+          },
+          {
+            "name": "wt-integration_flightdeck-data",
+            "destination": "/app/flightdeck/data"
+          },
+          {
+            "name": "wt-integration_flightdeck-proposals",
+            "destination": "/app/memory/proposals"
+          },
+          {
+            "name": "wt-integration_flightdeck-state",
+            "destination": "/var/lib/flightdeck/state"
+          }
+        ]
+      }
+    },
+    "containersAfter": {
+      "flightdeck-studio-staging-studio-staging-1": {
+        "id": "8eda9756a5b94ae5193518dcaa16270c020f5d0aba30b62a153ff22994587801",
+        "image": "sha256:dbb044500ad9c7963cb17b7887bee7bb550ce59fc8899cdb9f77ccd22f944cac",
+        "startedAt": "2026-10-14T19:32:47.790779422Z",
+        "mounts": [
+          {
+            "name": "flightdeck-studio-staging_staging-private",
+            "destination": "/state"
+          }
+        ]
+      },
+      "flightdeck-studio-companion-studio-backend-1": {
+        "id": "cd43c2be987bf201256a2cc10d49435a689c37c3a9105deb77d195c796236973",
+        "image": "sha256:eda86b657b175767030f7a755650b3240e793673c5304bfee465745c9ad956e1",
+        "startedAt": "2026-10-14T09:46:56.211076293Z",
+        "mounts": [
+          {
+            "name": "flightdeck-studio-companion_studio-private",
+            "destination": "/state"
+          }
+        ]
+      },
+      "wt-integration-flightdeck-1": {
+        "id": "31ed1059114fad7413ad6b42437f6845e03b75e4017496f67f9103a9f020b0df",
+        "image": "sha256:7907b42917fb26fdf653ffa5fdf350db5c268a4bebf2cec27507af47a21b7f2d",
+        "startedAt": "2026-10-11T08:51:27.76866243Z",
+        "mounts": [
+          {
+            "name": "wt-integration_flightdeck-audit",
+            "destination": "/app/audit"
+          },
+          {
+            "name": "wt-integration_flightdeck-contracts",
+            "destination": "/app/contracts"
+          },
+          {
+            "name": null,
+            "destination": "/app/desktop-dist"
+          },
+          {
+            "name": "wt-integration_flightdeck-data",
+            "destination": "/app/flightdeck/data"
+          },
+          {
+            "name": "wt-integration_flightdeck-proposals",
+            "destination": "/app/memory/proposals"
+          },
+          {
+            "name": "wt-integration_flightdeck-state",
+            "destination": "/var/lib/flightdeck/state"
+          }
+        ]
+      }
+    },
+    "exactOriginalRecordsAndFiles": true,
+    "privateVolumeRetained": true,
+    "CSPUnchanged": true,
+    "companionAndOSUnchanged": true,
+    "builtAssetsMatchVerifiedHostBuild": {
+      "assets/index-BqGLrwcs.css": "471bc69f1a7ee85d717d6cb51ac81444f1bdf55411c5499cb382ffa57f8b2079",
+      "assets/index-cXoAr4tm.js": "4ce54f762b93e1b28b83021617187e4c9d2c175fc2f7c30d9d26846f25fa1017",
+      "index.html": "51b9a6344d37fb42e8d17a0e6dc982ce21f9cac4361643fff9ae15d0dc34ab7d"
+    }
+  },
+  "reachability": {
+    "5180": 200,
+    "8787": 200,
+    "8790": 200,
+    "4173": 200,
+    "5175": "unreachable",
+    "57114": "unreachable"
+  },
+  "limits": [
+    "Acoustic dictation unverified: native local language pack unavailable; no microphone, download or remote recognition attempted.",
+    "No selected/live model in staging; deterministic development model fixtures are not live provider evidence.",
+    "One supported emitted Page/PANELS module; extra modules/PageDoc remain source-only.",
+    "Public identity/project membership, TLS, independent reviewer and production restore authority remain separate gates.",
+    "Vite browser chunk-size advisory remains."
+  ],
+  "evidencePaths": [
+    "/Users/te451223/.hermes/cache/scratch/studio-modular-final-browser.json",
+    "/Users/te451223/.hermes/cache/scratch/studio-modular-final-routes.json",
+    "/Users/te451223/.hermes/cache/scratch/studio-modular-final-snap-modal.json",
+    "/Users/te451223/.hermes/cache/scratch/studio-modular-final-runtime.json",
+    "/Users/te451223/.hermes/cache/scratch/studio-modular-final-readback.json",
+    "/Users/te451223/.hermes/cache/scratch/studio-subapp-handoff-green.json",
+    "/Users/te451223/.hermes/cache/scratch/studio-subapp-clock-browser.json",
+    "/Users/te451223/.hermes/cache/scratch/studio-subapp-native-narration.json",
+    "/Users/te451223/.hermes/cache/scratch/studio-subapp-native-hide.json",
+    "/Users/te451223/.hermes/cache/scratch/workflow-modular-parent-results.json"
+  ]
+}

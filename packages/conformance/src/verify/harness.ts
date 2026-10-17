@@ -32,6 +32,8 @@
 export const PROBE_SENTINEL = "__FD_PROBE_RESULT__";
 
 export interface ProbeInput {
+  /** Explicit recorder-only live grant transition, not a host deployment. */
+  readonly capabilityScenario?: "revoked-before-write";
   readonly manifestModule: string;
   readonly expectedId: string;
   readonly expectedRoutePrefix: string;
@@ -81,6 +83,7 @@ export interface ProbeResult {
  * because it executes in a different process, under a different module
  * resolution root, with no access to this package. */
 export const HARNESS_SOURCE = `import INPUT from "./input.js";
+import { CapabilityDeniedError } from "./app/server/subapps/capabilities.js";
 
 // ── Contain what the permission model does not. ─────────────────────────
 // Node's --permission covers the filesystem, subprocesses, workers and
@@ -96,6 +99,8 @@ for (const name of ["fetch", "WebSocket", "XMLHttpRequest", "EventSource", "navi
 const PHASE = { current: "initSchema" };
 const sql = [];
 let events = null;
+let activeRequest = null;
+const pendingWrites = new Set();
 
 function log(event) { if (events !== null) events.push(event); }
 
@@ -131,13 +136,54 @@ globalThis.__fdProbe = {
       ? { enabled: true, grantedScopes: state.grantedScopes }
       : { enabled: false, grantedScopes: [] };
   },
-  audit(root, event) { log("audit:" + (event && event.event ? event.event : "?")); },
-  capabilities(id, scopes) {
+  audit(root, event) {
+    if (pendingWrites.size > 0 && event && event.event !== "subapp.capability-denied") {
+      throw new TypeError("audit before asynchronous proposal write settled");
+    }
+    log("audit:" + (event && event.event ? event.event : "?"));
+    // Explicit recorder receipt, not a real host audit hash.
+    return { hash: "probe-audit-receipt" };
+  },
+  async capabilities(workspaceId, req) {
     log("capability:acquire");
+    const deny = (reason, scope) => {
+      globalThis.__fdProbe.audit(req && req.workspace && req.workspace.root, { event: "subapp.capability-denied" });
+      const error = new CapabilityDeniedError(reason);
+      error.reason = reason;
+      error.scope = scope;
+      throw error;
+    };
+    const contextValid = () => req && req === activeRequest && req.workspace &&
+      workspaceId === "probe-workspace" && req.workspace.id === workspaceId &&
+      req.project && req.project.id === "default" && req.principal && req.principal.username === "probe";
+    await Promise.resolve();
+    if (!contextValid()) deny("unknown-workspace");
+    log("capability:context:" + req.id + ":" + workspaceId + ":" + req.project.id + ":" + req.principal.username);
+    const requireScope = (scope) => {
+      if (!contextValid()) deny("unknown-workspace", scope);
+      if (!state.installed || !state.killSwitch) deny("app-disabled", scope);
+      if (!state.grantedScopes.includes(scope)) deny("scope-not-granted", scope);
+    };
     return {
-      auditAppend(event) { log("audit:" + (event && event.event ? event.event : "?")); },
-      async readContracts() { log("capability:readContracts"); return []; },
-      async proposeInboxItem(proposal) { log("capability:proposeInboxItem"); return { path: "memory/proposals/probe.json" }; },
+      auditAppend(event) { return globalThis.__fdProbe.audit(req.workspace.root, event); },
+      readContracts() { requireScope("read:contracts"); log("capability:readContracts"); return []; },
+      listOwnInboxProposals() { requireScope("write:inbox-proposal"); log("capability:listOwnInboxProposals"); return []; },
+      writeInboxProposal(fileName, content) {
+        const write = (async () => {
+          requireScope("write:inbox-proposal");
+          log("capability:writeInboxProposal");
+          await new Promise((resolve) => setTimeout(resolve, 5));
+          log("capability:reauthorize");
+          if (INPUT.capabilityScenario === "revoked-before-write") deny("grant-revoked", "write:inbox-proposal");
+          requireScope("write:inbox-proposal");
+          log("capability:write:settled");
+          return "memory/proposals/" + fileName.replace(/[^a-zA-Z0-9._-]+/g, "-");
+        })();
+        pendingWrites.add(write);
+        // Both branches are observed, including a caller's forgotten await.
+        void write.then(() => pendingWrites.delete(write), () => pendingWrites.delete(write));
+        return write;
+      },
     };
   },
 };
@@ -150,9 +196,9 @@ function makeRequest(route) {
       get() { log("read:" + prop); return prop === "raw" ? { url: route.url } : {}; },
     });
   }
-  req.workspace = { root: "/probe/workspace", db };
+  req.workspace = { id: "probe-workspace", root: "/probe/workspace", db };
   req.project = { id: "default" };
-  req.principal = { username: "probe", roles: ["admin", "hr_reviewer", "wc_liaison", "legal", "hr_preparer"] };
+  req.principal = { username: "probe", displayName: "Probe", role: "admin" };
   return req;
 }
 
@@ -166,6 +212,7 @@ function makeReply() {
   reply.code = (n) => { reply.statusCode = n; return reply; };
   reply.status = reply.code;
   reply.send = (payload) => {
+    if (pendingWrites.size > 0) throw new TypeError("reply before asynchronous proposal write settled");
     if (reply.statusCode === null) reply.statusCode = 200;
     reply.payload = payload;
     reply.sent = true;
@@ -215,6 +262,7 @@ async function invoke(route, scenario) {
   state.installed = scenario !== "disabled";
   PHASE.current = scenario;
   events = [];
+  activeRequest = makeRequest(route);
   const reply = makeReply();
   const outcome = { events, status: null, threw: null, timedOut: false };
   if (typeof route.handler !== "function") {
@@ -225,17 +273,22 @@ async function invoke(route, scenario) {
   let timer = null;
   try {
     const raced = await Promise.race([
-      Promise.resolve().then(() => route.handler(makeRequest(route), reply)),
+      Promise.resolve().then(() => route.handler(activeRequest, reply)),
       new Promise((resolve) => { timer = setTimeout(() => resolve("__FD_TIMEOUT__"), INPUT.handlerTimeoutMs); }),
     ]);
     if (raced === "__FD_TIMEOUT__") outcome.timedOut = true;
+    else if (pendingWrites.size > 0) throw new TypeError("handler returned before asynchronous proposal write settled");
   } catch (error) {
     outcome.threw = { name: errName(error), message: errMessage(error) };
   } finally {
     if (timer !== null) clearTimeout(timer);
+    // Keep the same invocation context until recorder writes finish. No
+    // detached rejection or cross-request event may be reported as a pass.
+    await Promise.allSettled([...pendingWrites]);
   }
   outcome.status = reply.statusCode;
   outcome.events = events.slice();
+  activeRequest = null;
   events = null;
   return outcome;
 }
@@ -286,11 +339,12 @@ try {
       catch (error) { result.initSchemaError = { name: errName(error), message: errMessage(error) }; }
     }
 
+    state.grantedScopes = Array.isArray(manifest.capabilities) ? [...manifest.capabilities] : [];
     const routes = [];
     if (typeof manifest.registerRoutes === "function") {
       try {
         await manifest.registerRoutes(makeApp(routes), {
-          capabilitiesFor: (id) => globalThis.__fdProbe.capabilities(id, []),
+          capabilitiesFor: (workspaceId, req) => globalThis.__fdProbe.capabilities(workspaceId, req),
         });
       } catch (error) {
         result.registerRoutesError = { name: errName(error), message: errMessage(error) };

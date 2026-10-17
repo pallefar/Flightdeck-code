@@ -306,7 +306,7 @@ function emitInsertRow(route: PlannedRoute): string[] {
     `        .run(${binds.join(", ")});`,
     "      // Audit names FIELDS, never their values (contract rule 8): a body",
     "      // key can be `salary`, so only the key set is recorded.",
-    "      const caps = await ctx.capabilitiesFor(rt.id);",
+    "      const caps = await ctx.capabilitiesFor(rt.id, req);",
     "      caps.auditAppend({",
     `        event: ${str(op.auditEvent)},`,
     "        id,",
@@ -350,8 +350,8 @@ function bindExpression(field: PlannedField): string {
  */
 function emitListContracts(): string[] {
   return [
-    "    const caps = await ctx.capabilitiesFor(rt.id);",
     "    try {",
+    "      const caps = await ctx.capabilitiesFor(rt.id, req);",
     "      const folders = caps.readContracts();",
     "      return {",
     "        rows: folders.map((folder) => ({ ticket: folder.ticket, folderName: folder.folderName })),",
@@ -380,8 +380,8 @@ function emitListContracts(): string[] {
  * which the adapter does not offer and which contract rule 3 forbids. */
 function emitListProposals(): string[] {
   return [
-    "    const caps = await ctx.capabilitiesFor(rt.id);",
     "    try {",
+    "      const caps = await ctx.capabilitiesFor(rt.id, req);",
     "      const rows = caps.listOwnInboxProposals().map((fileName) => ({",
     "        fileName,",
     '        proposalPath: "memory/proposals/" + fileName,',
@@ -412,8 +412,8 @@ function emitPropose(plan: SubAppPlan, route: PlannedRoute): string[] {
     `    const parsed = ${route.bodyConstName as string}.safeParse(req.body);`,
     `    if (!parsed.success) return reply.code(400).send({ error: "invalid body", issues: parsed.error.issues });`,
     `    const ticket = parsed.data.${op.ticketField};`,
-    "    const caps = await ctx.capabilitiesFor(rt.id);",
     "    try {",
+    "      const caps = await ctx.capabilitiesFor(rt.id, req);",
     ...(canReadContracts
       ? [
           "      const folder = caps.readContracts().find((row) => row.ticket === ticket);",
@@ -436,7 +436,7 @@ function emitPropose(plan: SubAppPlan, route: PlannedRoute): string[] {
     "      const proposedBy = req.principal",
     "        ? { username: req.principal.username, displayName: req.principal.displayName }",
     "        : null;",
-    "      const proposalPath = caps.writeInboxProposal(prefix + Date.now() + \".json\", {",
+    "      const proposalPath = await caps.writeInboxProposal(prefix + Date.now() + \".json\", {",
     `        kind: ${str(`${plan.id}-${op.proposalKind}`)},`,
     "        ...parsed.data,",
     "        proposedBy,",

@@ -1,0 +1,33 @@
+# Opt-in UI + API image; default companion Dockerfile remains API-only.
+FROM node:22-slim@sha256:c3de60bf2f9dd0ac6370e6117950ff62d6e339527e7472301c9c78a017978392 AS build
+WORKDIR /app
+COPY package.json package-lock.json ./
+RUN --mount=type=secret,id=studio_ca \
+    if [ -f /run/secrets/studio_ca ]; then export NODE_EXTRA_CA_CERTS=/run/secrets/studio_ca; fi; \
+    npm ci --ignore-scripts --include=dev --no-audit --no-fund && npm cache clean --force
+COPY tsconfig.json vite.config.ts index.html ./
+COPY src ./src
+COPY packages ./packages
+COPY server ./server
+# Complete the existing test import graph before the unchanged typecheck/build.
+COPY scripts/studio-recovery-drill.ts ./scripts/
+COPY deploy/studio-docker/prune-runtime-tests.mjs ./deploy/studio-docker/
+RUN npm run build && node deploy/studio-docker/prune-runtime-tests.mjs
+
+FROM node:22-slim@sha256:c3de60bf2f9dd0ac6370e6117950ff62d6e339527e7472301c9c78a017978392 AS runtime
+WORKDIR /app
+# Install the actual runtime graph independently; never copy build tooling.
+COPY package.json package-lock.json ./
+RUN --mount=type=secret,id=studio_ca \
+    if [ -f /run/secrets/studio_ca ]; then export NODE_EXTRA_CA_CERTS=/run/secrets/studio_ca; fi; \
+    npm ci --ignore-scripts --omit=dev --no-audit --no-fund && npm cache clean --force
+COPY tsconfig.json ./
+COPY --from=build /app/server ./server
+COPY --from=build /app/packages ./packages
+COPY deploy/studio-docker/bootstrap.mjs deploy/studio-docker/secrets.mjs deploy/studio-docker/recovery-quarantine.mjs ./deploy/studio-docker/
+COPY --from=build /app/dist ./dist
+RUN mkdir -p /state /run/studio-secrets && chown node:node /state && chmod 0700 /state
+USER node
+ENV NODE_ENV=production STUDIO_STATE_DIR=/state STUDIO_FRONTEND_ASSET_ROOT=/app/dist
+EXPOSE 8787
+CMD ["node", "--import", "tsx", "deploy/studio-docker/bootstrap.mjs"]

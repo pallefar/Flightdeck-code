@@ -68,7 +68,7 @@ export function RunPane({ run, busy, onStop }: Props) {
   return (
     <div className="fd-run">
       <header className="fd-run__head">
-        <span className={`fd-runstatus fd-runstatus--${status}`}>{status}</span>
+        <span className={`fd-runstatus${run.steps.length === 0 ? "" : ` fd-runstatus--${status}`}`}>{run.steps.length === 0 ? "No step diagnostics reported" : status}</span>
         <span className="fd-run__count mono">
           {done} / {run.steps.length} step{run.steps.length === 1 ? "" : "s"}
         </span>
@@ -89,8 +89,7 @@ export function RunPane({ run, busy, onStop }: Props) {
 
       {run.steps.length === 0 ? (
         <p className="fd-note">
-          Studio has not reported any steps for this round. The answer is streaming into the chat; nothing here
-          is broken, but nothing here is being measured either.
+          Studio has not reported any steps for this round. {busy ? "The answer is streaming into the chat. " : "The request has settled. "}No build, typecheck, mount or execution result can be inferred from this absence.
         </p>
       ) : (
         <ol className="fd-steps">

@@ -270,11 +270,13 @@ function Panel({
   call,
   generation,
   findings,
+  highlighted,
 }: {
   readonly panel: PanelDescriptor;
   readonly call: Call;
   readonly generation: number;
   readonly findings: readonly Finding[];
+  readonly highlighted: boolean;
 }) {
   const [rows, setRows] = useState<Array<Record<string, unknown>> | null>(null);
   const [refusal, setRefusal] = useState<Refusal | null>(null);
@@ -300,7 +302,7 @@ function Panel({
   }, [load, generation]);
 
   return (
-    <section className="card" data-panel={panel.id}>
+    <section className="card" data-panel={panel.id} data-tour-highlight={highlighted || undefined}>
       <h3>{panel.title}</h3>
       {findings.map((finding, i) => (
         <FindingPin key={`${finding.rule}-${finding.line}-${i}`} finding={finding} />
@@ -327,6 +329,7 @@ interface Props {
   /** Called after every request the page makes, so the pane beside the
    * frame can re-read the adapter's log, audit trail and proposals. */
   readonly onActivity: () => void;
+  readonly highlightedSectionId?: string | null;
 }
 
 export function GeneratedPageMirror({
@@ -336,6 +339,7 @@ export function GeneratedPageMirror({
   pageFindings,
   findingsForPanel,
   onActivity,
+  highlightedSectionId = null,
 }: Props) {
   const call = useMemo(() => makeCall(host, onActivity), [host, onActivity]);
   return (
@@ -355,6 +359,7 @@ export function GeneratedPageMirror({
           call={call}
           generation={generation}
           findings={findingsForPanel(panel.id)}
+          highlighted={panel.id === highlightedSectionId}
         />
       ))}
     </div>

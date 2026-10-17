@@ -1,0 +1,84 @@
+{
+  "verdict": "PARTIAL",
+  "date": "2026-10-15",
+  "upstreamCommit": "9f3bfd5529ef9df65158c609f6590f1127b56416",
+  "imageId": "sha256:d73591d0fc3ad5ad2711a461cac30d97f11fafc5be34f8416a0a148b7d444761",
+  "independentlyReproduced": {
+    "uniqueFixtureIsolationCases": 42,
+    "passed": 42,
+    "failed": 0,
+    "appMatchedTypecheck": "passed",
+    "strictDeclarationCheck": {
+      "exitCode": 2,
+      "errorCount": 22,
+      "fixtureSourceErrors": 0,
+      "allErrorsInDependencyDeclarations": true,
+      "output": "/Users/te451223/.hermes/cache/scratch/studio-harness-research/deepagents-parent-verification/strict-declarations.stdout"
+    },
+    "cli": [
+      {
+        "noLiveProvider": true,
+        "scenario": "draft",
+        "outcome": "candidate-proposed",
+        "candidateCount": 1,
+        "handlerCalls": 1,
+        "actualModelSends": 2,
+        "reviewedEnvelopes": [
+          {
+            "hash": "50488ed5a3078ed0e8d9cbf03c6e847437bc29d6994a46ec68ed762ba8fadeb3",
+            "sentHash": "50488ed5a3078ed0e8d9cbf03c6e847437bc29d6994a46ec68ed762ba8fadeb3",
+            "bytes": 1422
+          },
+          {
+            "hash": "b5daaece4ef0774f0172a9cd9830cacfbf4a68ade3467a9e962a9112d152a1e4",
+            "sentHash": "b5daaece4ef0774f0172a9cd9830cacfbf4a68ade3467a9e962a9112d152a1e4",
+            "bytes": 1791
+          }
+        ],
+        "pending": 0,
+        "admissionHeld": false,
+        "executed": false,
+        "approved": false,
+        "deployed": false
+      },
+      {
+        "noLiveProvider": true,
+        "scenario": "denied",
+        "outcome": "denied",
+        "candidateCount": 0,
+        "handlerCalls": 0,
+        "actualModelSends": 2,
+        "reviewedEnvelopes": [
+          {
+            "hash": "50488ed5a3078ed0e8d9cbf03c6e847437bc29d6994a46ec68ed762ba8fadeb3",
+            "sentHash": "50488ed5a3078ed0e8d9cbf03c6e847437bc29d6994a46ec68ed762ba8fadeb3",
+            "bytes": 1422
+          },
+          {
+            "hash": "701270d23efac7c931c56ab4b681bbb96abea64b89faf0878ff59b1465013236",
+            "sentHash": "701270d23efac7c931c56ab4b681bbb96abea64b89faf0878ff59b1465013236",
+            "bytes": 1696
+          }
+        ],
+        "pending": 0,
+        "admissionHeld": false,
+        "executed": false,
+        "approved": false,
+        "deployed": false
+      }
+    ]
+  },
+  "recordedPhysicalPackages": 46,
+  "artifactVerification": "verify_artifact.py passed; source/lock/counts and image checked",
+  "sdkCancellationGap": "reproduced by actual tool.invoke and agent.invoke barriers; original callback/model remains pending after SDK settles",
+  "parentEvidence": "/Users/te451223/.hermes/cache/scratch/studio-harness-research/deepagents-parent-verification/parent-result.json",
+  "scope": "deterministic no-provider fixture, not live vendor/model behavior, production authorization or hostile-JavaScript containment",
+  "productionAcceptanceCases": {
+    "total": 24,
+    "notRun": 24,
+    "passed": 0
+  },
+  "activation": "not installed in app; not deployed; existing JSON planner unchanged",
+  "serviceContainersUnchanged": true,
+  "declarationErrorsResolved": false
+}

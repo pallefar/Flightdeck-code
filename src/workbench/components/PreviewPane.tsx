@@ -28,9 +28,10 @@ interface Props {
   readonly enable: EnableLayers;
   readonly onEnable: (patch: Partial<EnableLayers>) => void;
   readonly onRevealFile: (path: string) => void;
+  readonly highlightedSectionId?: string | null;
 }
 
-export function PreviewPane({ state, enable, onEnable, onRevealFile }: Props) {
+export function PreviewPane({ state, enable, onEnable, onRevealFile, highlightedSectionId = null }: Props) {
   // Bumping this reloads every panel against the layers as they now are.
   const generation = useMemo(
     () => Number(enable.killSwitch) * 4 + Number(enable.ceiling) * 2 + Number(enable.project),
@@ -55,12 +56,14 @@ export function PreviewPane({ state, enable, onEnable, onRevealFile }: Props) {
   }
 
   const { module, host, attributed, ledger } = state;
+  const highlighted = module.panels.some(panel => panel.id === highlightedSectionId) ? highlightedSectionId : null;
   const pageFindings = findingsOn(attributed, "page");
   const serverFindings = findingsOn(attributed, "server");
 
   return (
-    <div className="fd-preview">
+    <div className="fd-preview" data-tour-section={highlighted ?? undefined}>
       <div className="fd-preview__stage">
+        <p className="fd-preview__scope">Descriptor mirror · generated source is not executed. Capability responses are mocked; no host is installed here.</p>
         <div className="fd-preview__bar">
           <span className="fd-tabs__id">{module.routePrefix}</span>
           <Switch
@@ -102,6 +105,7 @@ export function PreviewPane({ state, enable, onEnable, onRevealFile }: Props) {
             pageFindings={pageFindings}
             findingsForPanel={(panelId) => findingsFor(attributed, panelId)}
             onActivity={refresh}
+            highlightedSectionId={highlighted}
           />
         </PreviewFrame>
       </div>

@@ -78,6 +78,7 @@ export function PreviewFrame({ css, title, children }: Props) {
         className="fd-preview__frame"
         title={title}
         sandbox="allow-same-origin"
+        allow="microphone 'none'; camera 'none'; on-device-speech-recognition 'none'"
       />
       {body === null ? null : createPortal(children, body)}
     </>

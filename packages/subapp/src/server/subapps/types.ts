@@ -6,7 +6,7 @@
  * (Studio declares neither). The field rules that matter are in the TYPES here
  * and in the contract doc; `@conformance`'s manifest check is the thing that
  * actually enforces them on emitted text. */
-import type { FastifyInstance } from "fastify";
+import type { FastifyInstance, FastifyRequest } from "fastify";
 import type { Db } from "../db.js";
 
 export const CAPABILITY_SCOPES = ["read:contracts", "write:inbox-proposal"] as const;
@@ -32,7 +32,7 @@ export interface ContractFolder {
  * absence is the whole reason Studio proposes rather than installs. */
 export interface SubAppCapabilities {
   readContracts(): ContractFolder[];
-  writeInboxProposal(fileName: string, content: unknown): string;
+  writeInboxProposal(fileName: string, content: unknown): Promise<string>;
   /** Filenames under `memory/proposals/` that THIS sub-app wrote — its own
    * `<id>-` prefix only. Gated by `write:inbox-proposal`. Exists so a writer
    * can be idempotent without a filesystem import of its own. */
@@ -41,8 +41,9 @@ export interface SubAppCapabilities {
 }
 
 export interface RegisterRoutesCtx {
-  /** Built from that workspace's OWN live install row, re-read on every call. */
-  capabilitiesFor(workspaceId: string): Promise<SubAppCapabilities>;
+  /** Built from the request's resolved identity/project and that workspace's
+   * OWN live install row, re-read on every call. No body-supplied authority. */
+  capabilitiesFor(workspaceId: string, req: FastifyRequest): Promise<SubAppCapabilities>;
 }
 
 export interface SubAppManifestData {

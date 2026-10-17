@@ -1,0 +1,16 @@
+<!doctype html>
+<html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Flightdeck · Source IDE verification</title></head>
+<body><script type="module">
+import { mountWorkbenchFixture } from './browser.fixture.tsx';
+import { verifySourceFocus } from './premium.browser.fixture.tsx';
+window.premiumErrors = [];
+window.addEventListener('error', event => window.premiumErrors.push(event.message));
+window.addEventListener('unhandledrejection', event => window.premiumErrors.push(String(event.reason)));
+window.premiumReady = mountWorkbenchFixture(true).then(fixture => { window.premiumFixture = fixture; return fixture; });
+window.runSourceFocus = async () => {
+  await window.premiumReady;
+  window.premiumCheck = { state: 'running' };
+  window.premiumFixture.root.unmount();
+  verifySourceFocus().then(result => { window.premiumCheck = { result, errors: window.premiumErrors }; }).catch(error => { window.premiumCheck = { error: String(error), stack: error.stack, errors: window.premiumErrors }; });
+};
+</script></body></html>

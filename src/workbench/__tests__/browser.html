@@ -1,0 +1,14 @@
+<!doctype html>
+<html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Flightdeck · Sub-app IDE browser fixture</title></head>
+<body><script type="module">
+import { mountWorkbenchFixture, verifyWorkbenchFixture } from './browser.fixture.tsx';
+window.wbErrors = [];
+window.addEventListener('error', event => window.wbErrors.push(event.message));
+window.addEventListener('unhandledrejection', event => window.wbErrors.push(String(event.reason)));
+window.wbReady = mountWorkbenchFixture(true).then(fixture => { window.wbFixture = fixture; return fixture; });
+window.runWorkbenchChecks = async () => {
+  const fixture = await window.wbReady;
+  window.wbCheck = { state: 'running' };
+  verifyWorkbenchFixture(fixture).then(result => { window.wbCheck = { result, errors: window.wbErrors }; }).catch(error => { window.wbCheck = { error: String(error), stack: error.stack, errors: window.wbErrors }; });
+};
+</script></body></html>
