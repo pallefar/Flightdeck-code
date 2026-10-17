@@ -1,10 +1,13 @@
 import {useState} from 'react';
 import {configSchemas, graphSchema, resolveNode, type Graph, type GraphNode, type Json} from '../../packages/workflow/graph';
+import {blockControlProfile} from './block-controls';
 
 export type SaveOutcome = {ok:true} | {ok:false; error:string};
 export type ValueType = 'string' | 'number' | 'boolean' | 'null' | 'object' | 'array';
 export interface FieldRow {name:string; type:ValueType; value:string}
 export interface ParameterDraft {config:Record<string,Json>; rows:FieldRow[]; advanced:string; mode:'typed'|'json'}
+
+export const QUICK_PARAMETER_DRAFT_MESSAGE = 'Open full settings to review and apply pending advanced edits.';
 
 export function createParameterDraft(graph:Graph,node:GraphNode):ParameterDraft {
   const {config:effective,type} = resolveNode(graph,node);
@@ -26,6 +29,25 @@ function parseRow(row:FieldRow):Json {
   const actual = value === null ? 'null' : Array.isArray(value) ? 'array' : typeof value;
   if (actual !== row.type) throw new Error(`Expected ${row.type} for ${row.name}`);
   return value as Json;
+}
+
+/** Compare effective defaults, not node overrides. JSON mode remains pending even
+ * when its text is equal: quick editing must not silently switch/discard modes. */
+export function hasAdvancedParameterDraft(graph:Graph,node:GraphNode,draft:ParameterDraft):boolean {
+  if (draft.mode==='json') return true;
+  const {type} = resolveNode(graph,node);
+  const baseline = createParameterDraft(graph,node);
+  const quickKeys = new Set(blockControlProfile(type).quickKeys);
+  if (type==='branch') quickKeys.add('valueText');
+  return [...new Set([...Object.keys(baseline.config),...Object.keys(draft.config)])]
+    .some(key=>!quickKeys.has(key)&&JSON.stringify(baseline.config[key])!==JSON.stringify(draft.config[key]));
+}
+
+/** Refuse before validation/update; never save edits hidden by the quick surface. */
+export function applyQuickParameterDraft(graph:Graph,node:GraphNode,draft:ParameterDraft,
+  update:(config:GraphNode['config'])=>SaveOutcome):SaveOutcome {
+  if (hasAdvancedParameterDraft(graph,node,draft)) return {ok:false,error:QUICK_PARAMETER_DRAFT_MESSAGE};
+  return applyParameterDraft(graph,node,draft,update);
 }
 
 export function applyParameterDraft(graph:Graph,node:GraphNode,draft:ParameterDraft,
@@ -88,7 +110,7 @@ export function parameterDraftJson(graph:Graph,node:GraphNode,draft:ParameterDra
   return text;
 }
 
-type ParameterProps = {graph:Graph;node:GraphNode;update:(config:GraphNode['config'])=>SaveOutcome;onDraftChange?:()=>void};
+type ParameterProps = {graph:Graph;node:GraphNode;update:(config:GraphNode['config'])=>SaveOutcome;onDraftChange?:()=>void;level?:'quick'|'extended'};
 
 /** Config revisions remount the draft, including undo/redo and wrapper default changes.
  * Label/position updates do not discard an in-progress parameter edit. */
@@ -98,11 +120,17 @@ export function NodeParameters(props:ParameterProps) {
   return <ParameterForm key={revision} {...props}/>;
 }
 
-function ParameterForm({graph,node,update,onDraftChange}:ParameterProps) {
+function ParameterForm({graph,node,update,onDraftChange,level='extended'}:ParameterProps) {
   const [draft,setDraft] = useState(()=>createParameterDraft(graph,node));
   const [status,setStatus] = useState('Saved settings');
   const [issue,setIssue] = useState('');
-  function change(next:ParameterDraft) {onDraftChange?.();setDraft(next);setStatus('Unsaved settings');setIssue('');}
+  const quick = level==='quick';
+  const jsonLocked = quick&&draft.mode==='json';
+  const advancedPending = quick&&hasAdvancedParameterDraft(graph,node,draft);
+  function change(next:ParameterDraft) {
+    if (jsonLocked&&next.mode==='typed') return;
+    onDraftChange?.();setDraft(next);setStatus('Unsaved settings');setIssue('');
+  }
   function changeRow(index:number,patch:Partial<FieldRow>) {
     change({...draft,mode:'typed',rows:draft.rows.map((row,i)=>i===index?{...row,...patch}:row)});
   }
@@ -125,27 +153,34 @@ function ParameterForm({graph,node,update,onDraftChange}:ParameterProps) {
     </select></label>;
   }
   return <div className="wf-parameters">
-    {wrapper&&<p>Effective {wrapper.baseType} parameters include reusable defaults. Untouched defaults remain inherited; edits create node overrides. Advanced JSON edits overrides only; use {'{}'} to restore all defaults.</p>}
-    {draft.mode==='json'&&<p>Advanced JSON is active. Apply saves the JSON below. Editing a parameter instead switches back to parameter controls.</p>}
+    {wrapper&&<p hidden={quick}>Effective {wrapper.baseType} parameters include reusable defaults. Untouched defaults remain inherited; edits create node overrides. Advanced JSON edits overrides only; use {'{}'} to restore all defaults.</p>}
+    {draft.mode==='json'&&<p hidden={quick}>Advanced JSON is active. Apply saves the JSON below. Editing a parameter instead switches back to parameter controls.</p>}
+    <fieldset className="wf-typed-parameters" aria-label="Typed parameters" data-level={level} disabled={jsonLocked}
+      style={{border:0,padding:0,margin:0,minWidth:0}}>
     {type==='manual'&&<p>Manual input is supplied at local execution. No stored parameters.</p>}
     {type==='output'&&<p>Returns incoming data unchanged. No stored parameters.</p>}
     {type==='resource'&&<>
       {field('resourceId','Resource ID')}
-      {field('revision','Active resource revision',false,true)}
       {field('functionId','Function ID')}
+      <div data-parameter-group="advanced" hidden={quick}>
+      {field('revision','Active resource revision',false,true)}
       <p>Reference only: select an active read-only REST / MCP function from the Resources library. Active authorizations and independent server review are required at execution; these fields do not grant access.</p>
       <p>Inputs supplies schema-bound function parameters to the trusted Resource adapter. No secrets or model overrides, destinations, headers or credentials are stored here. Incomplete references may be saved as drafts but cannot execute.</p>
+      </div>
     </>}
     {type==='http'&&<>
       {field('url','HTTP URL')}
       {select('method','HTTP method',['GET','POST','PUT','PATCH','DELETE'])}
+      <div data-parameter-group="advanced" hidden={quick}>
       {select('service','Service',['generic','slack','microsoft365'])}
       {field('credentialRef','Credential reference')}
       <p>Vault identifier only, never inline secrets. Service is metadata, not a working integration. HTTP adapter is not configured unless supplied by the trusted host.</p>
       {field('bodyText','HTTP body JSON',true)}
+      </div>
     </>}
     {type==='llm'&&<>
-      {field('instruction','Instruction',true)}{field('model','Model')}
+      {field('instruction','Instruction',true)}
+      <div data-parameter-group="advanced" hidden={quick}>{field('model','Model')}</div>
       <p>LLM adapter is not configured unless supplied by the trusted host. No autonomous tools.</p>
     </>}
     {type==='branch'&&<>
@@ -154,7 +189,8 @@ function ParameterForm({graph,node,update,onDraftChange}:ParameterProps) {
       <p>Routes incoming data to true or false ports. Equality compares JSON values.</p>
     </>}
     {type==='approval'&&<>
-      {field('reviewer','Reviewer')}{field('reason','Review reason',true)}
+      {field('reviewer','Reviewer')}
+      <div data-parameter-group="advanced" hidden={quick}>{field('reason','Review reason',true)}</div>
       <p>Pauses for an independently authenticated human. This editor cannot authorize approval or self-approval.</p>
     </>}
     {type==='unconfigured'&&<>{field('description','Description',true)}<p>This placeholder cannot execute.</p></>}
@@ -178,7 +214,8 @@ function ParameterForm({graph,node,update,onDraftChange}:ParameterProps) {
         onClick={()=>change({...draft,mode:'typed',rows:draft.rows.filter((_,i)=>i!==index)})}>Remove</button>
     </div>)}
     <button onClick={()=>change({...draft,mode:'typed',rows:[...draft.rows,{name:'',type:'string',value:''}]})}>Add field</button></>}
-    <details><summary>Advanced JSON</summary>
+    </fieldset>
+    <details hidden={quick}><summary>Advanced JSON</summary>
       <p>Schema-validated JSON, not code. Focusing this editor loads the current parameter edits; subsequent changes use JSON mode.</p>
       <label>Configuration JSON
         <textarea aria-label="Node configuration JSON" value={draft.advanced} spellCheck={false}
@@ -191,10 +228,12 @@ function ParameterForm({graph,node,update,onDraftChange}:ParameterProps) {
           onChange={event=>change({...draft,mode:'json',advanced:event.target.value})}/>
       </label>
     </details>
+    {advancedPending&&<p role="note">{QUICK_PARAMETER_DRAFT_MESSAGE}</p>}
     {issue&&<p role="alert">{issue}</p>}
     <p role="status">{status}</p>
-    <button onClick={()=>{
-      const result = applyParameterDraft(graph,node,draft,config=>{
+    <button hidden={quick&&(type==='manual'||type==='output')} disabled={advancedPending} onClick={()=>{
+      const apply = quick?applyQuickParameterDraft:applyParameterDraft;
+      const result = apply(graph,node,draft,config=>{
         const outcome=update(config);
         // A successful no-op save may keep the same revision key (e.g. restoring
         // inherited defaults with {}). Refresh even when React does not remount.

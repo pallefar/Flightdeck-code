@@ -25,7 +25,12 @@ it('consolidates workspace commands above the canvas with honest manifest facts'
  const html=renderToStaticMarkup(createElement(WorkflowEditor,{initialGraph:createWorkflowTemplate('branch')}));
  const header=html.match(/<header class="wf-header[\s\S]*?<\/header>/)?.[0]??'';
  expect(header.includes('aria-label="Workflow workspace"')).toBe(true);
- for(const control of ['Add or search blocks','Toggle node inspector','Undo','Redo','Document','Explain workflow','Run locally'])expect(header.includes(control),control).toBe(true);
+ const chrome=html.slice(0,html.indexOf('<div class="wf-main">'));
+ expect(chrome.indexOf('role="menubar"')).toBeLessThan(chrome.indexOf('<header class="wf-header'));
+ for(const menu of ['File','Edit','View','Insert','Run','Help'])expect(chrome.includes(`aria-label="${menu} menu"`),menu).toBe(true);
+ for(const control of ['Add or search blocks','Toggle node inspector','Undo','Redo','Export JSON','Explain workflow'])expect(chrome.includes(control),control).toBe(true);
+ expect(header.includes('Run locally')).toBe(true);
+ for(const moved of ['Undo','Redo','Document'])expect(header.includes(moved),moved).toBe(false);
  expect(html.includes('aria-label="Graph composition facts"')).toBe(true);
  for(const fact of ['Existing builtin instances','Graph-local wrapper definitions','Unresolved capabilities'])expect(html.includes(fact),fact).toBe(true);
  expect(html.includes('Final design is not execution')).toBe(true);

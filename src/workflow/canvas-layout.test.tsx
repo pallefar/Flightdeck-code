@@ -4,9 +4,10 @@ import {renderToStaticMarkup} from 'react-dom/server';
 import * as editor from './WorkflowEditor';
 import {WorkflowEditorStore} from './store';
 
-it('defaults to Expanded with a working view-only display selector and smaller Compact geometry',()=>{
+it('defaults to Expanded with View-menu controls and smaller Compact geometry',()=>{
  const html=renderToStaticMarkup(createElement(editor.WorkflowEditor,{initialGraph:editor.createWorkflowTemplate('branch')}));
- expect(html).toContain('Block display');expect(html).toContain('value="expanded" selected=""');
+ expect(html).toContain('aria-label="View menu"');expect(html).toContain('Canvas · expanded · 100%');
+ expect(html).not.toContain('aria-label="Block display"');
  expect(editor).toHaveProperty('nodeLayout');
  const expanded=editor.nodeLayout('expanded'),compact=editor.nodeLayout('compact');
  expect(expanded).toEqual({width:220,height:144,anchorY:124});

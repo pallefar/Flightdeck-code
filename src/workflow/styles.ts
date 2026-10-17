@@ -351,10 +351,7 @@ export const WORKFLOW_CSS=`
 .wf-fragment-footer>div{display:flex;gap:8px}
 @media(max-width:760px){.wf-editor .wf-fragment-dialog{width:calc(100vw - 16px);max-height:calc(100dvh - 16px)}.wf-fragment-header{padding:10px 12px}.wf-fragment-header h2{font-size:18px}.wf-fragment-body{grid-template-columns:minmax(0,1fr)}.wf-fragment-body>section,.wf-fragment-body>aside{padding:8px 12px}.wf-fragment-body>aside{border-left:0;border-top:1px solid var(--wf-border)}.wf-fragment-footer{padding:8px 12px}.wf-fragment-dialog button,.wf-fragment-dialog input{min-height:44px}.wf-fragment-checkbox input{min-height:18px}}
 /* Alternate topology projection; graph positions and shared settings stay intact. */
-.wf-view-controls{display:flex;align-items:center;gap:5px;min-width:0;flex-wrap:wrap}
-.wf-view-switch{display:flex;align-items:center;gap:2px;padding:2px;background:var(--wf-surface2);border:1px solid var(--wf-border);border-radius:6px;flex-shrink:0}
-.wf-editor .wf-view-switch button{border:0;background:transparent;white-space:nowrap;font-size:11px;padding:5px 9px}
-.wf-editor .wf-view-switch button[aria-pressed="true"]{background:var(--wf-panel);color:var(--wf-accent);box-shadow:0 1px 4px color-mix(in srgb,var(--wf-text) 12%,transparent);font-weight:700}
+.wf-view-summary{min-width:0;white-space:nowrap;font-variant-numeric:tabular-nums;color:var(--wf-muted)}
 .wf-node.is-stacked{border-top:1px solid var(--wf-border);border-left:4px solid var(--wf-accent);border-radius:9px;box-shadow:0 3px 12px color-mix(in srgb,var(--wf-text) 9%,transparent)}
 .wf-node.is-stacked[data-family="Data"]{border-left-color:var(--wf-success)}
 .wf-node.is-stacked[data-family="Logic / review"]{border-left-color:var(--wf-warning)}
@@ -369,10 +366,35 @@ export const WORKFLOW_CSS=`
 .wf-stack-note{position:absolute;left:12px;bottom:10px;z-index:2;padding:5px 8px;max-width:calc(100% - 24px);border:1px solid var(--wf-border);border-radius:5px;background:var(--wf-panel);color:var(--wf-muted);font-size:10px;pointer-events:none}
 .wf-editor[data-workflow-view="stacked"] .wf-empty{padding:70px 24px;width:348px}
 @media(max-width:760px){
- .wf-editor .wf-view-controls{overflow-x:auto;overflow-y:hidden;flex-wrap:nowrap;flex:1;scroll-padding:8px;scrollbar-width:thin}
- .wf-editor .wf-view-controls>*{flex-shrink:0}
  .wf-editor .wf-canvasbar>.wf-manifest{flex-shrink:0}
- .wf-editor .wf-view-switch button{min-height:40px}
  .wf-stack-note{font-size:9px;padding:4px 6px}
 }
+/* Quick controls overlay the editor, never resize the canvas or remount forms. */
+.wf-editor .wf-body.has-inspector{grid-template-columns:minmax(0,1fr)}
+.wf-editor .wf-body.has-palette.has-inspector{grid-template-columns:260px minmax(0,1fr)}
+.wf-editor .wf-settings-dialog:not([open]){position:absolute;left:var(--wf-inspector-left,8px);top:var(--wf-inspector-top,8px);width:var(--wf-inspector-width,min(320px,calc(100% - 16px)));max-width:none;max-height:var(--wf-inspector-height,360px);min-height:0;margin:0;padding:0;z-index:8;overflow:auto;overscroll-behavior:contain;border:1px solid var(--wf-border);border-radius:8px;box-shadow:var(--shadow,0 12px 36px #0002);scrollbar-gutter:stable}
+.wf-settings-dialog:not([open]) .wf-inspector{padding:10px;border:0;animation:wf-quick-inspector-in 150ms ease-out both}
+.wf-quick-header{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:7px;font-size:11px;color:var(--wf-muted)}
+.wf-editor.wf-editor .wf-quick-header button{min-height:24px;padding:2px 7px;font-size:14px}
+.wf-block-purpose h4{margin:6px 0;font-size:15px;color:var(--wf-text)}
+.wf-block-purpose p{margin:6px 0;font-size:11px;line-height:1.35}
+.wf-settings-dialog:not([open]) .wf-block-purpose h4{display:none}
+.wf-settings-dialog:not([open]) .wf-block-purpose .wf-kicker{font-size:9px;letter-spacing:.7px}
+.wf-settings-dialog:not([open]) .wf-node-settings label{margin:8px 0}
+.wf-node-identity{margin:16px 0 8px;padding-top:6px;border-top:1px solid var(--wf-border)}
+.wf-node-identity>code{display:block;margin-top:8px}
+.wf-editor .wf-extended-action{margin-top:10px;width:100%;border-color:var(--wf-accent)}
+.wf-trigger-inputs{padding:8px 0}.wf-trigger-inputs button{margin:4px 4px 4px 0}
+.wf-extended-graph{border-top:1px solid var(--wf-border);margin-top:14px;padding-top:12px}
+@keyframes wf-quick-inspector-in{from{opacity:0;transform:translateX(16px)}to{opacity:1;transform:translateX(0)}}
+.wf-editor[data-presentation-motion="off"] .wf-settings-dialog:not([open]) .wf-inspector{animation:none}
+.wf-settings-dialog:not([open]) .wf-quick-header{position:sticky;top:0;height:0;margin:0;z-index:2;justify-content:flex-end}
+.wf-settings-dialog:not([open]) .wf-quick-header>strong{display:none}
+.wf-settings-dialog:not([open]) .wf-quick-header>button{position:absolute;right:0;top:0;background:var(--wf-panel)}
+.wf-settings-dialog:not([open]) .wf-block-purpose{padding-right:30px}
+.wf-settings-dialog:not([open]) .wf-block-purpose p{font-size:10px;line-height:1.3;margin:4px 0}
+.wf-settings-dialog:not([open]) .wf-typed-parameters>p{display:none}
+.wf-settings-dialog:not([open]) :is(input,select){padding:6px}
+.wf-settings-dialog:not([open]) :is([data-block-type="manual"],[data-block-type="output"]) .wf-parameters [role="status"]{display:none}
+.wf-manual-input-action{width:100%;margin:6px 0}
 `;
