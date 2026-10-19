@@ -65,7 +65,7 @@ it('uses an explicit server-selected connection without a browser ID and reports
     expect(response.json().status).toBe('needs_input');
     expect(transport).toHaveBeenCalledTimes(1);
     const health = await app.inject({url: '/api/studio/health', headers});
-    expect(health.json()).toEqual({ok: true, selectedId: 'local', model: 'fixture-model', modelStatus: 'configured', verification: 'not-probed'});
+    expect(health.json()).toEqual({ok: true, selectedId: 'local', model: 'fixture-model', modelStatus: 'configured', verification: 'not-probed', processBuild: 'registered-templates-v1'});
   } finally {await app.close();}
 });
 it.each(routes)('fails closed without explicit selection at %s, even with a configured local provider', async url => {
@@ -108,7 +108,7 @@ it('keeps public health a liveness response and reports authenticated configurat
     expect(read).not.toHaveBeenCalled();
     expect(selected).not.toHaveBeenCalled();
     const health = await app.inject({url: '/api/studio/health', headers});
-    expect(health.json()).toEqual({ok: true, selectedId: 'codex-chatgpt', model: null, modelStatus: 'unavailable', verification: 'not-probed'});
+    expect(health.json()).toEqual({ok: true, selectedId: 'codex-chatgpt', model: null, modelStatus: 'unavailable', verification: 'not-probed', processBuild: 'registered-templates-v1'});
     expect(health.body).not.toMatch(/bindingId|baseUrl|apiKey|endpoint/);
   } finally {await app.close();}
 });

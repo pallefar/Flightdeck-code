@@ -6,7 +6,7 @@ const publicText = z.string().min(1).max(1000).refine(value => !/[\r\n\x00-\x1f]
 const descriptorSchema = z.object({ id: connectionIdSchema, label: publicText, model: publicText.nullable(), status: z.enum(['configured', 'unavailable']), verification: z.literal('not-probed'), reason: publicText.optional() }).strict().refine(d => d.status !== 'configured' || d.model !== null);
 export type ModelConnectionDescriptor = z.infer<typeof descriptorSchema>;
 const descriptorsSchema = z.object({ connections: z.array(descriptorSchema).length(4), selectedId: connectionIdSchema.nullable() }).strict().refine(d => new Set(d.connections.map(c => c.id)).size === 4);
-const healthSchema = z.object({ ok: z.literal(true), selectedId: connectionIdSchema.nullable(), model: publicText.nullable(), modelStatus: z.enum(['configured', 'unavailable', 'unselected']), verification: z.literal('not-probed') }).strict();
+const healthSchema = z.object({ ok: z.literal(true), selectedId: connectionIdSchema.nullable(), model: publicText.nullable(), modelStatus: z.enum(['configured', 'unavailable', 'unselected']), verification: z.literal('not-probed'), processBuild: z.literal('registered-templates-v1').optional() }).strict();
 const skillsSchema = z.object({ projectId: z.string().max(64), skillSourceState: z.enum(["loaded", "empty", "unavailable"]), skillSources: z.array(z.object({ id: publicText, version: publicText, contentHash: publicText }).strict()).max(100) }).strict();
 export type ConnectionStatus = z.infer<typeof healthSchema> & z.infer<typeof descriptorsSchema> & z.infer<typeof skillsSchema>;
 /** Bounded browser-only DTO reader; never exposes raw server/transport errors. */

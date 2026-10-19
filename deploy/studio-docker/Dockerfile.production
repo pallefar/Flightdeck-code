@@ -24,6 +24,7 @@ RUN --mount=type=secret,id=studio_ca \
 COPY tsconfig.json ./
 COPY --from=build /app/server ./server
 COPY --from=build /app/packages ./packages
+COPY --from=build /app/src/process-studio/plan.ts /app/src/process-studio/roi.ts /app/src/process-studio/contracts.ts ./src/process-studio/
 COPY deploy/studio-docker/bootstrap.mjs deploy/studio-docker/secrets.mjs deploy/studio-docker/recovery-quarantine.mjs ./deploy/studio-docker/
 COPY --from=build /app/dist ./dist
 RUN mkdir -p /state /run/studio-secrets && chown node:node /state && chmod 0700 /state

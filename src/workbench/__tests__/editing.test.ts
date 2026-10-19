@@ -130,6 +130,42 @@ describe("reconciling a new round", () => {
     expect(reconcile([[PATH, agreed]]).size).toBe(0);
   });
 
+  it.each([false, true])("keeps dirty source when regeneration matches its effective text (saved=%s)", (hasSaved) => {
+    const baseline = "// baseline: café\r\n";
+    const saved = "// saved: 保留 e\u0301\r\n";
+    const buffer = "// pending: 🧭\r\n\t";
+    const opened = draft(baseline);
+    const typing = editDraft(hasSaved ? saveDraft(editDraft(opened, saved)) : opened, buffer);
+    const incoming = hasSaved ? saved : baseline;
+    const files = [file(PATH, incoming)];
+    const out = reconcileDrafts({
+      drafts: new Map([[PATH, typing]]), locks: new Set(), previousFiles: [file(PATH, baseline)],
+      nextFiles: files, nextRoundId: "r2", at: 99,
+    });
+    const retained = out.get(PATH);
+    expect(retained?.buffer).toBe(buffer);
+    expect(retained?.saved).toBe(hasSaved ? saved : null);
+    expect(retained?.generated).toBe(baseline);
+    expect(retained?.conflict?.held).toBe(incoming);
+    expect(applyDrafts(files, out, "r2")).toBe(files);
+    const kept = resolveDraft(retained!, "mine")!;
+    expect(kept.buffer).toBe(buffer);
+    expect(kept.saved).toBe(incoming);
+    expect(kept.generated).toBe(incoming);
+    expect(isDirty(kept)).toBe(true);
+    expect(applyDrafts(files, new Map([[PATH, kept]]), "r2")).toBe(files);
+    expect(typing.roundId).toBe("r1");
+    expect(typing.conflict).toBeNull();
+  });
+
+  it("drops an untouched locked draft when the source did not change", () => {
+    const files = [file(PATH, "generated v1\n")];
+    expect(reconcileDrafts({
+      drafts: new Map([[PATH, draft("generated v1\n")]]), locks: new Set([PATH]),
+      previousFiles: files, nextFiles: files, nextRoundId: "r2", at: 99,
+    }).size).toBe(0);
+  });
+
   it("raises a conflict rather than letting either side win silently", () => {
     const mine = saveDraft(editDraft(draft("generated v1\n"), "mine\n"));
     const out = reconcile([[PATH, mine]]);

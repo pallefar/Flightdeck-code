@@ -79,7 +79,7 @@ it('mounts opted-in authenticated setup at the real composition root and keeps i
     expect(listed.selectedId).toBeNull();
     expect(listed.connections).toHaveLength(4);
     expect(listed.connections.find((d: {id: string}) => d.id === 'anthropic')).toEqual({ id: 'anthropic', label: 'Anthropic API', model: 'fixture-claude', status: 'configured', verification: 'not-probed' });
-    expect((await app.inject({ url: '/api/studio/health', headers })).json()).toEqual({ ok: true, selectedId: null, model: null, modelStatus: 'unselected', verification: 'not-probed' });
+    expect((await app.inject({ url: '/api/studio/health', headers })).json()).toEqual({ ok: true, selectedId: null, model: null, modelStatus: 'unselected', verification: 'not-probed', processBuild: 'registered-templates-v1' });
     expect(create).not.toHaveBeenCalled();
     const unselected = await app.inject({ method: 'POST', url: '/api/studio/create', headers, payload: { prompt: 'Review incoming requests.' } });
     expect(unselected.statusCode).toBe(409);

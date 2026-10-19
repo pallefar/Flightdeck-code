@@ -117,6 +117,14 @@ export const WORKBENCH_CSS = `
 .fd-wb .fd-tabs__spacer { flex: 1; }
 .fd-wb .fd-tabs__id { font: 11px var(--mono); color: var(--wb-muted); }
 .fd-wb .fd-body { flex: 1; min-width: 0; min-height: 0; display: flex; }
+.fd-wb .fd-removed-conflicts { flex: 0 1 auto; min-height: 44px; max-height: min(320px, 45%); overflow: auto; background: var(--wb-surface); border-bottom: 1px solid var(--wb-amber); }
+.fd-wb .fd-removed-conflicts > summary { cursor: pointer; padding: 10px 12px; min-height: 44px; color: var(--wb-amber); font-weight: 600; }
+.fd-wb .fd-removed-conflicts__list { padding: 0 12px 12px; }
+.fd-wb .fd-removed-conflicts__item { border-top: 1px solid var(--wb-line); padding: 10px 0; overflow-wrap: anywhere; }
+.fd-wb .fd-removed-conflicts__item button { min-height: 44px; }
+.fd-wb .fd-removed-conflicts__review > summary { cursor: pointer; min-height: 44px; padding: 10px 0; }
+.fd-wb .fd-removed-conflicts__review h4 { margin: 8px 0; font-size: 12px; }
+.fd-wb .fd-removed-conflicts__review pre { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 160px; overflow: auto; padding: 8px; border: 1px solid var(--wb-line); background: var(--wb-surface2); font-size: 11px; }
 .fd-wb .fd-view { flex: 1; min-width: 0; min-height: 0; display: flex; overflow: hidden; }
 .fd-wb .fd-workspace-status { display: flex; gap: 12px; align-items: center; border-top: 1px solid var(--wb-line); padding: 5px 12px; background: var(--wb-surface2); color: var(--wb-muted); font-size: 10px; flex: 0 0 auto; min-width: 0; }
 .fd-wb .fd-workspace-status > :last-child { margin-left: auto; }

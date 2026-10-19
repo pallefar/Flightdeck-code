@@ -213,7 +213,7 @@ test('real unmarked bootstrap retains liveness, authentication, workspace reads 
  async function exercise(){
   try {
    assert.deepEqual(await request('/api/studio/health'),{status:200,body:{ok:true}});
-   assert.deepEqual(await request('/api/studio/health',true),{status:200,body:{ok:true,selectedId:null,model:null,modelStatus:'unselected',verification:'not-probed'}});
+   assert.deepEqual(await request('/api/studio/health',true),{status:200,body:{ok:true,selectedId:null,model:null,modelStatus:'unselected',verification:'not-probed',processBuild:'registered-templates-v1'}});
    assert.equal((await request('/api/studio/model-connections')).status,401);
    const models=await request('/api/studio/model-connections',true);
    assert.equal(models.status,200);assert.equal(models.body.selectedId,null);assert.equal(models.body.connections.length,4);

@@ -46,6 +46,7 @@ import { loadResourceConfig } from "./resource-config";
 import { registerProductionAssets } from "./production-assets";
 import { RequestAdmission, admissionRefused, admittedModel, type RequestAdmissionOptions } from "./request-admission";
 import { registerReadinessRoute } from "./readiness";
+import { registerProcessBuildRoutes } from './process-build';
 import { createRequestAuthoring, NATIVE_REQUEST_POLICY } from './authoring-run';
 import { createAnthropicSessionSetup, type AnthropicSessionSetupOptions } from "./anthropic-session-setup";
 import { registerWorkflowResourceRoutes, type WorkflowResourceDependencies } from "./workflow-resources";
@@ -274,13 +275,14 @@ export function createServer(options: ServerOptions): ReturnType<typeof Fastify>
     ]);
   const store = options.store ?? createFileGrantStore(process.env["STUDIO_GRANTS_FILE"] ?? ".studio/grants.json");
 
-  app.get("/api/studio/health", async request => {
+  app.get("/api/studio/health", async (request, reply) => {
+    reply.header('Cache-Control', 'no-store');
     // Public liveness reads no model configuration. Authenticated details
     // describe configuration only; they never probe or claim live service.
     if (!presentsOperatorToken(request.headers.authorization, options.operator.token)) return { ok: true };
     const selectedId = modelConnections.selectedId ?? null;
     const descriptor = selectedId === null ? undefined : modelConnections.descriptors.find(connection => connection.id === selectedId);
-    return { ok: true, selectedId, model: descriptor?.model ?? null, modelStatus: descriptor?.status ?? "unselected", verification: "not-probed" };
+    return { ok: true, selectedId, model: descriptor?.model ?? null, modelStatus: descriptor?.status ?? "unselected", verification: "not-probed", processBuild: 'registered-templates-v1' };
   });
 
   const modelIntake: RouteShorthandOptions = {
@@ -288,6 +290,7 @@ export function createServer(options: ServerOptions): ReturnType<typeof Fastify>
       if (!presentsOperatorToken(request.headers.authorization, options.operator.token)) return reply.code(401).send({ error: "operator token required" });
     },
   };
+  registerProcessBuildRoutes(app, { operator: options.operator, digest, intake: modelIntake, admission });
   app.get('/api/studio/authoring', modelIntake, async (_request, reply) => {
     reply.header('Cache-Control', 'no-store');
     return { ...NATIVE_REQUEST_POLICY, enabled: nativeAuthoringEnabled, connectionIds: ['anthropic'] };

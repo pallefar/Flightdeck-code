@@ -1,0 +1,22 @@
+{
+  "package": "@open-harness/sdk",
+  "version": "0.1.1",
+  "gitHead": "531bd406d3d572f6873c6251db8567f50c59abea",
+  "sourceAuditCommit": "4645c5dca3598c5da5ea83cbd543674153ffced0",
+  "repository": "https://github.com/Open-Harness/open-harness",
+  "registryMetadata": "https://registry.npmjs.org/@open-harness/sdk/0.1.1",
+  "tarball": "https://registry.npmjs.org/@open-harness/sdk/-/sdk-0.1.1.tgz",
+  "integrity": "sha512-7uoxifdIPCdJ5agSge8LNFgtPH6NR8DjzDwBw0881mpNsBCuu8iaXrC14SAP82vnSGOfd9Zfsq0xODIqqFN+Tw==",
+  "sha256": "ab15672350ffb9430af0e5bdce936e1f3ed1c2cda2e34e3aadc58944bc1fd8e1",
+  "lockSha256": "dd87fb465eed6fab7e852b51afebf53b8ae6701ff0598b2dc90a8d0f70d662bd",
+  "manifestSha256": "2f8c2ee09aed3e612d05613743d32393e4f4ec53672f123653441358d01c73ca",
+  "coreMembers": [
+    "package/package.json",
+    "package/dist/core.mjs",
+    "package/dist/src-BYb3FqD4.mjs",
+    "package/dist/humanInput-ClpQDEvk.mjs",
+    "package/dist/core.d.mts",
+    "package/dist/index-nSw6yXwv.d.mts"
+  ],
+  "scope": "DEVELOPMENT OPTIONAL VERIFICATION ONLY; not Studio runtime integration or production authorization"
+}

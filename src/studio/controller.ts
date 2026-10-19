@@ -2,10 +2,15 @@ import { createStore } from "../workbench/store";
 import type { Candidate, GeneratedFileKind } from "../workbench/types";
 import { createDraft, type CreateRequest } from "./client";
 import type { ProposedSubapp, StudioResult } from "./result";
+import type { ProcessTemplateId } from '../process-studio/contracts';
+export interface RegisteredTemplateReceipt {
+  projectId: string; templateId: ProcessTemplateId; templateVersion: string;
+  artifactId: string; prd: string;
+}
 export interface StudioTurn {
   id: string; requestId: string; role: 'you' | 'studio';
   status: 'requesting' | 'settled' | 'cancelled' | 'error'; text: string;
-  destination: { connectionId: CreateRequest['connectionId']; projectId?: string };
+  destination: { connectionId: CreateRequest['connectionId'] | 'registered-template'; projectId?: string };
 }
 export interface StudioState {
   phase: "idle" | "requesting" | "result" | "cancelled" | "error";
@@ -54,6 +59,28 @@ export class StudioController {
   #set(state: StudioState): void { this.#state = state; for (const listener of this.#listeners) listener(); }
   #settled(status: StudioTurn['status'], text: string): readonly StudioTurn[] {
     return this.#state.transcript.map(turn => turn.requestId === this.#requestId && turn.role === 'studio' ? { ...turn, status, text: text.slice(0, 2000) } : turn);
+  }
+  /** Only for a client-validated, exact-review-bound template receipt.
+   * Parent still owns authentication, scope freshness and source replacement.
+   * No model request/determination or host authority is invented here.
+   */
+  acceptRegisteredTemplate(outcome: ProposedSubapp, receipt: RegisteredTemplateReceipt): boolean {
+    if (this.#abort !== null || this.workbench.getState().busy) return false;
+    if (!outcome.conformance.ok || outcome.conformance.findings.some(finding => finding.severity === 'error') || outcome.artifacts.decision !== 'allow') return false;
+    const snapshot = structuredClone(outcome);
+    const turn = this.workbench.prompt(receipt.prd);
+    if (turn === null) return false;
+    this.clearReceivedHandoff();
+    const text = `Registered template: ${receipt.templateId}, version ${receipt.templateVersion}. No model invoked. ${snapshot.generated.files.filter(file => file.kind !== 'standalone').length} source files received. Draft — not deployed. Artifact: ${receipt.artifactId}`;
+    this.workbench.settle(turn, candidateFrom(snapshot), text);
+    const requestId = `template-${++this.#sequence}`;
+    const destination: StudioTurn['destination'] = { connectionId: 'registered-template', projectId: receipt.projectId };
+    const transcript: readonly StudioTurn[] = [...this.#state.transcript,
+      { id: `${requestId}-you`, requestId, role: 'you', status: 'settled', text: receipt.prd.slice(0, 8000), destination },
+      { id: `${requestId}-studio`, requestId, role: 'studio', status: 'settled', text, destination },
+    ].slice(-TRANSCRIPT_LIMIT) as StudioTurn[];
+    this.#set({ phase: 'idle', result: null, error: null, transcript, acceptedRequestId: null });
+    return true;
   }
   async submit(request: CreateRequest, token: string, turnId?: string): Promise<void> {
     await this.#submit(request, token, turnId, request.prompt);

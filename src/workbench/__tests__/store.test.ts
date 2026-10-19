@@ -555,6 +555,29 @@ describe("a round landing on top of an edit", () => {
     expect(s.getState().drafts.get("a.ts")?.generated).toBe("generated v2\n");
   });
 
+  it("keeps a distinct unsaved buffer separate from saved source through Keep mine", () => {
+    const s = store();
+    const saved = "// saved: café e\u0301 🧭\r\n\tconst value = '保留';\r\n";
+    const unsaved = saved + "// still typing: Δ\r\n";
+    const generated = "// regenerated: 二\r\n";
+    s.settle(s.prompt("a") ?? "", candidateOf([{ path: "a.ts", contents: "// baseline\r\n" }]));
+    expect(s.editFile("a.ts", saved)).toBeNull();
+    expect(s.saveFile("a.ts")).toBe(true);
+    expect(s.editFile("a.ts", unsaved)).toBeNull();
+    s.settle(s.prompt("b") ?? "", candidateOf([{ path: "a.ts", contents: generated }]));
+    expect(s.getState().drafts.get("a.ts")?.conflict?.held).toBe(saved);
+    expect(currentCandidate(s.getState())?.files[0]?.contents).toBe(generated);
+
+    s.resolveConflict("a.ts", "mine");
+    expect(s.getState().drafts.get("a.ts")?.buffer).toBe(unsaved);
+    expect(s.getState().drafts.get("a.ts")?.saved).toBe(saved);
+    expect(s.getState().drafts.get("a.ts")?.generated).toBe(generated);
+    expect(s.getState().drafts.get("a.ts")?.conflict).toBeNull();
+    expect(currentCandidate(s.getState())?.files[0]?.contents).toBe(saved);
+    s.revertFile("a.ts");
+    expect(s.getState().drafts.get("a.ts")?.buffer).toBe(saved);
+  });
+
   it("forgets the edit entirely once they take Studio's", () => {
     const s = store();
     s.settle(s.prompt("a") ?? "", candidateOf([{ path: "a.ts", contents: "generated v1\n" }]));
@@ -565,6 +588,108 @@ describe("a round landing on top of an edit", () => {
     s.resolveConflict("a.ts", "studio");
     expect(s.getState().drafts.has("a.ts")).toBe(false);
     expect(currentCandidate(s.getState())?.files[0]?.contents).toBe("generated v2\n");
+  });
+
+  it.each([
+    { hasSaved: false, locked: false }, { hasSaved: true, locked: false },
+    { hasSaved: false, locked: true }, { hasSaved: true, locked: true },
+  ])("keeps later typing through refreshed conflicts (saved=$hasSaved, locked=$locked)", ({ hasSaved, locked }) => {
+    const s = store();
+    const baseline = "// baseline: café\r\n";
+    const saved = "// saved: e\u0301 保留\r\n";
+    const firstBuffer = "// first pending: 🧭\r\n";
+    const latestBuffer = firstBuffer + "// later typing: Δ\r\n\t";
+    const latestGenerated = "// regenerated: 三\r\n";
+    s.settle(s.prompt("a") ?? "", candidateOf([{ path: "a.ts", contents: baseline }]));
+    if (locked) s.toggleLock("a.ts");
+    if (hasSaved) {
+      s.editFile("a.ts", saved);
+      expect(s.saveFile("a.ts")).toBe(true);
+    }
+    s.editFile("a.ts", firstBuffer);
+    s.settle(s.prompt("b") ?? "", candidateOf([{ path: "a.ts", contents: "// generated two\r\n" }]));
+    const opened = s.getState().drafts.get("a.ts");
+    expect(s.editFile("a.ts", latestBuffer)).toBeNull();
+    expect(s.saveFile("a.ts")).toBe(false);
+    s.settle(s.prompt("c") ?? "", candidateOf([]));
+    expect(s.getState().drafts.get("a.ts")?.conflict?.kind).toBe("removed");
+    s.settle(s.prompt("d") ?? "", candidateOf([{ path: "a.ts", contents: latestGenerated }]));
+    const refreshed = s.getState().drafts.get("a.ts");
+    expect(refreshed?.roundId).toBe(s.getState().selectedRoundId);
+    expect(refreshed?.generated).toBe(baseline);
+    expect(refreshed?.saved).toBe(hasSaved ? saved : null);
+    expect(refreshed?.buffer).toBe(latestBuffer);
+    expect(refreshed?.conflict).toMatchObject({ kind: "regenerated", incoming: latestGenerated, held: hasSaved ? saved : baseline, fromLock: locked });
+    expect(opened?.buffer).toBe(firstBuffer);
+    expect(opened?.conflict?.incoming).toBe("// generated two\r\n");
+    expect(currentCandidate(s.getState())?.files[0]?.contents).toBe(latestGenerated);
+
+    s.resolveConflict("a.ts", "mine");
+    const kept = s.getState().drafts.get("a.ts");
+    expect(kept?.buffer).toBe(latestBuffer);
+    expect(kept?.saved).toBe(hasSaved ? saved : baseline);
+    expect(kept?.generated).toBe(latestGenerated);
+    expect(currentCandidate(s.getState())?.files[0]?.contents).toBe(hasSaved ? saved : baseline);
+    s.settle(s.prompt("e") ?? "", candidateOf([{ path: "a.ts", contents: hasSaved ? saved : baseline }]));
+    expect(s.getState().drafts.get("a.ts")?.buffer).toBe(latestBuffer);
+    expect(s.getState().drafts.get("a.ts")?.saved).toBe(hasSaved ? saved : baseline);
+    expect(s.getState().drafts.get("a.ts")?.conflict?.incoming).toBe(hasSaved ? saved : baseline);
+  });
+
+  it.each([false, true])("retains removed source without saving its pending buffer (saved=%s)", (hasSaved) => {
+    const s = store();
+    const baseline = "// baseline: 🧭\r\n";
+    const saved = "// saved: 保留\r\n";
+    const buffer = "// pending: café e\u0301\r\n\t";
+    s.settle(s.prompt("a") ?? "", candidateOf([{ path: "a.ts", contents: baseline }]));
+    if (hasSaved) {
+      s.editFile("a.ts", saved);
+      s.saveFile("a.ts");
+    }
+    s.editFile("a.ts", buffer);
+    s.settle(s.prompt("b") ?? "", candidateOf([]));
+    expect(s.getState().drafts.get("a.ts")?.conflict?.kind).toBe("removed");
+    expect(currentCandidate(s.getState())?.files).toEqual([]);
+    s.resolveConflict("a.ts", "mine");
+    expect(s.getState().drafts.get("a.ts")?.generated).toBe(baseline);
+    expect(s.getState().drafts.get("a.ts")?.saved).toBe(hasSaved ? saved : baseline);
+    expect(s.getState().drafts.get("a.ts")?.buffer).toBe(buffer);
+    expect(currentCandidate(s.getState())?.files[0]?.contents).toBe(hasSaved ? saved : baseline);
+    expect(s.saveFile("a.ts")).toBe(true);
+    expect(currentCandidate(s.getState())?.files[0]?.contents).toBe(buffer);
+  });
+
+  it.each(["regenerated", "removed"] as const)("discards saved and unsaved source only on explicit Use Studio (%s)", (kind) => {
+    const s = store();
+    s.settle(s.prompt("a") ?? "", candidateOf([{ path: "a.ts", contents: "// baseline\r\n" }]));
+    s.toggleLock("a.ts");
+    s.editFile("a.ts", "// saved: 保留\r\n");
+    s.saveFile("a.ts");
+    s.editFile("a.ts", "// pending: 🧭\r\n");
+    const files = kind === "removed" ? [] : [{ path: "a.ts", contents: "// Studio: café\r\n" }];
+    s.settle(s.prompt("b") ?? "", candidateOf(files));
+    s.editFile("a.ts", "// later typing: e\u0301\r\n");
+    expect(s.getState().drafts.get("a.ts")?.buffer).toBe("// later typing: e\u0301\r\n");
+    s.resolveConflict("a.ts", "studio");
+    expect(s.getState().drafts.has("a.ts")).toBe(false);
+    expect(currentCandidate(s.getState())?.files.map(({ path, contents }) => ({ path, contents }))).toEqual(files);
+    expect(s.getState().locks.has("a.ts")).toBe(true);
+  });
+
+  it.each(["regenerated", "removed"] as const)("keeps a locked, reverted draft when its source is %s", (kind) => {
+    const s = store();
+    const baseline = "// locked baseline: 保留 🧭\r\n";
+    s.settle(s.prompt("a") ?? "", candidateOf([{ path: "a.ts", contents: baseline }]));
+    s.toggleLock("a.ts");
+    s.editFile("a.ts", "// discarded typing\r\n");
+    s.revertFile("a.ts");
+    const files = kind === "removed" ? [] : [{ path: "a.ts", contents: "// new baseline\r\n" }];
+    s.settle(s.prompt("b") ?? "", candidateOf(files));
+    expect(s.getState().drafts.get("a.ts")?.conflict).toMatchObject({ kind, held: baseline, fromLock: true });
+    s.resolveConflict("a.ts", "mine");
+    expect(s.getState().drafts.get("a.ts")?.buffer).toBe(baseline);
+    expect(currentCandidate(s.getState())?.files.find((file) => file.path === "a.ts")?.contents).toBe(baseline);
+    expect(s.getState().locks.has("a.ts")).toBe(true);
   });
 
   it("takes locks back from a driver that persisted them", () => {

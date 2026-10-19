@@ -6,7 +6,8 @@ RUN --mount=type=secret,id=studio_ca \
     npm ci --ignore-scripts --include=dev --no-audit --no-fund && npm cache clean --force
 COPY server ./server
 COPY packages ./packages
-COPY tsconfig.json ./
+COPY src/process-studio/plan.ts src/process-studio/roi.ts src/process-studio/contracts.ts ./src/process-studio/
+COPY tsconfig.json .gitignore .dockerignore ./
 COPY deploy/studio-docker ./deploy/studio-docker
 RUN node --test deploy/studio-docker/*.test.mjs \
  && mkdir -p /state /run/studio-secrets \

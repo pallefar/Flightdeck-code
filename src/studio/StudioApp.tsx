@@ -18,6 +18,11 @@ import {AcceptedHandoff,type ReceivedHandoff} from './AcceptedHandoff';
 import {VoiceProvider,VoiceNarration,useVoice} from '../voice';
 import {StudioVoiceMenu} from './StudioVoiceMenu';
 import {AnthropicConnectionSetup} from './AnthropicConnectionSetup';
+import {ProcessStudio,type ProcessBuild} from '../process-studio/ProcessStudio';
+import {buildProcessDraft} from '../process-studio/build-client';
+import {buildProcessPlan,PROCESS_TEMPLATES} from '../process-studio/plan';
+import {isEmptyDraft} from '../workbench/editing';
+import type {Round} from '../workbench/types';
 import './StudioBuilder.css';
 
 export function reviewedHandoff(result: WorkflowResult) {
@@ -80,7 +85,13 @@ function StudioSession({ controller: supplied, fetcher = (...args)=>fetch(...arg
   const [pendingHandoff,setPendingHandoff] = useState<{requestId:string;result:EditableWorkflowResult}|null>(null);
   const [openedRequest,setOpenedRequest] = useState<string|null>(null),[resourceInsertError,setResourceInsertError] = useState('');
   const state = useSyncExternalStore(controller.subscribe,controller.getState,controller.getState);
+  const workbenchState=useSyncExternalStore(controller.workbench.subscribe,controller.workbench.getState,controller.workbench.getState);
   const [token,setToken] = useState(''),[projectId,setProjectId] = useState(''),[prompt,setPrompt] = useState('');
+  const [processScopeEpoch,setProcessScopeEpoch]=useState(0),[processPending,setProcessPending]=useState(false);
+  const processEpoch=useRef(0),processAbort=useRef<AbortController|null>(null);
+  const [processArtifact,setProcessArtifact]=useState<{artifactId:string;round:Round;epoch:number}|null>(null);
+  const processView=useRef(view);processView.current=view;
+  function cancelProcessBuild(){const abort=processAbort.current;processAbort.current=null;abort?.abort();setProcessPending(false);}
   function editPrompt(value:string|((current:string)=>string)){
     controller.invalidateSkillSendReview();
     setPrompt(value);
@@ -92,7 +103,7 @@ function StudioSession({ controller: supplied, fetcher = (...args)=>fetch(...arg
   function setupOpenChanged(open:boolean){if(open){voice.stop();rotateVoiceScope();}setAnthropicSetupOpen(open);}
   function setupMutation(){requireExplicitModel.current=true;invalidateContext(true);}
   const focusIntent=useRef<'connection'|'workspace'|'conversation'>('workspace');
-  function openConnectionSettings(){focusIntent.current='connection';setView('studio');setConnectionHelp(true);setConnectionFocus(turn=>turn+1);}
+  function openConnectionSettings(){cancelProcessBuild();processView.current='studio';focusIntent.current='connection';setView('studio');setConnectionHelp(true);setConnectionFocus(turn=>turn+1);}
   useEffect(()=>{if(connectionFocus&&focusIntent.current==='connection'&&view==='studio')tokenInput.current?.focus();},[connectionFocus,view]);
   const [connection,setConnection] = useState<ConnectionStatus|null>(null),[checking,setChecking] = useState(false);
   const [connectionId,setConnectionId] = useState<ModelConnectionId|''>(''),[connectionError,setConnectionError] = useState<string|null>(null);
@@ -107,19 +118,54 @@ function StudioSession({ controller: supplied, fetcher = (...args)=>fetch(...arg
   const [answers,setAnswers] = useState<Record<string,string>>({});
   const checkTurn=useRef(0),checkAbort=useRef<AbortController|null>(null),blockAbort=useRef<AbortController|null>(null);
   function invalidateContext(clearDescriptors=false){
+    // Revoke before notifying controller/store listeners, not in a later effect.
+    processEpoch.current++;setProcessScopeEpoch(processEpoch.current);cancelProcessBuild();setProcessArtifact(null);
     rotateVoiceScope();
     authoringTurn.current++;authoringAbort.current?.abort();authoringAbort.current=null;setAuthoringChecking(false);setAuthoringAvailability(null);setAuthoringError(null);
     controller.reset();setAnswers({});setHandoff(null);setPendingHandoff(null);setOpenedRequest(null);setResourceInsertError('');
     handledRequest.current=null;blockAbort.current?.abort();blockAbort.current=null;
     if(clearDescriptors){checkTurn.current++;checkAbort.current?.abort();checkAbort.current=null;setChecking(false);setConnection(null);setConnectionId('');setConnectionError(null);}
   }
-  useEffect(()=>()=>{controller.reset();checkTurn.current++;checkAbort.current?.abort();blockAbort.current?.abort();authoringTurn.current++;authoringAbort.current?.abort();},[controller]);
+  useEffect(()=>()=>{processEpoch.current++;processAbort.current?.abort();processAbort.current=null;controller.reset();checkTurn.current++;checkAbort.current?.abort();blockAbort.current?.abort();authoringTurn.current++;authoringAbort.current?.abort();},[controller]);
   const nativeReady=authoringAvailability?.enabled===true&&connectionId==='anthropic';
   const usableSelection=!!token&&!checking&&!anthropicSetupOpen&&connection!==null&&connection.connections.some(d=>d.id===connectionId&&d.status==='configured')&&(authoringEngine==='json-planner'||!authoringChecking&&nativeReady);
-  const busy=state.phase==='requesting',result=state.result;
+  const aiBusy=state.phase==='requesting',busy=aiBusy||processPending,result=state.result;
+  // Own pending is deliberately excluded: changing buildAvailable during the
+  // request would revoke ProcessReviewGate's otherwise-current receipt.
+  const processAvailable=!!token&&connection?.projectId===projectId&&connection.processBuild==='registered-templates-v1'&&!checking&&!anthropicSetupOpen&&!aiBusy&&!workbenchState.busy;
   const outcome=result?.status==='subapp-result'?result.outcome:result;
   const selectedModel=connection?.connections.find(item=>item.id===connectionId);
-  function navigate(area:StudioArea,received:ReceivedHandoff|null=null){setSetupContextEpoch(epoch=>epoch+1);setHandoff(received);if(area==='studio')setChatCollapsed(false);if((view==='resources'||view==='approvals')!==(area==='resources'||area==='approvals'))rotateVoiceScope();focusIntent.current='workspace';setView(area);setFocusTurn(turn=>turn+1);}
+  function navigate(area:StudioArea,received:ReceivedHandoff|null=null){if(area!=='process')cancelProcessBuild();processView.current=area;setSetupContextEpoch(epoch=>epoch+1);setHandoff(received);if(area==='studio')setChatCollapsed(false);if((view==='resources'||view==='approvals')!==(area==='resources'||area==='approvals'))rotateVoiceScope();focusIntent.current='workspace';setView(area);setFocusTurn(turn=>turn+1);}
+  const buildProcess:ProcessBuild=async(draft,reviewKey,signal)=>{
+    const compiled=buildProcessPlan(draft),epoch=processEpoch.current;
+    if(!processAvailable||processView.current!=='process'||signal.aborted||processAbort.current||controller.getState().phase==='requesting'||controller.workbench.getState().busy||compiled.status!=='ready'||compiled.reviewKey!==reviewKey)throw new Error('Current process review required.');
+    const template=PROCESS_TEMPLATES.find(item=>item.id===compiled.templateId);
+    if(!template)throw new Error('Registered template unavailable.');
+    const before=controller.workbench.getState(),abort=new AbortController();processAbort.current=abort;setProcessPending(true);
+    const forwardAbort=()=>{abort.abort();if(processAbort.current===abort){processAbort.current=null;setProcessPending(false);}};
+    signal.addEventListener('abort',forwardAbort,{once:true});
+    const current=()=>processEpoch.current===epoch&&processView.current==='process'&&processAbort.current===abort&&!signal.aborted&&!abort.signal.aborted&&controller.getState().phase!=='requesting'&&controller.workbench.getState()===before;
+    try{
+      const receipt=await buildProcessDraft({projectId,draft,reviewKey,templateVersion:template.version},token,abort.signal,fetcher);
+      if(!current())throw new Error('Process context changed.');
+      if(before.locks.size||[...before.drafts.values()].some(item=>!isEmptyDraft(item))){
+        const confirmed=globalThis.confirm('Admit a new generated source round alongside your edited source? Saved changes, unsaved buffers and locked files are retained as conflicts where needed; review them in the IDE. Nothing is deployed.');
+        if(!current()||!confirmed)throw new Error('Source replacement not accepted.');
+      }
+      if(!controller.acceptRegisteredTemplate(receipt.outcome,{projectId,templateId:receipt.templateId,templateVersion:receipt.templateVersion,artifactId:receipt.artifactId,prd:compiled.prd}))throw new Error('Source admission refused.');
+      const round=controller.workbench.getState().rounds.at(-1);
+      if(!round)throw new Error('Source admission unconfirmed.');
+      setProcessArtifact({artifactId:receipt.artifactId,round,epoch});
+      // Do not navigate: ProcessReviewGate must accept this exact returned receipt.
+      return {artifactId:receipt.artifactId,label:receipt.outcome.generated.plan.label};
+    }finally{signal.removeEventListener('abort',forwardAbort);if(processAbort.current===abort){processAbort.current=null;setProcessPending(false);}}
+  };
+  const processSourceCurrent=!!processArtifact&&processArtifact.epoch===processEpoch.current&&workbenchState.rounds.at(-1)===processArtifact.round&&workbenchState.selectedRoundId===processArtifact.round.id;
+  function openProcessSource(artifactId:string){
+    const now=controller.workbench.getState();
+    if(processView.current!=='process'||!processArtifact||processArtifact.epoch!==processEpoch.current||processArtifact.artifactId!==artifactId||now.rounds.at(-1)!==processArtifact.round||now.selectedRoundId!==processArtifact.round.id)return;
+    navigate('ide');
+  }
   useEffect(()=>{if(!focusTurn||focusIntent.current!=='workspace')return;const target=view==='editor'?workflowArea.current:view==='ide'?ideArea.current:view==='studio'?composer.current:view==='resources'?resourcesArea.current:view==='approvals'?approvalsArea.current:null;target?.focus({preventScroll:true});},[focusTurn,view]);
   function openWorkflow(proposal:EditableWorkflowResult,requestId:string){
     if(controller.getState().acceptedRequestId!==requestId||controller.getState().result!==proposal)return;
@@ -154,7 +200,7 @@ function StudioSession({ controller: supplied, fetcher = (...args)=>fetch(...arg
     if(result)return 'This draft was not accepted. Review the reason in the chat.';
     return 'Describe a workflow or sub-app. Creating an AI draft requires a configured model.';
   })();
-  function send(){if(busy||!usableSelection||!connectionId||!prompt.trim())return;setAnswers({});setConnectionHelp(false);void controller.submit({connectionId,prompt,...(projectId?{projectId}:{}),...(authoringEngine==='native-v1'?{authoringEngine:'native-v1' as const}:{})},token);}
+  function send(){if(busy||processAbort.current||!usableSelection||!connectionId||!prompt.trim())return;setAnswers({});setConnectionHelp(false);void controller.submit({connectionId,prompt,...(projectId?{projectId}:{}),...(authoringEngine==='native-v1'?{authoringEngine:'native-v1' as const}:{})},token);}
   return <StudioShell area={view} onNavigate={navigate} onConnectionSettings={openConnectionSettings} project={projectId} model={selectedModel?`${selectedModel.label} · ${selectedModel.status} · not-probed${selectedModel.model?` · ${selectedModel.model}`:''}`:''} graphName={editorGraph?.name??'Untitled workflow'} motion={motion} onMotion={()=>setMotion(value=>!value)} appearance={appearance} onAppearance={setAppearance} voiceTools={<StudioVoiceMenu active={chatActive&&!anthropicSetupOpen} disabled={busy||connectionHelp||anthropicSetupOpen} scopeKey={voiceScopeKey} onDictation={text=>{editPrompt(current=>`${current}${current.trim()?' ':''}${text}`.slice(0,8000));navigate('studio');}}/>}>
     <VoiceNarration id={`${state.transcript.at(-1)?.requestId??'idle'}:${state.phase}`} text={voiceReceipt} active={chatActive&&!anthropicSetupOpen}/><style>{STUDIO_CSS}</style><div className="studio-builder-grid" data-entry="chat-first" data-home={state.transcript.length===0?'empty':'conversation'} data-area={view} data-conversation={chatHidden?'hidden':'visible'} hidden={!chatActive} inert={!chatActive}>
       {handoff&&handoff.requestId===state.acceptedRequestId&&handoff.result===result&&view===handoff.target&&<AcceptedHandoff receipt={handoff} onDismiss={dismissHandoff}/>}
@@ -175,7 +221,7 @@ function StudioSession({ controller: supplied, fetcher = (...args)=>fetch(...arg
         <div className="studio-command">
         {state.transcript.length===0&&<div className="studio-command-intro"><span className="studio-eyebrow">IDEA → DRAFT → WORKSPACE</span><h2>What are we building?</h2><p>Ask for a workflow or a sub-app.</p></div>}
         <section className="studio-compose" aria-label="Studio connection and request"><form onSubmit={event=>{event.preventDefault();send();}}><label><span className="studio-request-label">Your request</span><textarea ref={composer} required maxLength={8000} value={prompt} onChange={event=>editPrompt(event.target.value)} placeholder="What should this project help people do?" onKeyDown={event=>{if((event.metaKey||event.ctrlKey)&&event.key==='Enter'){event.preventDefault();send();}}}/></label><div className="studio-composer-meta"><span>{prompt.length}/8000 <kbd>⌘ / Ctrl ↵</kbd></span><button type="button" disabled={!prompt} onClick={()=>editPrompt('')}>Clear request</button></div><div className="studio-send-row"><p role="status">{checking?'Loading server configuration — no model probe.':usableSelection?`${selectedModel?.label} · configured · not-probed · ${authoringEngine==='native-v1'?'Native draft harness':'JSON planner'}`:'Select a configured model in Connection settings before creating a draft.'}</p><button type="submit" disabled={busy||!usableSelection||!prompt.trim()} data-primary-action={usableSelection}>Create draft</button>{busy&&<button type="button" onClick={()=>controller.cancel()}>Cancel request</button>}{!usableSelection&&<button type="button" data-primary-action="true" onClick={openConnectionSettings}>Set up connection</button>}</div><details className="studio-request-boundary"><summary>Fresh draft · not deployed</summary><p className="studio-composer-boundary">Authoring only — saved-revision execution is separate in Workflow workspace. Each new request creates a fresh draft; it does not patch the open document.</p></details></form></section>
-        {state.transcript.length===0&&<div className="studio-command-starters"><div className="studio-suggestions"><button type="button" data-kind="workflow" aria-label="Workflow suggestion: Governed intake workflow" onClick={()=>{editPrompt('Create a governed intake workflow with an independent human review before completion.');composer.current?.focus();}}>Governed intake workflow <span aria-hidden="true">↗</span></button><button type="button" data-kind="subapp" aria-label="Sub-app suggestion: Project review application" onClick={()=>{editPrompt('Create an isolated sub-app for tracking project review requests, with a list and a submission form.');composer.current?.focus();}}>Project review application <span aria-hidden="true">↗</span></button></div><p className="studio-chat-boundary">Suggestions only fill your request. Nothing is sent.</p><div className="studio-home-example"><button type="button" onClick={openExample}>Open workflow example</button><small>Local template · no AI request</small></div></div>}
+        {state.transcript.length===0&&<div className="studio-command-starters"><button type="button" onClick={()=>navigate('process')}>Start from a process / template</button><div className="studio-suggestions"><button type="button" data-kind="workflow" aria-label="Workflow suggestion: Governed intake workflow" onClick={()=>{editPrompt('Create a governed intake workflow with an independent human review before completion.');composer.current?.focus();}}>Governed intake workflow <span aria-hidden="true">↗</span></button><button type="button" data-kind="subapp" aria-label="Sub-app suggestion: Project review application" onClick={()=>{editPrompt('Create an isolated sub-app for tracking project review requests, with a list and a submission form.');composer.current?.focus();}}>Project review application <span aria-hidden="true">↗</span></button></div><p className="studio-chat-boundary">Suggestions only fill your request. Nothing is sent.</p><div className="studio-home-example"><button type="button" onClick={openExample}>Open workflow example</button><small>Local template · no AI request</small></div></div>}
         </div>
         <div className="studio-chat-setup">
       <details className="studio-connection-help" open={connectionHelp} onToggle={event => setConnectionHelp(event.currentTarget.open)}><summary>Project &amp; model setup</summary><div className="studio-connection"><label>Operator token<input ref={tokenInput} aria-label="Operator token" type="password" autoComplete="off" value={token} onChange={(event) => { setSetupContextEpoch(epoch=>epoch+1); invalidateContext(true); setToken(event.target.value); }} placeholder="STUDIO_OPERATOR_TOKEN" /></label><label>Project ID<input value={projectId} onChange={(event) => { setSetupContextEpoch(epoch=>epoch+1); invalidateContext(true); setProjectId(event.target.value); }} pattern="[a-z0-9][a-z0-9-]*" maxLength={64} placeholder="For project skills and page suggestions" /></label><p>The operator token stays in memory only. Never enter a model API key here.</p><AnthropicConnectionSetup token={token} contextEpoch={setupContextEpoch} active={view==='studio'&&connectionHelp} fetcher={fetcher} onOpenChange={setupOpenChanged} onMutationStarted={setupMutation} onChanged={setupMutation}/>
@@ -229,6 +275,7 @@ function StudioSession({ controller: supplied, fetcher = (...args)=>fetch(...arg
       </section>
       <section className="studio-technical-area studio-ide-area" ref={ideArea} tabIndex={-1} hidden={view!=='ide'} inert={view!=='ide'} aria-label="Sub-app IDE area"><div className="studio-workspace-heading"><div><span className="studio-eyebrow">WORKSPACE / SUB-APP IDE</span><details className="studio-ide-help"><summary>Draft · scriptless preview</summary><p className="studio-ide-boundary">Draft — not deployed. The preview is scriptless; generated source is not evaluated. In-session Save applies an editor buffer; use Saved sub-app to Save draft and reopen durable source separately.</p></details></div><div className="studio-workspace-actions"><SubappWorkspace store={controller.workbench} projectId={projectId} token={token} active={view==='ide'&&!busy} fetcher={fetcher} onLoaded={()=>{controller.clearReceivedHandoff();setHandoff(null);setPendingHandoff(null);setOpenedRequest(null);handledRequest.current=null;}}/>{!compact&&<button type="button" aria-expanded={!chatCollapsed} onClick={toggleConversation}>{chatCollapsed?'Show conversation':'Hide conversation'}</button>}<button type="button" onClick={()=>navigate('studio')}>Discuss draft</button></div></div><Workbench store={controller.workbench} hideChat buildReveal active={view==='ide'} onPrompt={(text,turnId)=>{if(!usableSelection||!connectionId){controller.workbench.abort(turnId,'Select a usable model connection.');return;}void controller.submit({connectionId,prompt:text,...(projectId?{projectId}:{}),...(authoringEngine==='native-v1'?{authoringEngine:'native-v1' as const}:{})},token,turnId);}} onStop={()=>controller.cancel()}/></section>
     </div>
+    <ProcessStudio active={view==='process'} scopeEpoch={processScopeEpoch} projectId={projectId} buildAvailable={processAvailable} buildUnavailableReason={aiBusy||workbenchState.busy?'Wait for current AI authoring to settle before building a process draft.':connection?.projectId===projectId&&connection.processBuild!=='registered-templates-v1'?'This server does not advertise registered-template builds. No model fallback or automatic request is made.':'Authenticate and check the current project to enable registered-template builds. No model is required.'} onBuild={buildProcess} onOpenStudio={()=>navigate('studio')} onConnectionSettings={openConnectionSettings} {...(processSourceCurrent?{onOpenGeneratedSource:openProcessSource}:{})}/>
     <section ref={resourcesArea} tabIndex={-1} hidden={view!=='resources'} inert={view!=='resources'} aria-label="Resources area"><ResourceLibrary projectId={projectId} token={token} fetcher={fetcher} onCredentials={openConnectionSettings} onSelectResource={selection=>{if(!token||!projectId||resourceScope.current.token!==token||resourceScope.current.projectId!==projectId)return;const inserted=editorHandle.current?.insertResource(selection);if(inserted?.ok){setResourceInsertError('');navigate('editor');}else setResourceInsertError(inserted?.error??'Workflow editor unavailable. Resource was not inserted.');}}/>{resourceInsertError&&<p role="alert">{resourceInsertError}</p>}</section>
     <section ref={approvalsArea} tabIndex={-1} hidden={view!=='approvals'} inert={view!=='approvals'} aria-label="Approvals area"><WorkflowApprovals projectId={projectId} token={token} fetcher={fetcher} active={view==='approvals'} onCredentials={openConnectionSettings}/></section>
   </StudioShell>;
