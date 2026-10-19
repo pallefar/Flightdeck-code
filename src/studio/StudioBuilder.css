@@ -74,7 +74,7 @@
 .studio-shell .studio-home-example button{font-size:11px;padding:5px 0;background:transparent;border-color:transparent;text-decoration:underline;text-underline-offset:3px}
 .studio-shell .studio-home-example small{font-size:10px}
 .studio-shell .studio-builder-grid[data-area=studio][data-home=empty]{width:min(760px,100%)}
-.studio-shell .studio-builder-grid[data-area=studio][data-home=empty] .studio-chat{border:0;background:transparent;justify-content:center;overflow:visible}
+.studio-shell .studio-builder-grid[data-area=studio][data-home=empty] .studio-chat{border:0;background:transparent;justify-content:safe center;overflow:visible}
 .studio-shell .studio-builder-grid[data-area=studio][data-home=empty] .studio-chat-header{padding:0 2px 12px;border:0}
 .studio-shell .studio-builder-grid[data-area=studio][data-home=empty] .studio-chat-scroll{display:none}
 .studio-shell .studio-builder-grid[data-area=studio][data-home=empty] .studio-command{border:1px solid var(--line,#d5dfe5);border-radius:16px;overflow:hidden;box-shadow:0 20px 60px color-mix(in srgb,var(--ink,#253d4b) 8%,transparent),inset 0 1px color-mix(in srgb,var(--ink,#253d4b) 3%,transparent)}

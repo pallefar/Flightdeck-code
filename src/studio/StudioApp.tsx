@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from "react";
 import { Workbench } from "../workbench/Workbench";
 import { StudioController } from "./controller";
 import { checkConnection, MODEL_CONNECTION_IDS, type ModelConnectionId, type ConnectionStatus } from "./connection";
@@ -24,6 +24,9 @@ import {buildProcessPlan,PROCESS_TEMPLATES} from '../process-studio/plan';
 import {isEmptyDraft} from '../workbench/editing';
 import type {Round} from '../workbench/types';
 import './StudioBuilder.css';
+import {ReusePicker,createStudioReuseBridge,type StudioReusePreviewContext} from './ReusePicker';
+import type {CatalogPort,ComposerSnapshot} from '../reuse-catalog/controller';
+export {createStudioReuseBridge} from './ReusePicker';
 
 export function reviewedHandoff(result: WorkflowResult) {
   return { format: "flightdeck-studio-handoff/1", status: "draft-not-deployed", suggestedProjectId: result.projectId, targets: { workflow: "/api/workflows", pages: "/api/ui/pages" }, workflowDraft: result.workflow, pageSuggestions: result.pages, skillSources: result.skillSources, warnings: result.warnings, requiresHumanReview: ["Verify the active host project before scoping pages.", "Set workflow by from the actual authenticated human operator, never the model.", "Review statutory steps, access roles and page sources in the host builders before saving or publishing."] };
@@ -57,14 +60,14 @@ function SkillSendReview({ review, disabled, onSend }: { review: { hash: string;
   return <section className="studio-card" aria-label="Skill send review"><h2>Review skill context before sending</h2><p>Imported project skills are third-party content. This explicit action sends only the bounded masked context shown below to the configured model. It does not approve workflow execution or publication.</p><pre style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>{review.preview}</pre><p>Partial scan limitations: {review.unchecked.join(", ") || "None reported"}. A scanner is not a guarantee of anonymisation; review the context yourself.</p><p>Review fingerprint: <code>{review.hash}</code></p><label><input type="checkbox" checked={reviewed} onChange={event => setReviewed(event.target.checked)} /> I reviewed this exact context and accept the stated scan limitations.</label><button type="button" disabled={disabled || !reviewed} onClick={onSend}>Send reviewed context to model</button></section>;
 }
 
-type StudioAppProps={controller?:StudioController;fetcher?:typeof fetch;initialAppearance?:StudioAppearance};
+type StudioAppProps={controller?:StudioController;fetcher?:typeof fetch;initialAppearance?:StudioAppearance;reuseCatalog?:CatalogPort};
 export function StudioApp(props:StudioAppProps){
   const [voiceEpoch,setVoiceEpoch]=useState(0);
   const rotateVoiceScope=useCallback(()=>setVoiceEpoch(epoch=>epoch+1),[]);
   const voiceScopeKey=`authoring:${voiceEpoch}`;
   return <VoiceProvider scopeKey={voiceScopeKey}><StudioSession {...props} voiceScopeKey={voiceScopeKey} rotateVoiceScope={rotateVoiceScope}/></VoiceProvider>;
 }
-function StudioSession({ controller: supplied, fetcher = (...args)=>fetch(...args),initialAppearance='inherit',voiceScopeKey,rotateVoiceScope }:StudioAppProps&{voiceScopeKey:string;rotateVoiceScope:()=>void}) {
+function StudioSession({ controller: supplied, fetcher = (...args)=>fetch(...args),initialAppearance='inherit',reuseCatalog,voiceScopeKey,rotateVoiceScope }:StudioAppProps&{voiceScopeKey:string;rotateVoiceScope:()=>void}) {
   const voice=useVoice();
   const [controller] = useState(() => supplied ?? new StudioController(fetcher));
   const [workspaceController] = useState(()=>new WorkspaceController((...args)=>fetcher(...args)));
@@ -73,7 +76,7 @@ function StudioSession({ controller: supplied, fetcher = (...args)=>fetch(...arg
   const [view,setView] = useState<StudioArea>('studio');
   const [appearance,setAppearance]=useState<StudioAppearance>(initialAppearance);
   const [chatCollapsed,setChatCollapsed]=useState(false),[compact,setCompact]=useState(false),[chatFocus,setChatFocus]=useState(0);
-  useEffect(()=>{if(typeof window==='undefined'||!window.matchMedia)return;const query=window.matchMedia('(max-width:850px)');const update=()=>setCompact(query.matches);update();query.addEventListener('change',update);return()=>query.removeEventListener('change',update);},[]);
+  useEffect(()=>{if(typeof window==='undefined'||!window.matchMedia)return;const query=window.matchMedia('(max-width:850px)');const update=()=>{if(reuseHost.current.compact!==query.matches)revokeReuseContext();setCompact(query.matches);};update();query.addEventListener('change',update);return()=>query.removeEventListener('change',update);},[]);
   const [editorGraph,setEditorGraph] = useState<Graph | undefined>(undefined);
   const [editorRevision,setEditorRevision] = useState(0),[workspaceDocumentKey,setWorkspaceDocumentKey] = useState(0);
   const [buildReveal,setBuildReveal] = useState(false),[motion,setMotion] = useState(true);
@@ -92,18 +95,37 @@ function StudioSession({ controller: supplied, fetcher = (...args)=>fetch(...arg
   const [processArtifact,setProcessArtifact]=useState<{artifactId:string;round:Round;epoch:number}|null>(null);
   const processView=useRef(view);processView.current=view;
   function cancelProcessBuild(){const abort=processAbort.current;processAbort.current=null;abort?.abort();setProcessPending(false);}
-  function editPrompt(value:string|((current:string)=>string)){
-    controller.invalidateSkillSendReview();
-    setPrompt(value);
-  }
+  // Private opaque refs, not credential/model/actor-derived serialized scope keys.
+  const promptRef=useRef(''),promptRevision=useRef(0),contextNonce=useRef(0);
+  const [,setReuseScopeTurn]=useState(0);
+  const reuseHost=useRef({token:'',projectId:'',connection:null as ConnectionStatus|null,connectionId:'',engine:'json-planner',view:'studio',chatHidden:false,compact:false,chatCollapsed:false,setup:false,connectionHelp:false,checking:false,processPending:false,transitioning:false});
+  const reusePreview=useRef<StudioReusePreviewContext>({projectId:'',connectionId:'',authoringEngine:'json-planner',pendingAnswers:{},pendingContext:null});
+  const [reuseBridge]=useState(()=>createStudioReuseBridge({
+    refs:{text:promptRef,revision:promptRevision,contextEpoch:contextNonce},
+    invalidateSendReview:()=>controller.invalidateSkillSendReview(),setPrompt,routeEdit:(next,cas)=>editPrompt(next,cas),
+    preview:()=>reusePreview.current,
+    available:()=>{const h=reuseHost.current;return !h.transitioning&&!h.chatHidden&&!h.setup&&!h.connectionHelp&&!h.checking&&!h.processPending&&!processAbort.current&&controller.getState().phase!=='requesting'&&!controller.workbench.getState().busy&&(typeof document==='undefined'||document.visibilityState!=='hidden');},
+    scope:()=>{const h=reuseHost.current;return [h.token,h.projectId,h.connection,h.connectionId,h.engine,h.view,h.chatHidden,h.compact,h.chatCollapsed,h.setup,h.connectionHelp,h.checking,h.processPending,h.transitioning,controller.getState().phase,controller.getState().result,controller.workbench.getState().busy,typeof document!=='undefined'&&document.visibilityState==='hidden'];},
+    ...(reuseCatalog?{catalog:reuseCatalog}:{}),
+  }));
+  function revokeReuseContext(){reuseHost.current.transitioning=true;reuseBridge.revokeContext();setReuseScopeTurn(turn=>turn+1);}
+  function editPrompt(value:string|((current:string)=>string),cas?:{expected:ComposerSnapshot;isCurrent:()=>boolean}):ComposerSnapshot|null{return reuseBridge.editPrompt(value,cas);}
+  useLayoutEffect(()=>{
+    const disconnect=reuseBridge.connect();
+    const visibility=()=>revokeReuseContext();
+    document.addEventListener('visibilitychange',visibility);
+    const off=controller.subscribe(()=>{if(controller.getState().phase==='requesting')reuseBridge.revokeContext();});
+    const offWorkbench=controller.workbench.subscribe(()=>{if(controller.workbench.getState().busy)reuseBridge.revokeContext();});
+    return ()=>{document.removeEventListener('visibilitychange',visibility);off();offWorkbench();disconnect();};
+  },[controller,reuseBridge]);
   const tokenInput = useRef<HTMLInputElement>(null),composer = useRef<HTMLTextAreaElement>(null);
   const [connectionHelp,setConnectionHelp] = useState(false),[connectionFocus,setConnectionFocus] = useState(0);
   const [anthropicSetupOpen,setAnthropicSetupOpen]=useState(false),[setupContextEpoch,setSetupContextEpoch]=useState(0);
   const requireExplicitModel=useRef(false);
-  function setupOpenChanged(open:boolean){if(open){voice.stop();rotateVoiceScope();}setAnthropicSetupOpen(open);}
+  function setupOpenChanged(open:boolean){revokeReuseContext();if(open){voice.stop();rotateVoiceScope();}setAnthropicSetupOpen(open);}
   function setupMutation(){requireExplicitModel.current=true;invalidateContext(true);}
   const focusIntent=useRef<'connection'|'workspace'|'conversation'>('workspace');
-  function openConnectionSettings(){cancelProcessBuild();processView.current='studio';focusIntent.current='connection';setView('studio');setConnectionHelp(true);setConnectionFocus(turn=>turn+1);}
+  function openConnectionSettings(){revokeReuseContext();cancelProcessBuild();processView.current='studio';focusIntent.current='connection';setView('studio');setConnectionHelp(true);setConnectionFocus(turn=>turn+1);}
   useEffect(()=>{if(connectionFocus&&focusIntent.current==='connection'&&view==='studio')tokenInput.current?.focus();},[connectionFocus,view]);
   const [connection,setConnection] = useState<ConnectionStatus|null>(null),[checking,setChecking] = useState(false);
   const [connectionId,setConnectionId] = useState<ModelConnectionId|''>(''),[connectionError,setConnectionError] = useState<string|null>(null);
@@ -119,6 +141,7 @@ function StudioSession({ controller: supplied, fetcher = (...args)=>fetch(...arg
   const checkTurn=useRef(0),checkAbort=useRef<AbortController|null>(null),blockAbort=useRef<AbortController|null>(null);
   function invalidateContext(clearDescriptors=false){
     // Revoke before notifying controller/store listeners, not in a later effect.
+    revokeReuseContext();
     processEpoch.current++;setProcessScopeEpoch(processEpoch.current);cancelProcessBuild();setProcessArtifact(null);
     rotateVoiceScope();
     authoringTurn.current++;authoringAbort.current?.abort();authoringAbort.current=null;setAuthoringChecking(false);setAuthoringAvailability(null);setAuthoringError(null);
@@ -135,7 +158,7 @@ function StudioSession({ controller: supplied, fetcher = (...args)=>fetch(...arg
   const processAvailable=!!token&&connection?.projectId===projectId&&connection.processBuild==='registered-templates-v1'&&!checking&&!anthropicSetupOpen&&!aiBusy&&!workbenchState.busy;
   const outcome=result?.status==='subapp-result'?result.outcome:result;
   const selectedModel=connection?.connections.find(item=>item.id===connectionId);
-  function navigate(area:StudioArea,received:ReceivedHandoff|null=null){if(area!=='process')cancelProcessBuild();processView.current=area;setSetupContextEpoch(epoch=>epoch+1);setHandoff(received);if(area==='studio')setChatCollapsed(false);if((view==='resources'||view==='approvals')!==(area==='resources'||area==='approvals'))rotateVoiceScope();focusIntent.current='workspace';setView(area);setFocusTurn(turn=>turn+1);}
+  function navigate(area:StudioArea,received:ReceivedHandoff|null=null){revokeReuseContext();if(area!=='process')cancelProcessBuild();processView.current=area;setSetupContextEpoch(epoch=>epoch+1);setHandoff(received);if(area==='studio')setChatCollapsed(false);if((view==='resources'||view==='approvals')!==(area==='resources'||area==='approvals'))rotateVoiceScope();focusIntent.current='workspace';setView(area);setFocusTurn(turn=>turn+1);}
   const buildProcess:ProcessBuild=async(draft,reviewKey,signal)=>{
     const compiled=buildProcessPlan(draft),epoch=processEpoch.current;
     if(!processAvailable||processView.current!=='process'||signal.aborted||processAbort.current||controller.getState().phase==='requesting'||controller.workbench.getState().busy||compiled.status!=='ready'||compiled.reviewKey!==reviewKey)throw new Error('Current process review required.');
@@ -186,7 +209,10 @@ function StudioSession({ controller: supplied, fetcher = (...args)=>fetch(...arg
   const chatHidden=!chatActive||(inBuilder&&(compact||chatCollapsed));
   useEffect(()=>{if(chatFocus&&!chatHidden&&focusIntent.current==='conversation'){composer.current?.focus({preventScroll:true});focusIntent.current='workspace';}},[chatFocus,chatHidden]);
   useEffect(()=>{if(chatHidden&&composer.current?.closest('.studio-chat')?.contains(document.activeElement)){focusIntent.current='workspace';setFocusTurn(turn=>turn+1);}},[chatHidden]);
-  function toggleConversation(){if(compact){navigate('studio');return;}setChatCollapsed(value=>!value);if(chatCollapsed){focusIntent.current='conversation';setChatFocus(turn=>turn+1);}else{focusIntent.current='workspace';setFocusTurn(turn=>turn+1);}}
+  reuseHost.current={token,projectId,connection,connectionId,engine:authoringEngine,view,chatHidden,compact,chatCollapsed,setup:anthropicSetupOpen,connectionHelp,checking,processPending,transitioning:false};
+  reusePreview.current={projectId,connectionId,authoringEngine,pendingAnswers:answers,pendingContext:{questions:outcome?.status==='needs_input'?outcome:null,skillSendReview:result?.status==='model-request-refused'?result.review??null:null,model:selectedModel??null,projectSkillSources:connection?.skillSources??[]}};
+  function editAnswers(next:Record<string,string>){revokeReuseContext();setAnswers(next);}
+  function toggleConversation(){revokeReuseContext();if(compact){navigate('studio');return;}setChatCollapsed(value=>!value);if(chatCollapsed){focusIntent.current='conversation';setChatFocus(turn=>turn+1);}else{focusIntent.current='workspace';setFocusTurn(turn=>turn+1);}}
   const currentPending=pendingHandoff&&pendingHandoff.requestId===state.acceptedRequestId&&pendingHandoff.result===result?pendingHandoff:null;
   // Speak only fixed status/count summaries, never prompt/skill/source/approval payloads.
   const voiceReceipt=(()=>{
@@ -200,7 +226,7 @@ function StudioSession({ controller: supplied, fetcher = (...args)=>fetch(...arg
     if(result)return 'This draft was not accepted. Review the reason in the chat.';
     return 'Describe a workflow or sub-app. Creating an AI draft requires a configured model.';
   })();
-  function send(){if(busy||processAbort.current||!usableSelection||!connectionId||!prompt.trim())return;setAnswers({});setConnectionHelp(false);void controller.submit({connectionId,prompt,...(projectId?{projectId}:{}),...(authoringEngine==='native-v1'?{authoringEngine:'native-v1' as const}:{})},token);}
+  function send(){if(busy||processAbort.current||!usableSelection||!connectionId||!prompt.trim())return;revokeReuseContext();setAnswers({});setConnectionHelp(false);void controller.submit({connectionId,prompt,...(projectId?{projectId}:{}),...(authoringEngine==='native-v1'?{authoringEngine:'native-v1' as const}:{})},token);}
   return <StudioShell area={view} onNavigate={navigate} onConnectionSettings={openConnectionSettings} project={projectId} model={selectedModel?`${selectedModel.label} · ${selectedModel.status} · not-probed${selectedModel.model?` · ${selectedModel.model}`:''}`:''} graphName={editorGraph?.name??'Untitled workflow'} motion={motion} onMotion={()=>setMotion(value=>!value)} appearance={appearance} onAppearance={setAppearance} voiceTools={<StudioVoiceMenu active={chatActive&&!anthropicSetupOpen} disabled={busy||connectionHelp||anthropicSetupOpen} scopeKey={voiceScopeKey} onDictation={text=>{editPrompt(current=>`${current}${current.trim()?' ':''}${text}`.slice(0,8000));navigate('studio');}}/>}>
     <VoiceNarration id={`${state.transcript.at(-1)?.requestId??'idle'}:${state.phase}`} text={voiceReceipt} active={chatActive&&!anthropicSetupOpen}/><style>{STUDIO_CSS}</style><div className="studio-builder-grid" data-entry="chat-first" data-home={state.transcript.length===0?'empty':'conversation'} data-area={view} data-conversation={chatHidden?'hidden':'visible'} hidden={!chatActive} inert={!chatActive}>
       {handoff&&handoff.requestId===state.acceptedRequestId&&handoff.result===result&&view===handoff.target&&<AcceptedHandoff receipt={handoff} onDismiss={dismissHandoff}/>}
@@ -209,7 +235,7 @@ function StudioSession({ controller: supplied, fetcher = (...args)=>fetch(...arg
         <div className="studio-chat-scroll"><ConversationHistory turns={state.transcript} followTarget={outcome?.status==='needs_input'?'questions':'end'}/>
 
           <div className="studio-chat-review">
-    {outcome?.status === "needs_input" && <form className="studio-card" onSubmit={(event) => { event.preventDefault(); if (usableSelection) void controller.answer(answers, token); }}><h2>Input needed</h2><p>{outcome.understanding}</p>{outcome.questions.map((question) => <label key={question.id} data-studio-question={question.id}>{question.question}<small>{question.because}</small>{question.options ? <select required value={answers[question.id] ?? ""} onChange={(event) => setAnswers({ ...answers, [question.id]: event.target.value })}><option value="">Choose…</option>{question.options.map((option) => <option key={option}>{option}</option>)}</select> : <input required maxLength={2000} value={answers[question.id] ?? ""} onChange={(event) => setAnswers({ ...answers, [question.id]: event.target.value })} />}</label>)}<button disabled={busy || !usableSelection} type="submit">Submit answers</button></form>}
+    {outcome?.status === "needs_input" && <form className="studio-card" onSubmit={(event) => { event.preventDefault(); if (usableSelection) void controller.answer(answers, token); }}><h2>Input needed</h2><p>{outcome.understanding}</p>{outcome.questions.map((question) => <label key={question.id} data-studio-question={question.id}>{question.question}<small>{question.because}</small>{question.options ? <select required value={answers[question.id] ?? ""} onChange={(event) => editAnswers({ ...answers, [question.id]: event.target.value })}><option value="">Choose…</option>{question.options.map((option) => <option key={option}>{option}</option>)}</select> : <input required maxLength={2000} value={answers[question.id] ?? ""} onChange={(event) => editAnswers({ ...answers, [question.id]: event.target.value })} />}</label>)}<button disabled={busy || !usableSelection} type="submit">Submit answers</button></form>}
     {outcome && outcome.status !== "needs_input" && outcome.status !== "proposed" && outcome.status !== "workflow-proposed" && outcome.status !== "workflow-graph-proposed" && <section className="studio-card" role="status"><h2>Studio declined this draft</h2><p><code>{outcome.status}</code></p>{"issues" in outcome && <ul>{outcome.issues.map((issue, index) => <li key={index}>{issue}</li>)}</ul>}{"decision" in outcome && <p>{outcome.decision.reason} · {outcome.status === "grant-refused" ? "grant refused" : "model/artifact refused"}</p>}{"explanation" in outcome && <p>{outcome.rule}: {outcome.explanation}</p>}{"refusals" in outcome && <ul>{outcome.refusals.map((refusal, index) => <li key={index}>{refusal.at}: {refusal.needs}</li>)}</ul>}<p>No draft accepted or deployed. Review the refusal or server configuration before trying again.</p></section>}
     {result?.status === "model-request-refused" && result.review && (controller.skillSendReviewCurrent ? <SkillSendReview key={result.review.hash} review={result.review} disabled={busy || !usableSelection} onSend={() => { if (usableSelection) void controller.approveSkillSend(token); }} /> : <p role="status">Skill-send review revoked because the request was edited. Create a draft again to review the current request; reverting text does not restore approval. Nothing was sent automatically.</p>)}
 
@@ -220,11 +246,12 @@ function StudioSession({ controller: supplied, fetcher = (...args)=>fetch(...arg
         </div>
         <div className="studio-command">
         {state.transcript.length===0&&<div className="studio-command-intro"><span className="studio-eyebrow">IDEA → DRAFT → WORKSPACE</span><h2>What are we building?</h2><p>Ask for a workflow or a sub-app.</p></div>}
+        <ReusePicker reuse={reuseBridge.reuse} active={!chatHidden&&!busy&&!workbenchState.busy&&!anthropicSetupOpen&&!connectionHelp&&!checking} onBeforeOpen={()=>{voice.stop();rotateVoiceScope();}}/>
         <section className="studio-compose" aria-label="Studio connection and request"><form onSubmit={event=>{event.preventDefault();send();}}><label><span className="studio-request-label">Your request</span><textarea ref={composer} required maxLength={8000} value={prompt} onChange={event=>editPrompt(event.target.value)} placeholder="What should this project help people do?" onKeyDown={event=>{if((event.metaKey||event.ctrlKey)&&event.key==='Enter'){event.preventDefault();send();}}}/></label><div className="studio-composer-meta"><span>{prompt.length}/8000 <kbd>⌘ / Ctrl ↵</kbd></span><button type="button" disabled={!prompt} onClick={()=>editPrompt('')}>Clear request</button></div><div className="studio-send-row"><p role="status">{checking?'Loading server configuration — no model probe.':usableSelection?`${selectedModel?.label} · configured · not-probed · ${authoringEngine==='native-v1'?'Native draft harness':'JSON planner'}`:'Select a configured model in Connection settings before creating a draft.'}</p><button type="submit" disabled={busy||!usableSelection||!prompt.trim()} data-primary-action={usableSelection}>Create draft</button>{busy&&<button type="button" onClick={()=>controller.cancel()}>Cancel request</button>}{!usableSelection&&<button type="button" data-primary-action="true" onClick={openConnectionSettings}>Set up connection</button>}</div><details className="studio-request-boundary"><summary>Fresh draft · not deployed</summary><p className="studio-composer-boundary">Authoring only — saved-revision execution is separate in Workflow workspace. Each new request creates a fresh draft; it does not patch the open document.</p></details></form></section>
         {state.transcript.length===0&&<div className="studio-command-starters"><button type="button" onClick={()=>navigate('process')}>Start from a process / template</button><div className="studio-suggestions"><button type="button" data-kind="workflow" aria-label="Workflow suggestion: Governed intake workflow" onClick={()=>{editPrompt('Create a governed intake workflow with an independent human review before completion.');composer.current?.focus();}}>Governed intake workflow <span aria-hidden="true">↗</span></button><button type="button" data-kind="subapp" aria-label="Sub-app suggestion: Project review application" onClick={()=>{editPrompt('Create an isolated sub-app for tracking project review requests, with a list and a submission form.');composer.current?.focus();}}>Project review application <span aria-hidden="true">↗</span></button></div><p className="studio-chat-boundary">Suggestions only fill your request. Nothing is sent.</p><div className="studio-home-example"><button type="button" onClick={openExample}>Open workflow example</button><small>Local template · no AI request</small></div></div>}
         </div>
         <div className="studio-chat-setup">
-      <details className="studio-connection-help" open={connectionHelp} onToggle={event => setConnectionHelp(event.currentTarget.open)}><summary>Project &amp; model setup</summary><div className="studio-connection"><label>Operator token<input ref={tokenInput} aria-label="Operator token" type="password" autoComplete="off" value={token} onChange={(event) => { setSetupContextEpoch(epoch=>epoch+1); invalidateContext(true); setToken(event.target.value); }} placeholder="STUDIO_OPERATOR_TOKEN" /></label><label>Project ID<input value={projectId} onChange={(event) => { setSetupContextEpoch(epoch=>epoch+1); invalidateContext(true); setProjectId(event.target.value); }} pattern="[a-z0-9][a-z0-9-]*" maxLength={64} placeholder="For project skills and page suggestions" /></label><p>The operator token stays in memory only. Never enter a model API key here.</p><AnthropicConnectionSetup token={token} contextEpoch={setupContextEpoch} active={view==='studio'&&connectionHelp} fetcher={fetcher} onOpenChange={setupOpenChanged} onMutationStarted={setupMutation} onChanged={setupMutation}/>
+      <details className="studio-connection-help" open={connectionHelp} onToggle={event => {const open=event.currentTarget.open;if(open!==reuseHost.current.connectionHelp)revokeReuseContext();setConnectionHelp(open);}}><summary>Project &amp; model setup</summary><div className="studio-connection"><label>Operator token<input ref={tokenInput} aria-label="Operator token" type="password" autoComplete="off" value={token} onChange={(event) => { setSetupContextEpoch(epoch=>epoch+1); invalidateContext(true); setToken(event.target.value); }} placeholder="STUDIO_OPERATOR_TOKEN" /></label><label>Project ID<input value={projectId} onChange={(event) => { setSetupContextEpoch(epoch=>epoch+1); invalidateContext(true); setProjectId(event.target.value); }} pattern="[a-z0-9][a-z0-9-]*" maxLength={64} placeholder="For project skills and page suggestions" /></label><p>The operator token stays in memory only. Never enter a model API key here.</p><AnthropicConnectionSetup token={token} contextEpoch={setupContextEpoch} active={view==='studio'&&connectionHelp} fetcher={fetcher} onOpenChange={setupOpenChanged} onMutationStarted={setupMutation} onChanged={setupMutation}/>
       <button type="button" disabled={busy || checking || !token || !projectId} onClick={async () => {
         invalidateContext(true);
         const turn = ++checkTurn.current; const abort = new AbortController(); checkAbort.current = abort;
@@ -232,7 +259,7 @@ function StudioSession({ controller: supplied, fetcher = (...args)=>fetch(...arg
         try {
           const status = await checkConnection(projectId, token, fetcher, abort.signal);
           if (turn !== checkTurn.current || abort.signal.aborted) return;
-          setConnection(status); setConnectionId(requireExplicitModel.current?'':status.selectedId ?? '');
+          revokeReuseContext();setConnection(status); setConnectionId(requireExplicitModel.current?'':status.selectedId ?? '');
         } catch { if (turn === checkTurn.current && !abort.signal.aborted) setConnectionError('Connection check refused or unavailable. Verify the operator token, project and server configuration; no model connection verified.'); }
         finally { if (turn === checkTurn.current) { setChecking(false); checkAbort.current = null; } }
       }}>{checking ? "Checking…" : "Check connection & project skills"}</button>
@@ -244,6 +271,7 @@ function StudioSession({ controller: supplied, fetcher = (...args)=>fetch(...arg
       <details className="studio-authoring-options"><summary>Authoring engine</summary>
         <label>Authoring engine<select aria-label="Authoring engine" value={authoringEngine} disabled={busy} onChange={event=>{
           const next=event.target.value;if(next!=='json-planner'&&next!=='native-v1'||next==='native-v1'&&!nativeReady)return;
+          revokeReuseContext();
           if(authoringChecking)cancelAuthoringAvailability();
           controller.clearReceivedHandoff();setAnswers({});setHandoff(null);setPendingHandoff(null);setOpenedRequest(null);handledRequest.current=null;rotateVoiceScope();setAuthoringEngine(next);
         }}><option value="json-planner">JSON planner · existing default</option><option value="native-v1" disabled={!nativeReady}>Native draft harness · Anthropic only</option></select></label>
