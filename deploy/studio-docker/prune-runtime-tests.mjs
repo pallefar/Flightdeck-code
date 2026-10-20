@@ -12,3 +12,10 @@ function prune(dir){
  }
 }
 for(const dir of ['server','packages'])prune(join(root,dir));
+// Exact test-only support paths; names like testing/fixtures also occur in runtime modules.
+for(const path of [
+ 'packages/authoring-harness/tests',
+ 'packages/workflow/test-helpers.ts',
+ 'packages/subapp-workspace/testing.ts',
+ 'packages/subapp-workspace/process-fixture.ts',
+])rmSync(join(root,path),{recursive:true,force:true});
