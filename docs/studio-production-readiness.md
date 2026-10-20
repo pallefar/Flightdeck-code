@@ -2,6 +2,19 @@
 
 **Release verdict: BLOCKED.** The private single-operator loopback companion has verified security/engine foundations; it is not a verified shared production service, installed host DAG runtime, or live provider integration.
 
+## Source-hardening acceptance — October 19, 2026
+
+Two scoped source reviews now pass independently:
+
+- **Approval freshness (GA01/GA02):** pin the admitted reviewer before awaited authorization; recheck the same active named reviewer and exact review/decision scope after preparation; filter list entries with per-gate authorization; fail closed on resolver/policy errors. Preserve independent-reviewer checks, expiry and durable decision/claim/run-CAS/resume ordering. These callbacks are route-boundary checks, not atomic host-policy or effect-time authorization.
+- **Private API cache boundaries (GA03):** apply `no-store` to supported literal, percent-encoded and absolute-form Studio targets, including unknown routes, malformed/oversized parameters and native default shutdown refusals. Keep public lookalikes and HTML/hashed-asset policies unchanged. Native and injected differential tests preserve installed default framework status, exact body bytes, content type and length; parsed workflow/run comparisons are labeled semantic preservation. Pre-request HTTP parser errors are outside the header claim, and `no-store` does not clear previously stored responses.
+
+The four-file source freeze passed **5,074 Vitest assertions across 293 files and 41 Node tests**, with no failures or skips, plus the normal typecheck, build and whitespace checks. The independent cache recheck passed all **98 maintained cases**, native namespace/shutdown/lifecycle controls, exact framework differentials and five historical RED/GREEN pairs. These groups overlap the full suite and must not be summed into unique coverage. The original failed cache review and failed attempts remain historical evidence; they were not relabeled as passing. Extra-strict compiler settings outside the normal project policy remain a separate qualification.
+
+This accepts the reviewed source changes only. Every rebuilt image needs its own immutable-source and actual-runtime receipt; the earlier image built from `a33a110` does not verify these fixes. Source publication or an isolated candidate test does not authorize live promotion. Canonical host identity/membership/session/CSRF/authority epochs, a real independent reviewer under host policy, user-controlled provider acceptance, HTTPS and operational recovery/freshness remain separate release gates. Existing live services, private state, host launcher and grants are not changed by this milestone.
+
+## Historical audit snapshot
+
 Audit started **2026-10-14 10:36:25 UTC**. Source evidence snapshot **2026-10-14T10:46:12.741650+00:00**. HEAD `f80ad1f05018b8a38e720c3df59bff5ff0950cba`; working tree dirty and actively edited by other workers. Each JSON source anchor carries its inspected SHA-256. New production-serving code appeared during this audit: file existence does not close a gate, and active deployment remained unchanged.
 
 ## Ranked release ledger

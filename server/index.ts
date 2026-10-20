@@ -51,7 +51,7 @@ import { createRequestAuthoring, NATIVE_REQUEST_POLICY } from './authoring-run';
 import { createAnthropicSessionSetup, type AnthropicSessionSetupOptions } from "./anthropic-session-setup";
 import { registerWorkflowResourceRoutes, type WorkflowResourceDependencies } from "./workflow-resources";
 
-import Fastify, { type RouteShorthandOptions } from "fastify";
+import Fastify, { type FastifyReply, type RouteShorthandOptions } from "fastify";
 import { z } from "zod";
 
 import {
@@ -211,6 +211,23 @@ export interface ServerOptions {
   readonly workflowResources?: Partial<Pick<WorkflowResourceDependencies, "store" | "registry" | "authorize">> & { readonly credentialResolver?: CredentialResolver };
 }
 
+/** Cache classification only: never rewrite the target used for routing/auth.
+ * Compare at most the namespace's encoded width, not the rest of the path:
+ * a malformed later parameter must not erase an already-private namespace.
+ * Encoded separators, double decoding and public lookalikes are not aliases. */
+function isStudioTarget(target = ''): boolean {
+  // Strip only the authority of HTTP absolute-form targets. Do not use URL's
+  // normalized pathname (dot segments/backslashes must not become aliases).
+  const authority = /^https?:\/\/[^/?#]+/i.exec(target);
+  let offset = authority?.[0].length ?? 0;
+  for (const char of '/api/studio') {
+    if (target[offset] === char) { offset++; continue; }
+    if (char !== '/' && target[offset] === '%' && target.slice(offset + 1, offset + 3).toLowerCase() === char.charCodeAt(0).toString(16)) { offset += 3; continue; }
+    return false;
+  }
+  return offset === target.length || target[offset] === '/' || target[offset] === '?' || target[offset] === '#';
+}
+
 export function createServer(options: ServerOptions): ReturnType<typeof Fastify> {
   const nativeAuthoringEnabled = options.nativeAuthoringEnabled ?? process.env['STUDIO_NATIVE_AUTHORING'] === '1';
   const admission = new RequestAdmission(options.requestAdmission);
@@ -222,6 +239,38 @@ export function createServer(options: ServerOptions): ReturnType<typeof Fastify>
     logger: false,
     bodyLimit: 1_000_000,
     requestTimeout: 30000,
+    // These router failures precede route hooks. Match Fastify's raw default
+    // body/key order/content type, independently of the private cache header.
+    frameworkErrors: (error, request, reply: FastifyReply) => {
+      if (error.code === 'FST_ERR_BAD_URL' || error.code === 'FST_ERR_MAX_PARAM_LENGTH' || error.code === 'FST_ERR_ASYNC_CONSTRAINT') {
+        const statusCode = error.code === 'FST_ERR_BAD_URL' ? 400 : error.code === 'FST_ERR_MAX_PARAM_LENGTH' ? 414 : 500;
+        const body = JSON.stringify(statusCode === 500
+          ? { error: 'Internal Server Error', message: error.message, statusCode }
+          : { error: 'Bad Request', code: error.code, message: error.message, statusCode });
+        reply.hijack();
+        if (isStudioTarget(request.raw.url)) reply.raw.setHeader('Cache-Control', 'no-store');
+        reply.raw.writeHead(statusCode, { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) });
+        reply.raw.end(body);
+        return reply;
+      }
+      if (isStudioTarget(request.raw.url)) reply.header('Cache-Control', 'no-store');
+      return reply.send(error);
+    },
+  });
+
+  // Native 'request' listeners run before Fastify's router only when prepended.
+  // Its default closing 503 bypasses Request/Reply and all lifecycle hooks.
+  // Set a header only; leave routing, status/body and load shedding untouched.
+  // inject does not emit this event, so frameworkErrors/onSend remain needed.
+  app.server.prependListener('request', (request, response) => {
+    if (isStudioTarget(request.url)) response.setHeader('Cache-Control', 'no-store');
+  });
+
+  // Private API payloads and refusals must not be stored by HTTP caches.
+  // Keep the separately registered HTML and hashed-asset policies unchanged.
+  app.addHook('onSend', async (request, reply, payload) => {
+    if (request.routeOptions.url?.startsWith('/api/studio/') || isStudioTarget(request.raw.url)) reply.header('Cache-Control', 'no-store');
+    return payload;
   });
 
   app.addHook("preClose", async () => { admission.stop(); sessionSetup.close(); await admission.close(); });

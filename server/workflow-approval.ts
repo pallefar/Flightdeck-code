@@ -49,6 +49,7 @@ export interface WorkflowApprovalDependencies {
     authorize: (identity: WorkflowReviewerIdentity, scope: WorkflowApprovalScope) => Promise<boolean>;
     ttlMs?: number;
 }
+class ApprovalAuthorityRefused extends Error {}
 export function approvalTtl(deps: WorkflowApprovalDependencies) { const ttl = deps.ttlMs ?? 900000; if (!Number.isInteger(ttl) || ttl < 1 || ttl > 86400000)
     throw new Error('invalid approval TTL'); return ttl; }
 export function registerWorkflowApprovalRoutes(app: FastifyInstance, deps: {
@@ -86,21 +87,31 @@ export function registerWorkflowApprovalRoutes(app: FastifyInstance, deps: {
             if (!p.success)
                 return fail(reply, 400);
             const action = req.method === 'POST' ? 'decide' : req.url.split('?')[0]?.endsWith('/review') ? 'review' : 'list';
+            const admitted = Object.freeze({ ...principal });
             try {
-                if (!await runtime.authorize(principal, { projectId: p.data, action }))
+                if (!await runtime.authorize(admitted, { projectId: p.data, action }))
                     return fail(reply, 403);
             }
             catch {
                 return fail(reply, 403);
             }
-            identities.set(req, { ...principal });
+            identities.set(req, admitted);
         }, errorHandler: (error, _req, reply) => fail(reply, error.statusCode === 413 ? 413 : 400) };
     function parse(req: FastifyRequest) {
         if (Object.keys(req.query as object).length)
             throw new WorkspaceError(404);
         return z.object({ projectId: projectIdSchema, approvalId: z.string().uuid().optional() }).strict().parse(req.params);
     }
-    async function authorized(req: FastifyRequest, r: ApprovalRecord, action: 'review' | 'decide') {
+    async function samePrincipal(req: FastifyRequest) {
+        try {
+            const p = identities.get(req)!, now = await deps.approvals!.resolveIdentity(req);
+            return !!now && now.active && isNamedHuman(now.name) && now.name === p.name;
+        }
+        catch {
+            throw new ApprovalAuthorityRefused();
+        }
+    }
+    async function authorized(req: FastifyRequest, r: ApprovalRecord, action: WorkflowApprovalScope['action']) {
         const runtime = deps.approvals!, p = identities.get(req)!;
         if (r.run.projectId !== (req.params as {
             projectId: string;
@@ -108,22 +119,36 @@ export function registerWorkflowApprovalRoutes(app: FastifyInstance, deps: {
             throw new WorkspaceError(404);
         const node = r.run.graphSnapshot.nodes.find(n => n.id === r.checkpoint.pending.nodeId)!;
         const reviewer = resolveNode(r.run.graphSnapshot, node).config.reviewer as string;
-        if (p.name.trim().toLowerCase() === r.run.initiatedBy.trim().toLowerCase())
+        if (action !== 'list' && p.name.trim().toLowerCase() === r.run.initiatedBy.trim().toLowerCase())
             return false;
-        const allowed = await runtime.authorize(p, { projectId: r.run.projectId, nodeId: node.id, reviewer, runId: r.run.id, action });
-        const now = await runtime.resolveIdentity(req);
-        return allowed && !!now && now.active && isNamedHuman(now.name) && now.name === p.name;
+        if (!await samePrincipal(req))
+            return false;
+        let allowed: boolean;
+        try {
+            allowed = await runtime.authorize(p, { projectId: r.run.projectId, nodeId: node.id, reviewer, runId: r.run.id, action });
+        }
+        catch {
+            throw new ApprovalAuthorityRefused();
+        }
+        return allowed && await samePrincipal(req);
     }
     async function dto(r: ApprovalRecord, includeContext = false) {
         const claimed = await deps.approvals!.store.claimed(r.id);
         const state = r.state === 'consumed' || r.state === 'rejected' || r.state === 'expired' ? r.state : claimed || r.state === 'approved' ? 'interrupted' : Date.parse(r.expiresAt) <= Date.now() ? 'expired' : r.state;
         return { id: r.id, revision: r.revision, runId: r.run.id, projectId: r.run.projectId, draftId: r.run.draftId, draftRevision: r.run.draftRevision, nodeId: r.checkpoint.pending.nodeId, state, contextDigest: r.contextDigest, createdAt: r.createdAt, expiresAt: r.expiresAt, ...(r.decisionBy ? { decisionBy: r.decisionBy, decidedAt: r.decidedAt } : {}), ...(includeContext ? { context: r.context } : {}) };
     }
-    const failure = (error: unknown, reply: FastifyReply) => fail(reply, error instanceof WorkspaceError ? error.statusCode : error instanceof z.ZodError ? 400 : 503);
+    const failure = (error: unknown, reply: FastifyReply) => fail(reply, error instanceof ApprovalAuthorityRefused ? 403 : error instanceof WorkspaceError ? error.statusCode : error instanceof z.ZodError ? 400 : 503);
     app.get(base, options, async (req, reply) => { try {
         const { projectId } = parse(req);
         const records = (await deps.approvals!.store.list()).filter(r => r.run.projectId === projectId);
-        return { approvals: await Promise.all(records.map(r => dto(r))) };
+        const summaries = await Promise.all(records.map(r => dto(r)));
+        const approvals: Awaited<ReturnType<typeof dto>>[] = [];
+        for (let i = 0; i < records.length; i++)
+            if (await authorized(req, records[i]!, 'list'))
+                approvals.push(summaries[i]!);
+        if (!await samePrincipal(req))
+            return fail(reply, 403);
+        return { approvals };
     }
     catch (e) {
         return failure(e, reply);
@@ -137,7 +162,10 @@ export function registerWorkflowApprovalRoutes(app: FastifyInstance, deps: {
             const current = await deps.approvals!.store.read(r.id);
             if (canonicalWorkflowValue(current) !== canonicalWorkflowValue(r))
                 return fail(reply, 409);
-            return { approval: await dto(r, true) };
+            const approval = await dto(r, true);
+            if (!await authorized(req, r, 'review'))
+                return fail(reply, 403);
+            return { approval };
         }
         catch (e) {
             return failure(e, reply);
@@ -165,6 +193,9 @@ export function registerWorkflowApprovalRoutes(app: FastifyInstance, deps: {
                 const live = await deps.store.getRun(r.run.projectId, r.run.draftId, r.run.id);
                 if (!live || canonicalWorkflowValue(live) !== canonicalWorkflowValue(r.run))
                     return fail(reply, 409);
+                // Route-boundary freshness only; this is not an atomic host-policy/filesystem grant.
+                if (!await authorized(req, r, 'decide'))
+                    return fail(reply, 403);
                 const expired = Date.parse(r.expiresAt) <= Date.now();
                 const next: ApprovalRecord = { ...r, revision: r.revision + 1, state: expired ? 'expired' : body.decision === 'reject' ? 'rejected' : 'approved', decisionBy: identities.get(req)!.name, decidedAt: new Date().toISOString() };
                 // Decision write, permanent reservation, run CAS, restored execution: never reverse this order.
