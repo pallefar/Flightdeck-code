@@ -1,0 +1,43 @@
+# Private evaluation only. This is NOT a production release or host integration.
+# Separate project/volume: never merge this with the OS or existing companion.
+name: flightdeck-studio-staging
+services:
+  studio-staging:
+    # Reviewed authoring candidate; pin the verified local immutable image.
+    image: sha256:e9a04ab64bd985fabe72c44a42b8194547affdfe0643d0dd562428bd087ee152
+    user: "1000:1000"
+    init: true
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    pids_limit: 128
+    mem_limit: 768m
+    restart: unless-stopped
+    environment:
+      STUDIO_OPERATOR: Karsten Haldan
+      STUDIO_HOST: 0.0.0.0
+      PORT: "8787"
+      STUDIO_STATE_DIR: /state
+      STUDIO_GRANTS_FILE: /state/grants.json
+      STUDIO_WORKSPACE_FILE: /state/workflow-workspace.json
+      STUDIO_FRONTEND_ASSET_ROOT: /app/dist
+      # Explicit private opt-in; key stays in server memory, never auto-selected.
+      STUDIO_ANTHROPIC_SESSION_SETUP: "1"
+      # Optional bounded draft engine; never selects or calls a model on startup.
+      STUDIO_NATIVE_AUTHORING: "1"
+      # Document-only capability; voice/microphone still require user opt-in.
+      STUDIO_VOICE_INPUT: "1"
+    ports:
+      - "127.0.0.1:8790:8787"
+    volumes:
+      - staging-private:/state
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=64m,mode=1777
+    healthcheck:
+      test: [CMD, node, -e, "fetch('http://127.0.0.1:8787/api/studio/health').then(async r=>{const j=await r.json();if(!r.ok||j.ok!==true||Object.keys(j).length!==1)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 5s
+      timeout: 3s
+      retries: 6
+      start_period: 5s
+volumes:
+  staging-private:

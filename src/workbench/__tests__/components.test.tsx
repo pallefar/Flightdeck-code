@@ -90,6 +90,13 @@ describe("ChatPane", () => {
 });
 
 describe("FileTreePane", () => {
+  it("marks the real received source group without concealing unhighlighted files", () => {
+    const c = candidate();
+    const out = html(<FileTreePane nodes={buildTree(c.files)} files={c.files} selectedPath={null} changes={new Map()} findings={new Map()} collapsedDirs={new Set()} focusedRule={null} file={null} onSelect={noop} onToggle={noop} receivedPaths={new Set(["server/subapps/wc-clock/manifest.ts"])} />);
+    expect(out).toMatch(/data-received-highlight="true"[^>]*title="server\/subapps\/wc-clock\/manifest.ts"/);
+    expect(out).toMatch(/data-received-highlight="false"[^>]*title="web\/src\/subapps\/wc-clock\/index.tsx"/);
+    expect(out).not.toContain('hidden=""');
+  });
   it("renders the tiers, their blurbs and a selected file's source", () => {
     const c = candidate();
     const out = html(
@@ -243,6 +250,24 @@ describe("PreviewPane", () => {
         onRevealFile={noop}
       />,
     );
+
+  it("highlights only an actual descriptor section without changing frame capability", () => {
+    const state = buildPreview({ candidate: candidate(), layers });
+    const out = html(<PreviewPane state={state} enable={ALL_ENABLED} onEnable={noop} onRevealFile={noop} highlightedSectionId="clocks" />);
+    expect(out).toContain('sandbox="allow-same-origin"');
+    expect(out).not.toContain("allow-scripts");
+    // Portal contents need a real browser; the static contract accepts a
+    // descriptor id only, never a selector, script or replacement page.
+    expect(out).toContain('data-tour-section="clocks"');
+    const unknown = html(<PreviewPane state={state} enable={ALL_ENABLED} onEnable={noop} onRevealFile={noop} highlightedSectionId="not-present" />);
+    expect(unknown).not.toContain('data-tour-section="not-present"');
+  });
+  it("denies microphone, camera and speech recognition in the preview frame", () => {
+    const out = render(candidate());
+    expect(out).toContain('allow="microphone &#x27;none&#x27;; camera &#x27;none&#x27;; on-device-speech-recognition &#x27;none&#x27;"');
+    expect(out).toContain('sandbox="allow-same-origin"');
+    expect(out).not.toContain("allow-scripts");
+  });
 
   it("renders the frame, the switches and the ledger when ready", () => {
     const out = render(candidate());

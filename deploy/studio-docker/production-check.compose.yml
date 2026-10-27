@@ -1,0 +1,35 @@
+# DEVELOPMENT smoke only: a separate project and new private volume.
+# Run with an explicit unique `docker compose -p ...`; never merge with companion.
+services:
+  studio-production-check:
+    image: flightdeck-studio-production-check:local
+    user: "1000:1000"
+    init: true
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    pids_limit: 128
+    mem_limit: 768m
+    restart: "no"
+    environment:
+      STUDIO_OPERATOR: Production serving development operator
+      STUDIO_HOST: 0.0.0.0
+      PORT: "8787"
+      STUDIO_STATE_DIR: /state
+      STUDIO_GRANTS_FILE: /state/grants.json
+      STUDIO_WORKSPACE_FILE: /state/workflow-workspace.json
+      STUDIO_FRONTEND_ASSET_ROOT: /app/dist
+    ports:
+      - "127.0.0.1::8787"
+    volumes:
+      - production-check-private:/state
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=64m,mode=1777
+    healthcheck:
+      test: [CMD, node, -e, "fetch('http://127.0.0.1:8787/api/studio/health').then(async r=>{const j=await r.json();if(!r.ok||j.ok!==true||Object.keys(j).length!==1)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 2s
+      timeout: 3s
+      retries: 10
+      start_period: 5s
+volumes:
+  production-check-private:

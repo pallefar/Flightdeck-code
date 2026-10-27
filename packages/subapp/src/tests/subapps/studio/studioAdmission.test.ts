@@ -100,7 +100,7 @@ export function registerWcClockRoutes(app: FastifyInstance, ctx: RegisterRoutesC
     } catch {
       return reply.code(403).send({ error: "disabled", code: "subapp_disabled" });
     }
-    const caps = await ctx.capabilitiesFor(rt.id);
+    const caps = await ctx.capabilitiesFor(rt.id, req);
     return { contracts: caps.readContracts() };
   });
 
@@ -113,8 +113,8 @@ export function registerWcClockRoutes(app: FastifyInstance, ctx: RegisterRoutesC
     }
     const parsed = body.safeParse(req.body);
     if (!parsed.success) return reply.code(400).send({ error: "invalid body" });
-    const caps = await ctx.capabilitiesFor(rt.id);
-    return { path: caps.writeInboxProposal("wc-clock-1.json", parsed.data) };
+    const caps = await ctx.capabilitiesFor(rt.id, req);
+    return { path: await caps.writeInboxProposal("wc-clock-1.json", parsed.data) };
   });
 }
 `;

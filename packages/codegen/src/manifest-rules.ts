@@ -1,22 +1,17 @@
-/** A LOCAL COPY of the host's `subAppManifestSchema` rules
- * (`server/subapps/types.ts`) plus the two boot-time checks that sit beside
- * it in `registry.ts`.
+/** A LOCAL CORE METADATA projection of the host's `subAppManifestSchema`
+ * (`server/subapps/types.ts`) and minimum-host-version check.
  *
- * ⛔ WHY COPY A SCHEMA. The host's copy is the one that runs, and
- * `loadValidatedManifests` is fail-LOUD: one malformed generated manifest
- * does not get skipped, it takes the whole server down at boot. Codegen
- * therefore has to answer "would this boot?" BEFORE it writes a file —
- * which means having the rules here, in a package that does not and must
- * not import the host.
+ * Generated files must pass strict literal admission in readEmittedManifest
+ * before these metadata rules. Hand-written host source is a separate seam:
+ * readHostManifestMetadata projects literal core fields with a position-based
+ * omission ledger, without importing or executing host modules.
  *
- * ⭐ WHAT KEEPS THE COPY HONEST. `__tests__/manifest-rules.test.ts` runs
- * this schema against the FOUR REAL hand-written manifests on disk
- * (`shell-reference`, `docusign`, `maps`, `advantage`), read as source text
- * and parsed by `testing/readEmittedManifest.ts`. If the host widens or
- * narrows a rule, a real manifest stops matching this copy and that test
- * goes red — the drift is caught by reality, not by a comment asking
- * someone to remember. The contract document says it plainly: if this and
- * the host repo disagree, the host repo wins. */
+ * __tests__/manifest-rules.test.ts pins local core schema expressions against
+ * authoritative host AST (including resolved enum/regex aliases and nested
+ * settingsPanel), rejects any unmodelled required host field, and validates
+ * all four real manifests' core metadata. Optional additive schemas and
+ * callback implementations are explicitly outside this projection. These
+ * checks do not establish full host boot/runtime or installed-host validation. */
 import { z } from "zod";
 import { CAPABILITY_SCOPES, HOST_VERSION, NAV_SECTIONS, SUBAPP_ID_RE, WORKSPACE_ROLES } from "./spec-contract";
 
@@ -28,10 +23,9 @@ const settingsPanelSchema = z.object({
   label: z.string().min(1),
 });
 
-/** Field-for-field with `server/subapps/types.ts#subAppManifestSchema`.
- * NOT `.strict()` — the host's is not either, and `widgets` is an optional
- * additive field this copy deliberately accepts without modelling (D-26's
- * additive rule: a manifest carrying one must still validate here). */
+/** Core metadata fields, not the complete additive host schema.
+ * NOT `.strict()` — the host strips unknown keys. Authoritative AST checks
+ * ensure every unmodelled schema field remains explicitly optional. */
 export const subAppManifestSchema = z.object({
   id: z.string().regex(SUBAPP_ID_RE),
   label: z.string().min(1),
@@ -68,11 +62,11 @@ export class ManifestRuleError extends Error {
   }
 }
 
-/** Everything the host checks at boot, in one call: the Zod shape, then
- * `assertHostVersionCompatible`'s host-version skew rule. Returns the
- * parsed data; throws `ManifestRuleError` naming every violation at once
- * (the host names only the first — a generator that reported one field per
- * run would be miserable to use). */
+/** Core metadata shape and minimum host-version compatibility, not a full
+ * host boot guarantee. The historical name is retained for generated callers.
+ * Optional additive schemas, callbacks, registry uniqueness and newer host
+ * compatibility/install gates need their separate conformance/runtime checks.
+ * Returns parsed core data; reports all core violations at once. */
 export function assertManifestWouldBoot(candidate: unknown, hostVersion: string = HOST_VERSION): SubAppManifestData {
   const parsed = subAppManifestSchema.safeParse(candidate);
   if (!parsed.success) {

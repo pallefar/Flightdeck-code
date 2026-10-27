@@ -1,0 +1,10 @@
+{
+  "extends": "../../tsconfig.json",
+  "include": [
+    "./**/*.ts",
+    "../../server/subapp-workspace-store.ts",
+    "../../server/subapp-workspace.ts",
+    "../../server/__tests__/subapp-workspace*.test.ts"
+  ],
+  "exclude": []
+}

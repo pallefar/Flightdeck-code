@@ -12,9 +12,11 @@
  * `docs/FLIGHTDECK-SUBAPP-CONTRACT.md` §2-§5, and the candidate is
  * compiled against it.
  *
- * ⛔ THIS IS A MODEL, NOT THE HOST. Studio does not have the host repo on
- * disk, and a surface that drifts from the real one would reject correct
- * code — the one failure mode this package refuses to have. Two
+ * ⛔ THIS IS A MODEL, NOT THE HOST. A local checkout can prove a scoped ABI
+ * projection, not deployment or the full host dependency closure. The core
+ * SDK is pinned to live source by host-sdk-model.test.ts with an explicit
+ * FLIGHTDECK_HOST_ROOT; missing source is reported, never silently skipped.
+ * A surface that drifts would reject correct code. Two
  * consequences, both deliberate:
  *
  *   • Every declaration below is as WIDE as the contract permits. Where
@@ -73,24 +75,19 @@ export interface AuditEvent {
   readonly [key: string]: unknown;
 }
 
-/** ⚠ OPEN ON PURPOSE. The contract names \`ctx.capabilitiesFor(id)\` as the
- * only door and \`auditAppend\` as the only way to write an audit event
- * (§5.3, §5.5); it does not enumerate the rest of the adapter. So those
- * two are pinned and everything else is \`any\` — the gate does not invent
- * a member list for a host it cannot see, and FD-C004 still enforces the
- * audit rule on the source. The methods are NOT optional: consent is
- * all-or-nothing and scopes come from the ceiling row at call time
- * (§4), so an ungranted capability refuses at runtime rather than being
- * absent at compile time. */
+/** Scoped SDK projection from Flightdeck's server/subapps/types.ts.
+ * These core methods are pinned, not widened to conceal ABI errors. This
+ * independent model does not claim the host's full service/dependency closure.
+ * Grant refusals happen at runtime; they do not make mandatory methods optional. */
 export interface SubAppCapabilities {
-  auditAppend(event: AuditEvent): void;
-  readContracts(...args: readonly any[]): Promise<readonly any[]>;
-  proposeInboxItem(proposal: any): Promise<{ readonly path: string }>;
-  [member: string]: any;
+  readContracts(): Array<{ ticket: string; dir: string; folderName: string }>;
+  writeInboxProposal(fileName: string, content: unknown): Promise<string>;
+  listOwnInboxProposals(): string[];
+  auditAppend(event: Record<string, unknown> & { event: string }): { hash: string };
 }
 
 export interface RegisterRoutesCtx {
-  capabilitiesFor(subAppId: string): SubAppCapabilities;
+  capabilitiesFor(workspaceId: string, req: FastifyRequest): Promise<SubAppCapabilities>;
 }
 
 export interface SubAppManifest {
@@ -106,6 +103,8 @@ export interface SubAppManifest {
   readonly visibleToRoles: readonly Role[];
   readonly settingsPanel?: SettingsPanel;
   readonly widgets?: readonly unknown[];
+  /** Host optional literal marker; generated output always supplies it. No grants. */
+  readonly generatedBy?: "flightdeck-studio";
   initSchema(db: Db): void | Promise<void>;
   registerRoutes(app: FastifyInstance, ctx: RegisterRoutesCtx): void | Promise<void>;
 }
@@ -191,8 +190,7 @@ export function effectiveSubAppEnabled(
 ): Promise<EffectiveInstallState | null>;
 `;
 
-const CAPABILITIES_DTS = `import type { SubAppCapabilities } from "./types.js";
-
+const CAPABILITIES_DTS = `
 /** Contract §4: granted scopes come from the ceiling row and are re-read
  * per call, so a capability the workspace did not grant has to refuse at
  * CALL time. That refusal needs a type. */
@@ -205,7 +203,6 @@ export class CapabilityDeniedError extends Error {
   readonly [detail: string]: any;
 }
 
-export function capabilitiesFor(subAppId: string, grantedScopes: readonly string[]): SubAppCapabilities;
 `;
 
 const AUDIT_DTS = `import type { AuditEvent } from "../subapps/types.js";
@@ -214,10 +211,14 @@ const AUDIT_DTS = `import type { AuditEvent } from "../subapps/types.js";
 export function appendFlightdeckAudit(workspaceRoot: string, event: AuditEvent): void;
 `;
 
-const WEB_REGISTRY_DTS = `/** What \`web/src/subapps/<id>/index.tsx\` must default-export. The web
+const WEB_REGISTRY_DTS = `import type { ComponentType } from "react";
+
+/** What \`web/src/subapps/<id>/index.tsx\` must default-export. The web
  * loader globs that exact path and lazy-mounts \`.Page\`. */
 export interface SubAppModule {
-  readonly Page: (...args: never[]) => unknown;
+  Page: ComponentType;
+  Rail?: ComponentType;
+  railHeading?: string;
 }
 `;
 
@@ -226,11 +227,21 @@ export interface SubAppModule {
  * `fastify` types — a false positive about the host, not the candidate. */
 const FASTIFY_AUGMENTATION = `import type { WorkspaceRuntime } from "./workspace/types.js";
 
+/** Request-scoped selection from server/project/resolve.ts. */
+export interface RequestProject {
+  id: string;
+  label: string;
+  enabled: boolean;
+  isDefault: boolean;
+}
+
 declare module "fastify" {
   interface FastifyRequest {
-    workspace?: WorkspaceRuntime;
-    project?: { readonly id: string };
-    principal?: { readonly username: string; readonly roles: readonly string[]; readonly [key: string]: unknown };
+    workspace: WorkspaceRuntime | null;
+    project: RequestProject | null;
+    /** Core Principal projection from server/services/auth.ts, augmented by
+     * server/lib/rbac.ts. The real principal has one role, not a roles array. */
+    principal: { readonly username: string; readonly displayName: string; readonly role: string; readonly pending?: boolean } | null;
   }
 }
 export {};
@@ -251,7 +262,7 @@ const RT_INSTALL_ROW = `export async function effectiveSubAppEnabled(db, project
 `;
 
 const RT_AUDIT = `export function appendFlightdeckAudit(workspaceRoot, event) {
-  globalThis.__fdProbe.audit(workspaceRoot, event);
+  return globalThis.__fdProbe.audit(workspaceRoot, event);
 }
 `;
 
@@ -262,9 +273,6 @@ const RT_CAPABILITIES = `export class CapabilityDeniedError extends Error {
   constructor(message) { super(message); this.name = "CapabilityDeniedError"; }
 }
 
-export function capabilitiesFor(subAppId, grantedScopes) {
-  return globalThis.__fdProbe.capabilities(subAppId, grantedScopes ?? []);
-}
 `;
 
 /** Type-only modules still need a file on disk: a generated file may

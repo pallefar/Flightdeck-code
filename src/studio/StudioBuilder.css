@@ -1,0 +1,160 @@
+/* Command first; retained authoring panes never reparent their editors. */
+.studio-shell .studio-main>.studio-builder-grid{height:100%;min-height:0}
+.studio-shell .studio-builder-grid{display:grid;grid-template-columns:minmax(0,1fr);gap:14px;align-items:stretch;min-width:0;position:relative}
+.studio-shell .studio-builder-grid[data-area=studio]{width:min(800px,100%);margin-inline:auto}
+.studio-shell .studio-builder-grid:is([data-area=editor],[data-area=ide]){grid-template-columns:340px minmax(0,1fr)}
+.studio-shell .studio-builder-grid:is([data-area=editor],[data-area=ide])[data-conversation=hidden]{grid-template-columns:minmax(0,1fr)}
+.studio-shell .studio-workspace-actions{display:flex;align-items:center;gap:6px}
+.studio-shell .studio-chat{height:100%;min-height:0;display:flex;flex-direction:column;min-width:0;overflow:hidden;background:var(--surface,#fff);border:1px solid var(--line,#d5dfe5);border-radius:12px}
+.studio-shell .studio-chat-header{flex:none;display:flex;justify-content:space-between;align-items:center;gap:12px;padding:12px 16px;border-bottom:1px solid var(--line,#d5dfe5)}
+.studio-shell .studio-chat-header h1{margin:0;font-size:15px;line-height:1.25;letter-spacing:-.3px}
+.studio-shell .studio-chat-header .studio-eyebrow{display:none}
+.studio-shell .studio-session-state{font-size:11px;color:var(--muted,#586e7c)}
+.studio-shell .studio-request-boundary{margin-top:7px}
+.studio-shell .studio-request-boundary>summary{font-size:11px;color:var(--muted,#586e7c);min-height:28px!important;display:flex;align-items:center;gap:7px}
+.studio-shell .studio-request-boundary>summary::before{content:'+';color:var(--te,#e98300)}
+.studio-shell .studio-request-boundary[open]>summary::before{content:'−'}
+.studio-shell .studio-motion{font-size:10px;white-space:nowrap;padding:5px 8px;background:transparent;border-color:transparent;color:var(--muted,#586e7c)}
+.studio-shell .studio-chat-scroll{flex:1;min-height:0;overflow:auto;overscroll-behavior:contain;scrollbar-gutter:stable;padding:20px 18px}
+.studio-shell .studio-conversation-history{display:grid;gap:22px}
+.studio-shell .studio-chat-turn{min-width:0;animation:studio-turn-arrival 200ms ease-out both}
+.studio-shell .studio-chat-turn header{display:flex;gap:8px;justify-content:space-between;align-items:baseline;font-size:11px}
+.studio-shell .studio-chat-turn header span{font-size:9px;color:var(--muted,#586e7c);overflow-wrap:anywhere;text-align:right}
+.studio-shell .studio-chat-turn p{white-space:pre-wrap;overflow-wrap:anywhere;font-size:13px;line-height:1.65;margin:7px 0 0;color:var(--ink,#253d4b)}
+.studio-shell .studio-chat-turn-you{padding:12px 14px;border:1px solid var(--line,#d5dfe5);background:var(--surface2,#f8fafb);border-radius:10px;margin-left:22px}
+.studio-shell .studio-chat-turn-studio{padding:3px 2px 0}
+.studio-shell .studio-chat-turn-studio strong{display:flex;gap:7px;align-items:center}
+.studio-shell .studio-chat-turn-studio strong::before{content:'';width:6px;height:6px;background:var(--te,#e98300);border-radius:50%;flex:none}
+.studio-shell .studio-chat-turn[data-status=requesting] p{color:var(--muted,#586e7c)}
+.studio-shell .studio-chat-turn[data-status=requesting]::after{content:'';display:block;width:44px;height:3px;margin-top:12px;border-radius:2px;background:var(--te,#e98300);animation:studio-await 1.5s ease-in-out infinite}
+.studio-shell .studio-chat-turn[data-status=error] p{color:var(--red,#aa3122)}
+.studio-shell .studio-chat-turn small{display:block;font-size:10px;margin-top:8px}
+.studio-shell .studio-chat-review:empty{display:none}
+.studio-shell .studio-chat-review .studio-card{padding:16px;margin:16px 0;min-width:0;border-radius:10px}
+.studio-shell .studio-chat-review h2{font-size:17px;letter-spacing:-.3px}
+.studio-shell .studio-chat-review h3{font-size:14px}
+.studio-shell .studio-chat-review p,.studio-shell .studio-chat-review li{font-size:12px}
+.studio-shell .studio-chat-review pre{max-height:240px;overflow:auto;font-size:11px}
+.studio-shell .studio-chat-review .studio-review{display:block}
+.studio-shell .studio-artifact-receipt{min-width:0;margin-top:20px;padding:16px;background:var(--surface2,#f8fafb);border:1px solid color-mix(in srgb,var(--te,#e98300) 30%,var(--line,#d5dfe5));border-radius:10px}
+.studio-shell .studio-artifact-receipt .studio-eyebrow{font-size:9px;letter-spacing:1.3px}
+.studio-shell .studio-artifact-receipt h3{margin:8px 0;font-size:17px;letter-spacing:-.3px}
+.studio-shell .studio-artifact-receipt p{margin:8px 0}
+.studio-shell .studio-artifact-receipt>button{width:100%;text-align:left;font-size:12px;background:var(--surface,#fff)}
+.studio-shell .studio-artifact-details{margin-top:12px}
+.studio-shell .studio-artifact-details>summary{font-size:11px}
+.studio-shell .studio-command{flex:none;min-width:0;border-top:1px solid var(--line,#d5dfe5);background:var(--surface,#fff)}
+.studio-shell .studio-compose{display:block;border:0;border-radius:0;background:transparent;padding:14px 16px 10px}
+.studio-shell .studio-compose form{min-width:0}
+.studio-shell .studio-request-label{position:absolute;width:1px;height:1px;padding:0;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
+.studio-shell .studio-compose label{margin:0;font-size:11px;gap:6px;color:var(--muted,#586e7c)}
+.studio-shell .studio-compose textarea{min-height:74px;max-height:130px;resize:vertical;padding:9px 0;font-size:14px;line-height:1.55;background:transparent;border:0;border-radius:4px;box-shadow:none}
+.studio-shell .studio-compose textarea::placeholder{color:var(--muted,#586e7c);opacity:.8}
+.studio-shell .studio-compose textarea:focus{outline:0}
+.studio-shell .studio-compose:focus-within{box-shadow:inset 0 2px color-mix(in srgb,var(--te,#e98300) 75%,transparent)}
+.studio-shell .studio-composer-meta{display:flex;align-items:center;justify-content:space-between;gap:8px;color:var(--muted,#586e7c);font-size:10px;margin:1px 0 4px}
+.studio-shell .studio-composer-meta button{border:0;background:transparent;padding:4px 0;font-size:10px}
+.studio-shell .studio-composer-meta kbd{font:10px Arial,Helvetica,sans-serif;margin-left:8px;color:var(--muted,#586e7c)}
+.studio-shell .studio-send-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.studio-shell .studio-send-row p{flex-basis:100%;font-size:11px;line-height:1.4;margin:0 0 6px}
+.studio-shell .studio-send-row button{padding:8px 11px;font-size:12px}
+.studio-shell .studio-send-row button[data-primary-action=true]{display:flex;align-items:center;justify-content:space-between;gap:24px;background:var(--te,#e98300);border-color:var(--te,#e98300);color:#14212b;font-weight:700;box-shadow:inset 0 1px #ffffff45;margin-left:auto;order:3}
+.studio-shell .studio-send-row button[data-primary-action=true]:not(:disabled):hover{filter:brightness(1.08)}
+.studio-shell .studio-composer-boundary{font-size:10px!important;line-height:1.45!important;margin:10px 0 0}
+.studio-shell .studio-command-intro{padding:27px 28px 0}
+.studio-shell .studio-command-intro .studio-eyebrow{font-size:10px;letter-spacing:1.5px}
+.studio-shell .studio-command-intro h2{font-size:32px;line-height:1.2;letter-spacing:-1px;margin:10px 0 7px;font-weight:600}
+.studio-shell .studio-command-intro p{margin:0;font-size:14px}
+.studio-shell .studio-command-starters{border-top:1px solid var(--line,#d5dfe5);padding:14px 24px 16px;background:var(--surface2,#f8fafb)}
+.studio-shell .studio-suggestions{display:flex;gap:8px;flex-wrap:wrap}
+.studio-shell .studio-suggestions button{display:flex;gap:16px;justify-content:space-between;align-items:center;text-align:left;padding:9px 12px;font-size:12px;background:var(--surface,#fff);border-radius:7px}
+.studio-shell .studio-suggestions span{font-size:17px;color:var(--te,#e98300)}
+.studio-shell .studio-chat-boundary{font-size:10px!important;margin:10px 0 0}
+.studio-shell .studio-home-example{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px;margin-top:3px}
+.studio-shell .studio-home-example button{font-size:11px;padding:5px 0;background:transparent;border-color:transparent;text-decoration:underline;text-underline-offset:3px}
+.studio-shell .studio-home-example small{font-size:10px}
+.studio-shell .studio-builder-grid[data-area=studio][data-home=empty]{width:min(760px,100%)}
+.studio-shell .studio-builder-grid[data-area=studio][data-home=empty] .studio-chat{border:0;background:transparent;justify-content:safe center;overflow:visible}
+.studio-shell .studio-builder-grid[data-area=studio][data-home=empty] .studio-chat-header{padding:0 2px 12px;border:0}
+.studio-shell .studio-builder-grid[data-area=studio][data-home=empty] .studio-chat-scroll{display:none}
+.studio-shell .studio-builder-grid[data-area=studio][data-home=empty] .studio-command{border:1px solid var(--line,#d5dfe5);border-radius:16px;overflow:hidden;box-shadow:0 20px 60px color-mix(in srgb,var(--ink,#253d4b) 8%,transparent),inset 0 1px color-mix(in srgb,var(--ink,#253d4b) 3%,transparent)}
+.studio-shell .studio-builder-grid[data-area=studio][data-home=empty] .studio-compose{padding:23px 28px 18px}
+.studio-shell .studio-builder-grid[data-area=studio][data-home=empty] .studio-compose label{font-size:11px}
+.studio-shell .studio-builder-grid[data-area=studio][data-home=empty] .studio-compose textarea{min-height:95px;font-size:18px;line-height:1.5;letter-spacing:-.2px}
+.studio-shell .studio-chat-setup{flex:none;display:flex;gap:12px;position:relative;font-size:11px;padding:0 14px;background:var(--surface2,#f8fafb);border-top:1px solid var(--line,#d5dfe5)}
+.studio-shell .studio-chat-setup>details{margin:0;padding:0;border:0;min-width:0;flex:1;position:static}
+.studio-shell .studio-chat-setup>details>summary{font-size:10px;line-height:1.3;display:flex;align-items:center;gap:8px;min-height:38px;padding:5px 0}
+.studio-shell .studio-chat-setup>details>summary::before{content:'+';color:var(--te,#e98300);font-size:14px}
+.studio-shell .studio-chat-setup>details[open]>summary::before{content:'−'}
+.studio-shell .studio-chat-setup .studio-connection,.studio-shell .studio-chat-setup .studio-config[open]{position:absolute;bottom:calc(100% + 8px);left:0;right:0;z-index:12;max-height:calc(var(--studio-viewport-height,100dvh) - 190px);overflow:auto;background:var(--surface,#fff);border:1px solid var(--line,#d5dfe5);border-radius:12px;padding:18px;box-shadow:0 12px 48px #0003}
+.studio-shell .studio-chat-setup .studio-config[open]>summary{font-weight:700}
+.studio-shell .studio-connection label{font-size:12px;margin-bottom:12px}
+.studio-shell .studio-connection input,.studio-shell .studio-connection select{padding:10px;font-size:12px}
+.studio-shell .studio-connection p,.studio-shell .studio-config p{font-size:11px;margin:10px 0}
+.studio-shell .studio-builder-grid[data-area=studio][data-home=empty] .studio-chat-setup{background:transparent;border:0;padding:2px 4px 0}
+.studio-shell .studio-technical-area{height:100%;min-width:0;min-height:0;overflow:auto;overscroll-behavior:contain;outline-offset:-2px}
+.studio-shell .studio-workspace-heading{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:2px 0 8px;margin-bottom:6px;border-bottom:1px solid var(--line,#d5dfe5)}
+.studio-shell .studio-workspace-heading>div:not(.studio-workspace-actions){display:flex;align-items:center;min-width:0;gap:12px}
+.studio-shell .studio-workspace-heading .studio-eyebrow{font-size:9px;letter-spacing:1px;white-space:nowrap}
+.studio-shell .studio-workspace-heading strong{font-size:13px;overflow-wrap:anywhere}
+.studio-shell .studio-workspace-heading button{font-size:11px;padding:6px 9px;white-space:nowrap}
+.studio-shell .studio-editor-note{margin-bottom:6px}
+.studio-shell .studio-ide-help{position:relative;min-width:0;font-size:11px;color:var(--muted,#586e7c)}
+.studio-shell .studio-ide-help>summary{display:flex;align-items:center;gap:5px;min-height:28px!important;font-size:11px}
+.studio-shell .studio-ide-help>summary::before{content:'+';color:var(--te,#e98300)}
+.studio-shell .studio-ide-help[open]>summary::before{content:'−'}
+.studio-shell .studio-ide-help .studio-ide-boundary{position:absolute;top:100%;left:0;z-index:15;width:min(340px,calc(100vw - 40px));font-size:12px;margin:8px 0;padding:14px;background:var(--surface,#fff);border:1px solid var(--line,#d5dfe5);border-radius:8px;box-shadow:var(--shadow,none)}
+.studio-shell .studio-ide-area{display:flex;flex-direction:column}
+.studio-shell .studio-ide-area .fd-wb{flex:1;min-height:0;height:auto;max-width:100%;border-radius:10px}
+/* Keep the transient receipt in a reserved workspace-header slot, never
+   over the actual source. Its timeout cannot move the retained editor. */
+.studio-shell .studio-ide-area .studio-workspace-heading{position:relative;height:44px;min-height:44px;flex:none;margin-bottom:0;padding:0;gap:8px}
+.studio-shell .studio-ide-area .studio-workspace-heading>div:first-child{margin-left:350px;flex-direction:row;align-items:center;gap:0}
+.studio-shell .studio-ide-area .studio-workspace-heading .studio-eyebrow{position:absolute;left:10px;top:15px}
+.studio-shell .studio-builder-grid:has(.studio-received-handoff[data-target=ide]) .studio-ide-area .studio-workspace-heading .studio-eyebrow{visibility:hidden}
+.studio-shell .studio-received-handoff[data-target=ide]{left:354px;right:auto;top:0;bottom:auto;width:340px;height:44px;padding:4px 34px 4px 9px;display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:0 8px;align-content:center;border-radius:6px;box-shadow:none}
+.studio-shell .studio-received-handoff[data-target=ide] .studio-handoff-path{position:absolute;width:1px;height:1px;padding:0;margin:0;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
+.studio-shell .studio-received-handoff[data-target=ide] .studio-handoff-title{grid-column:1;grid-row:1 / 3;font-size:11px;gap:0;line-height:1.35}
+.studio-shell .studio-received-handoff[data-target=ide] .studio-handoff-mark{display:none}
+.studio-shell .studio-received-handoff[data-target=ide] .studio-handoff-title button{position:absolute;right:1px;top:1px;min-height:40px!important;width:30px;min-width:30px;padding:0}
+.studio-shell .studio-received-handoff[data-target=ide] p{grid-column:2;font-size:10px;line-height:1.3;margin:0}
+.studio-shell .studio-received-handoff[data-target=ide] small{grid-column:2;font-size:9px;line-height:1.3}
+@media(min-width:851px) and (max-width:1100px){.studio-shell .studio-received-handoff[data-target=ide]{left:314px;width:280px}.studio-shell .studio-ide-area .studio-workspace-heading>div:first-child{margin-left:290px}}
+@media(max-width:850px){.studio-shell .studio-ide-area .studio-workspace-heading{height:88px;min-height:88px;align-items:flex-start;padding:0}.studio-shell .studio-ide-area .studio-workspace-heading>div:first-child{margin-left:0}.studio-shell .studio-ide-area .studio-workspace-heading .studio-eyebrow{top:59px}.studio-shell .studio-received-handoff[data-target=ide]{left:0;right:0;top:44px;width:100%;height:44px;padding-right:48px}.studio-shell .studio-received-handoff[data-target=ide] .studio-handoff-title button{width:44px;min-width:44px}}
+/* Transient handoff decorates only the receipt, not stable editor geometry. */
+.studio-shell .studio-received-handoff{position:absolute;right:18px;bottom:18px;z-index:10;width:min(340px,calc(100% - 36px));padding:16px 18px;border:1px solid color-mix(in srgb,var(--te,#e98300) 42%,var(--line,#d5dfe5));border-radius:12px;background:var(--surface,#fff);box-shadow:0 16px 44px #0003;pointer-events:none}
+.studio-shell .studio-handoff-path{display:flex;gap:10px;align-items:center;font-size:10px;color:var(--muted,#586e7c);margin-bottom:12px}
+.studio-shell .studio-handoff-path i{font-style:normal;color:var(--te,#e98300)}
+.studio-shell .studio-handoff-title{display:flex;align-items:center;gap:8px;font-size:14px;letter-spacing:-.2px}
+.studio-shell .studio-handoff-mark{display:grid;place-items:center;background:color-mix(in srgb,var(--te,#e98300) 12%,var(--surface,#fff));color:var(--te,#e98300);width:24px;height:24px;flex:none;border-radius:6px}
+.studio-shell .studio-handoff-title button{pointer-events:auto;background:transparent;border:0;font-size:20px;padding:0 7px;min-height:32px!important;min-width:32px;margin-left:auto;color:var(--muted,#586e7c)}
+.studio-shell .studio-received-handoff p{font-size:12px;line-height:1.4;margin:10px 0 4px}
+.studio-shell .studio-received-handoff small{font-size:10px;color:var(--amber,#806620)}
+.studio-shell .studio-technical-area:focus{outline:1px solid color-mix(in srgb,var(--te,#e98300) 30%,transparent)}
+/* Only pointer-transparent pseudo decoration moves; receipt and controls are fixed. */
+.studio-shell .studio-received-handoff::before{content:'';position:absolute;inset:-1px;border-radius:inherit;border:1px solid var(--te,#e98300);pointer-events:none;opacity:0;animation:studio-handoff-frame 700ms ease-out both}
+.studio-shell .studio-handoff-path i{position:relative;overflow:hidden}
+.studio-shell .studio-handoff-path i::after{content:'';position:absolute;inset:0;background:var(--te,#e98300);pointer-events:none;opacity:0;animation:studio-handoff-trail 700ms ease-out both}
+@keyframes studio-handoff-frame{from{opacity:1;box-shadow:0 0 22px color-mix(in srgb,var(--te,#e98300) 18%,transparent)}to{opacity:0;box-shadow:none}}
+@keyframes studio-handoff-trail{from{opacity:1;transform:translateX(-130%)}to{opacity:0;transform:translateX(130%)}}
+@keyframes studio-turn-arrival{from{opacity:.5}to{opacity:1}}
+@keyframes studio-await{0%,100%{opacity:.35;transform:scaleX(.45);transform-origin:left}50%{opacity:1;transform:scaleX(1);transform-origin:left}}
+@media(max-width:1100px){.studio-shell .studio-builder-grid:is([data-area=editor],[data-area=ide]){grid-template-columns:300px minmax(0,1fr)}.studio-shell .studio-chat-scroll{padding:16px 14px}.studio-shell .studio-workspace-heading>div:not(.studio-workspace-actions){align-items:flex-start;flex-direction:column;gap:2px}}
+@media(max-width:850px){.studio-shell .studio-builder-grid:is([data-area=editor],[data-area=ide]){grid-template-columns:minmax(0,1fr)}.studio-shell .studio-builder-grid:is([data-area=editor],[data-area=ide]) .studio-chat{display:none}.studio-shell .studio-command-intro{padding:16px 18px 0}.studio-shell .studio-command-intro .studio-eyebrow{display:none}.studio-shell .studio-command-intro h2{font-size:27px}.studio-shell .studio-command-intro p{font-size:13px}.studio-shell .studio-builder-grid[data-area=studio][data-home=empty] .studio-compose{padding:14px 18px}.studio-shell .studio-builder-grid[data-area=studio][data-home=empty] .studio-compose textarea{min-height:68px;font-size:16px}.studio-shell .studio-command-starters{padding:10px 18px}.studio-shell .studio-request-boundary>summary{min-height:44px!important}.studio-shell .studio-chat-setup>details>summary{min-height:44px}.studio-shell .studio-suggestions{gap:6px}.studio-shell .studio-suggestions button{width:100%;font-size:12px}.studio-shell .studio-home-example{gap:0 10px}.studio-shell .studio-compose{padding:10px 14px}.studio-shell .studio-composer-meta kbd{display:none}.studio-shell .studio-send-row p{font-size:10px}.studio-shell .studio-chat-scroll{padding:16px 14px}.studio-shell .studio-chat-setup{padding:0 10px;gap:10px}.studio-shell .studio-chat-setup .studio-connection,.studio-shell .studio-chat-setup .studio-config[open]{max-height:calc(var(--studio-viewport-height,100dvh) - 240px)}.studio-shell .studio-workspace-heading>div:not(.studio-workspace-actions){flex-direction:column;align-items:flex-start;gap:2px}.studio-shell .studio-editor-note{font-size:10px}.studio-shell .studio-editor-help{font-size:10px}.studio-shell .studio-ide-help>summary{min-height:44px!important}.studio-shell .studio-handoff-title button{min-height:44px!important;min-width:44px}}
+@media(max-height:650px) and (min-width:851px){.studio-shell .studio-chat-header{padding:9px 14px}.studio-shell .studio-command-intro{padding:10px 24px 0}.studio-shell .studio-command-intro .studio-eyebrow{display:none}.studio-shell .studio-command-starters .studio-chat-boundary{display:none}.studio-shell .studio-command-intro h2{font-size:27px;margin:7px 0 5px}.studio-shell .studio-builder-grid[data-area=studio][data-home=empty] .studio-compose{padding:12px 24px 10px}.studio-shell .studio-builder-grid[data-area=studio][data-home=empty] .studio-compose textarea{min-height:52px;font-size:16px}.studio-shell .studio-command-starters{padding:10px 20px 8px}.studio-shell .studio-compose{padding:8px 14px}.studio-shell .studio-compose textarea{min-height:52px}.studio-shell .studio-send-row p{font-size:10px;margin:0 0 4px}.studio-shell .studio-composer-boundary{font-size:9px!important;margin-top:6px}.studio-shell .studio-composer-meta button{min-height:24px!important}.studio-shell .studio-chat-setup>details>summary{min-height:32px}.studio-shell .studio-main{padding-top:10px}}
+/* Explicit, memory-only Anthropic setup; no changes to shell/editor geometry. */
+.studio-shell .studio-anthropic-setup-launch{display:flex;flex-wrap:wrap;gap:6px 12px;align-items:center;margin:12px 0}
+.studio-shell .studio-anthropic-setup-launch small{font-size:11px}
+.studio-shell dialog.studio-anthropic-setup{box-sizing:border-box;width:min(600px,calc(100vw - 28px));max-height:calc(100dvh - 28px);margin:auto;overflow:auto;overscroll-behavior:contain;border:1px solid var(--line,#d5dfe5);border-radius:14px;padding:22px;background:var(--surface,#fff);color:var(--ink,#253d4b);box-shadow:0 24px 80px #0005;font:13px/1.5 Arial,Helvetica,sans-serif}
+.studio-shell .studio-anthropic-setup::backdrop{background:#0b1529a6}
+.studio-shell .studio-anthropic-setup header{display:flex;gap:16px;align-items:flex-start;justify-content:space-between}
+.studio-shell .studio-anthropic-setup h2{font-size:22px;line-height:1.2;margin:7px 0 12px}
+.studio-shell .studio-anthropic-setup p{font-size:12px;line-height:1.55;margin:12px 0;overflow-wrap:anywhere}
+.studio-shell .studio-anthropic-setup label{font-size:12px}
+.studio-shell .studio-anthropic-setup .studio-anthropic-consent{display:flex;flex-direction:row;align-items:flex-start;gap:9px}
+.studio-shell .studio-anthropic-consent input{flex:none;margin:3px 0 0;width:auto}
+.studio-shell .studio-anthropic-actions{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px}
+.studio-shell .studio-anthropic-actions span{font-size:10px;color:var(--muted,#586e7c)}
+.studio-shell .studio-anthropic-uncertain{border-left:3px solid var(--amber,#806620);padding:8px 10px;background:var(--surface2,#f8fafb)}
+.studio-shell .studio-anthropic-error{color:var(--red,#aa3122);border-left:3px solid var(--red,#aa3122);padding:8px 10px}
+@media(max-width:600px){.studio-shell dialog.studio-anthropic-setup{padding:16px}.studio-shell .studio-anthropic-setup header{gap:10px}.studio-shell .studio-anthropic-setup header button{max-width:112px;line-height:1.2}.studio-shell .studio-anthropic-setup .studio-eyebrow{font-size:9px;letter-spacing:1px}}

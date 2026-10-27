@@ -1,0 +1,23 @@
+import {renderToStaticMarkup} from 'react-dom/server';
+import {beforeEach,expect,it,vi} from 'vitest';
+import {StudioApp} from '../StudioApp';
+import {StudioController} from '../controller';
+import {workflow} from './fixtures';
+import {createWorkflowTemplate} from '../../workflow';
+const captured=vi.hoisted(()=>[] as Array<{id:string;text:string;active?:boolean}>);
+vi.mock('../../voice',async importOriginal=>({...await importOriginal<object>(),VoiceNarration:(props:{id:string;text:string;active?:boolean})=>{captured.push(props);return null;}}));
+beforeEach(()=>{captured.length=0;});
+it('announces received graph counts without reading prompt, graph label or skill payload',async()=>{
+ const graph=createWorkflowTemplate('branch');graph.name='PRIVATE_GRAPH_LABEL';
+ const controller=new StudioController(async()=>new Response(JSON.stringify({...workflow,graph})));
+ await controller.submit({connectionId:'local',prompt:'PRIVATE_PROMPT'},'development-only-nonsecret');
+ renderToStaticMarkup(<StudioApp controller={controller}/>);
+ const receipt=captured.at(-1);
+ expect(receipt).toBeDefined();
+ expect(receipt?.text).toContain('4 blocks');
+ expect(receipt?.text).toContain('3 connections');
+ expect(receipt?.text).not.toContain('PRIVATE_GRAPH_LABEL');
+ expect(receipt?.text).not.toContain('PRIVATE_PROMPT');
+ expect(receipt?.text).toContain('not been executed');
+ expect(receipt?.id).toContain(controller.getState().acceptedRequestId);
+});

@@ -13,8 +13,8 @@
  *
  *   • A draft with nothing of the person's in it is DROPPED when the file
  *     is regenerated. There is nothing to lose and nothing to ask about.
- *   • A draft whose text the round happens to reproduce exactly is also
- *     dropped — the generator agreed with you, so there is no edit left.
+ *   • A draft whose saved/effective text AND buffer the round reproduces
+ *     exactly is also dropped — there is no separate unsaved edit left.
  *   • Anything else raises a CONFLICT: the round's text is what the panes
  *     show (it is what shipping would produce), the person's text is held
  *     verbatim, and neither is applied until they pick. Two buttons, both
@@ -49,10 +49,10 @@ export interface Conflict {
   /** What the new round produced for this path. `null` when the round no
    * longer contains the file at all. */
   readonly incoming: string | null;
-  /** The person's text at the moment the conflict opened, held verbatim.
-   * Kept here rather than recomputed because `buffer` keeps moving — they
-   * can carry on typing while a conflict is open, and "keep mine" must
-   * mean the text they can see, not the text they had when it opened. */
+  /** The saved/effective project text when the conflict opened, verbatim.
+   * This is the overlay restored by "keep mine", NOT a copy of unsaved
+   * typing. The independent live `buffer` survives resolution unchanged,
+   * including any typing after this snapshot or a further round. */
   readonly held: string;
   /** True when the conflict exists only because the path was locked. The
    * banner says so, because "you locked this and Studio changed it" and
@@ -72,9 +72,10 @@ export interface Draft {
   readonly generated: string;
   /** What is in the editor right now, saved or not. */
   readonly buffer: string;
-  /** The last text the person SAVED, or `null` if they never did. This is
-   * the only field the other panes read: an unsaved buffer is theirs
-   * alone, a saved one is part of the project. */
+  /** The last text the person SAVED (or explicitly kept as the effective
+   * project copy on conflict resolution), otherwise `null`. This is the
+   * only field the other panes read: an unsaved buffer is theirs alone,
+   * a saved one is part of the project. */
   readonly saved: string | null;
   readonly conflict: Conflict | null;
 }
@@ -141,7 +142,10 @@ export function revertDraft(draft: Draft): Draft {
  *
  * `"mine"` re-bases the person's held text onto the new round: the round's
  * text becomes the baseline (so the diff shows what they changed relative
- * to what Studio last produced) and their text becomes the saved overlay.
+ * to what Studio last produced) and the held effective text becomes the
+ * saved overlay. The current buffer is kept independently, never reverted
+ * to that snapshot or implicitly saved. For a removed file the last known
+ * generated baseline remains, and the held overlay restores the file.
  * `"studio"` returns `null` — the draft ceases to exist and the round's
  * own text stands, with nothing left behind to overlay it later. */
 export function resolveDraft(draft: Draft, choice: "mine" | "studio"): Draft | null {
@@ -153,7 +157,6 @@ export function resolveDraft(draft: Draft, choice: "mine" | "studio"): Draft | n
     ...draft,
     generated,
     saved: conflict.held,
-    buffer: conflict.held,
     conflict: null,
   };
 }
@@ -231,8 +234,8 @@ export function reconcileDrafts(input: ReconcileInput): ReadonlyMap<string, Draf
   for (const [path, draft] of drafts) {
     const incoming = next.get(path);
 
-    // Nothing of theirs is at stake. Follow the round.
-    if (isEmptyDraft(draft)) {
+    // Nothing of theirs is at stake unless they claimed the path.
+    if (isEmptyDraft(draft) && !locks.has(path)) {
       changed = true;
       continue;
     }
@@ -267,9 +270,9 @@ export function reconcileDrafts(input: ReconcileInput): ReadonlyMap<string, Draf
       continue;
     }
 
-    // The generator produced exactly what they had. There is no edit left
-    // to hold, so the draft goes and the file is simply the round's.
-    if (incoming.contents === effectiveText(draft)) {
+    // Agreement on the saved/generated text says nothing about unsaved
+    // typing. Drop only when there is no separate working buffer to lose.
+    if (incoming.contents === effectiveText(draft) && !isDirty(draft)) {
       changed = true;
       continue;
     }

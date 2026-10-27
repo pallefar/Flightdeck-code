@@ -5,7 +5,7 @@
 import { mkdtemp, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { HARNESS_MODE_ENV, HarnessCacheMiss, createHarness, resolveMode } from "../harness";
 import { listFixtures, modelSlug } from "../fixture";
 import { explodingProvider, fakeProvider } from "../test-support";
@@ -103,20 +103,27 @@ describe("record once, replay forever", () => {
   });
 
   it("re-recording an unchanged call rewrites the same bytes", async () => {
-    const options = {
-      mode: "live",
-      provider: fakeProvider<TestRequest, TestResponse>(() => ({ text: "stable" })).provider,
-      fixturesDir: dir,
-      now: FIXED_NOW,
-      env: {},
-    } as const;
+    // recordedAt is injected below; durationMs also needs a deterministic
+    // clock or this exact-byte assertion races real 0/1ms provider timing.
+    const durationClock = vi.spyOn(Date, "now").mockReturnValue(FIXED_NOW().getTime());
+    try {
+      const options = {
+        mode: "live",
+        provider: fakeProvider<TestRequest, TestResponse>(() => ({ text: "stable" })).provider,
+        fixturesDir: dir,
+        now: FIXED_NOW,
+        env: {},
+      } as const;
 
-    await createHarness<TestRequest, TestResponse>(options).call(ask("hello"));
-    const first = await readFile((await listFixtures(dir))[0]?.path ?? "", "utf8");
-    await createHarness<TestRequest, TestResponse>(options).call(ask("hello"));
-    const second = await readFile((await listFixtures(dir))[0]?.path ?? "", "utf8");
+      await createHarness<TestRequest, TestResponse>(options).call(ask("hello"));
+      const first = await readFile((await listFixtures(dir))[0]?.path ?? "", "utf8");
+      await createHarness<TestRequest, TestResponse>(options).call(ask("hello"));
+      const second = await readFile((await listFixtures(dir))[0]?.path ?? "", "utf8");
 
-    expect(second).toBe(first);
+      expect(second).toBe(first);
+    } finally {
+      durationClock.mockRestore();
+    }
   });
 
   it("leaves no temporary files behind", async () => {

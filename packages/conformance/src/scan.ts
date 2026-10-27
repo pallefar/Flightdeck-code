@@ -1,5 +1,5 @@
-/** A single-pass lexer for the three views of a source file every check
- * below needs.
+/** Source views for the checks below: a general-purpose lexer plus an
+ * import-specific lexical view that preserves executable interpolation.
  *
  * ── WHY NOT JUST GREP THE SOURCE ─────────────────────────────────────
  * Every rule in this package is a statement about CODE, and the naive
@@ -90,7 +90,7 @@ export function scanFile(path: string, text: string): ScannedFile {
   const { code, skeleton, strings } = lexSource(text);
   const lineStarts = computeLineStarts(text);
   const fnDepths = computeFunctionDepths(skeleton);
-  const imports = collectImports(code);
+  const imports = collectImports(text, importSkeleton(text));
 
   const positionAt = (offset: number): Position => {
     const clamped = Math.max(0, Math.min(offset, text.length));
@@ -427,6 +427,83 @@ export function matchParen(skeleton: string, openIndex: number): number {
 
 // ── Imports ──────────────────────────────────────────────────────────
 
+/** Import matching needs literal delimiters, but never literal CONTENT.
+ * Unlike the general structural view, this view walks `${...}` as code,
+ * including nested templates. Otherwise hiding an import in interpolation
+ * would turn a false-positive repair into a dependency-check bypass.
+ * Keep offsets and newlines intact; collectImports reads specifiers back
+ * from the original source, not from these blanked literal bodies. */
+function importSkeleton(text: string): string {
+  const view = text.split("");
+  const blank = (from: number, to: number): void => {
+    for (let i = from; i < to; i++) {
+      if (view[i] !== "\n") view[i] = " ";
+    }
+  };
+  // Iterative rather than recursive: hostile template nesting must not
+  // exhaust the browser's call stack.
+  const stack: { template: boolean; braces: number; prev: string }[] = [
+    { template: false, braces: 0, prev: "" },
+  ];
+  for (let i = 0; i < text.length; i++) {
+    const state = stack[stack.length - 1]!;
+    const ch = text[i] ?? "";
+    if (state.template) {
+      if (ch === "\\") {
+        blank(i, Math.min(i + 2, text.length));
+        i++;
+      } else if (ch === "`") {
+        stack.pop();
+      } else if (ch === "$" && text[i + 1] === "{") {
+        stack.push({ template: false, braces: 0, prev: "" });
+        i++;
+      } else {
+        blank(i, i + 1);
+      }
+      continue;
+    }
+    if (ch === "/" && (text[i + 1] === "/" || text[i + 1] === "*")) {
+      const line = text[i + 1] === "/";
+      const end = line ? text.indexOf("\n", i + 2) : text.indexOf("*/", i + 2);
+      const stop = end === -1 ? text.length : end + (line ? 0 : 2);
+      blank(i, stop);
+      i = stop - 1;
+      continue;
+    }
+    if (ch === '"' || ch === "'") {
+      const end = endOfQuoted(text, i);
+      blank(i + 1, end);
+      state.prev = ch;
+      i = end;
+      continue;
+    }
+    if (ch === "`") {
+      state.prev = ch;
+      stack.push({ template: true, braces: 0, prev: "" });
+      continue;
+    }
+    if (ch === "/" && REGEX_MAY_FOLLOW.has(state.prev)) {
+      const end = endOfRegex(text, i);
+      if (end !== -1) {
+        blank(i + 1, end);
+        state.prev = "/";
+        i = end;
+        continue;
+      }
+    }
+    if (ch === "{") state.braces++;
+    else if (ch === "}") {
+      if (state.braces === 0 && stack.length > 1) {
+        stack.pop();
+        continue;
+      }
+      state.braces--;
+    }
+    if (!/\s/.test(ch)) state.prev = ch;
+  }
+  return view.join("");
+}
+
 /** An import clause contains no quote and no semicolon, which is what
  * keeps these patterns from crossing a statement boundary and pairing an
  * `import` with some later file's `from`. */
@@ -435,13 +512,14 @@ const SIDE_EFFECT_IMPORT = /\bimport\s*(['"])([^'"\n]*)\1/g;
 const DYNAMIC_IMPORT = /\bimport\s*\(\s*(['"])([^'"\n]*)\1/g;
 const REQUIRE_CALL = /\brequire\s*\(\s*(['"])([^'"\n]*)\1/g;
 
-function collectImports(code: string): ImportRef[] {
+function collectImports(text: string, skeleton: string): ImportRef[] {
   const byOffset = new Map<number, ImportRef>();
 
-  for (const match of code.matchAll(STATIC_IMPORT)) {
+  for (const match of skeleton.matchAll(STATIC_IMPORT)) {
     const clause = match[2] ?? "";
-    const specifier = match[4] ?? "";
-    const offset = (match.index ?? 0) + match[0].length - specifier.length - 2;
+    const length = (match[4] ?? "").length;
+    const offset = (match.index ?? 0) + match[0].length - length - 2;
+    const specifier = text.slice(offset + 1, offset + 1 + length);
     byOffset.set(offset, {
       specifier,
       offset,
@@ -456,9 +534,10 @@ function collectImports(code: string): ImportRef[] {
     [REQUIRE_CALL, "require"],
   ];
   for (const [pattern, form] of simple) {
-    for (const match of code.matchAll(pattern)) {
-      const specifier = match[2] ?? "";
-      const offset = (match.index ?? 0) + match[0].length - specifier.length - 2;
+    for (const match of skeleton.matchAll(pattern)) {
+      const length = (match[2] ?? "").length;
+      const offset = (match.index ?? 0) + match[0].length - length - 2;
+      const specifier = text.slice(offset + 1, offset + 1 + length);
       if (byOffset.has(offset)) continue;
       byOffset.set(offset, { specifier, offset, typeOnly: false, form });
     }

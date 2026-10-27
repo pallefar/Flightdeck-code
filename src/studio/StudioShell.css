@@ -1,0 +1,84 @@
+/* Source: pallefar/flightdeck-atlas @ 0b5897bad64bea3ad9ee5c9df1bc3c275ae4d4e9.
+ * Atlas globals/te-theme supply the 224px sidebar, Arial, 7px nav radius,
+ * 13px breadcrumbs and Day/Night palette. The command frame is denser than
+ * Atlas's 83px dashboard header; no dashboard metrics, logo or identity copied.
+ * Atlas --muted is a SURFACE. Legacy Studio --muted remains TEXT here.
+ * Inherit never redefines host tokens; explicit appearance is Studio-local.
+ */
+.studio-shell[data-appearance=night]{--bg: #0e1720;--bg2: #1c2e3a;--surface: #17242f;--surface2: #243746;--ink: #eef2f7;--muted: #a7b6c3;--line: #304553;--te: #e98300;--green: #87c3a7;--amber: #c9b687;--red: #ff807d;--blue: #8eb6e6;--shadow: 0 8px 26px #00000025,0 1px 2px #00000020;--studio-chrome:#14222d;--studio-active-surface:#44351f;--studio-active-ink:#ffb34f;color-scheme:dark}
+.studio-shell[data-appearance=day]{--bg: #f3f6f7;--bg2: #edf3f6;--surface: #fff;--surface2: #e8eef1;--ink: #253d4b;--muted: #586e7c;--line: #d5dfe5;--te: #e98300;--green: #367956;--amber: #806620;--red: #aa3122;--blue: #30648f;--shadow: 0 4px 16px #233e4d09,0 1px 3px #233e4d08;--studio-chrome:#fff;--studio-active-surface:#fff0d9;--studio-active-ink:#985000;color-scheme:light}
+.studio.studio-shell{--studio-sidebar-width:224px;--studio-background:var(--bg,#f3f6f7);--studio-surface:var(--surface,#fff);--studio-muted-surface:var(--surface2,#e8eef1);--studio-ink:var(--ink,#253d4b);--studio-muted-ink:var(--muted,#586e7c);--studio-border:var(--line,#d5dfe5);--studio-accent:var(--te,#e98300);position:relative;isolation:isolate;max-width:none;margin:0;padding:0;min-width:0;min-height:0;height:var(--studio-viewport-height,100dvh);display:grid;grid-template-columns:var(--studio-sidebar-width) minmax(0,1fr);grid-template-rows:64px 44px minmax(0,1fr);overflow:hidden;font:14px/1.5 Arial,Helvetica,"Segoe UI",sans-serif;background:var(--studio-background);color:var(--studio-ink)}
+.studio-shell *,.studio-shell *::before,.studio-shell *::after{box-sizing:border-box}
+.studio-shell [hidden]{display:none!important}
+.studio-shell .studio-sidebar{grid-column:1;grid-row:1 / -1;min-height:0;overflow:auto;overscroll-behavior:contain;display:flex;flex-direction:column;padding:32px 18px 16px;background:var(--studio-chrome,var(--studio-surface));border-right:1px solid var(--studio-border)}
+.studio-shell .studio-brand{padding:0 12px 35px;flex:none}
+.studio-shell .studio-brand strong{display:block;font-size:18px;font-weight:600;letter-spacing:2px;line-height:1.3}
+.studio-shell .studio-brand strong>span{display:block;font-size:12px;letter-spacing:0;font-weight:400;color:var(--studio-muted-ink);margin-top:7px}
+.studio-shell .studio-workspace-label{font-size:10px;font-weight:600;letter-spacing:1.25px;color:var(--studio-muted-ink);margin:0 12px 15px;display:block}
+.studio-shell .studio-navigation{display:grid;gap:3px;min-width:0}
+.studio-shell .studio-navigation button{width:100%;min-height:44px;margin:0;padding:13px 12px;border:0;border-radius:7px;background:transparent;color:var(--studio-muted-ink);font:400 14px/1.3 Arial,Helvetica,"Segoe UI",sans-serif;text-align:left;cursor:pointer}
+.studio-shell .studio-navigation button:hover{background:var(--studio-muted-surface);color:var(--studio-ink)}
+.studio-shell .studio-navigation button[aria-current=page]{background:var(--studio-active-surface,color-mix(in srgb,var(--studio-accent) 12%,var(--studio-surface)));color:var(--studio-active-ink,var(--studio-ink));font-weight:600}
+.studio-shell .studio-sidebar-bottom{margin-top:auto;padding:28px 12px 0;color:var(--studio-muted-ink);font-size:11px;line-height:1.5}
+.studio-shell .studio-sidebar-bottom small{display:block;font-size:10px;margin-top:4px}
+.studio-shell .studio-appbar{grid-column:2;grid-row:1;display:flex;align-items:center;gap:16px;min-width:0;padding:0 24px;background:var(--studio-chrome,var(--studio-surface));border-bottom:1px solid var(--studio-border)}
+.studio-shell .studio-breadcrumbs{display:flex;align-items:center;gap:13px;min-width:0;color:var(--studio-muted-ink);font-size:13px;white-space:nowrap}
+.studio-shell .studio-breadcrumbs strong{font-weight:500;color:var(--studio-ink);overflow:hidden;text-overflow:ellipsis}
+.studio-shell .studio-shell-actions{display:flex;align-items:center;gap:8px;margin-left:auto;flex:none;min-width:0}
+.studio-shell .studio-shell-actions :is(button,summary,select){min-height:44px;min-width:44px}
+.studio-shell .studio-settings-button{font-size:12px;padding:9px 12px;background:transparent}
+.studio-shell .studio-tools{position:relative;flex:none}
+.studio-shell .studio-tools>summary{display:flex;align-items:center;justify-content:center;list-style:none;font-size:12px;cursor:pointer;padding:8px 10px;border:1px solid transparent;border-radius:7px}
+.studio-shell .studio-tools>summary::-webkit-details-marker{display:none}
+.studio-shell .studio-tools[open]>summary{background:var(--studio-muted-surface);border-color:var(--studio-border)}
+.studio-shell .studio-tools-panel{position:absolute;right:0;top:calc(100% + 6px);width:min(256px,calc(100vw - 24px));max-height:calc(var(--studio-viewport-height,100dvh) - 80px);overflow:auto;overscroll-behavior:contain;z-index:25;padding:10px;background:var(--studio-surface);border:1px solid var(--studio-border);border-radius:10px;box-shadow:0 12px 32px #18232e20;display:grid;gap:4px}
+.studio-shell .studio-tools-panel button{text-align:left;border-color:transparent;background:transparent;padding:10px;font-size:13px;min-height:44px}
+.studio-shell .studio-tools-panel button:hover,.studio-shell .studio-tools-panel button[aria-current=page]{background:var(--studio-muted-surface)}
+.studio-shell .studio-tool-label{font-size:10px;letter-spacing:.6px;color:var(--studio-muted-ink);padding:5px 10px}
+.studio-shell .studio-appearance{font-size:11px;margin:8px 10px;gap:5px;border-top:1px solid var(--studio-border);padding-top:12px}
+.studio-shell .studio-appearance select{font-size:12px;padding:8px;min-height:44px}
+.studio-shell .studio-context{grid-column:2;grid-row:2;display:flex;align-items:center;gap:16px;padding:0 24px;border-bottom:1px solid var(--studio-border);font-size:11px;color:var(--studio-muted-ink);min-width:0;background:var(--studio-background)}
+.studio-shell .studio-context-project{min-width:0;max-width:28%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1}
+.studio-shell .studio-model-context{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:2}
+.studio-shell .studio-context-status{color:var(--amber,#806620);margin-left:auto;white-space:nowrap;flex:none}
+.studio-shell .studio-context-details{position:relative;flex:none}
+.studio-shell .studio-context-details summary{display:flex;align-items:center;min-height:44px;padding:0 4px;cursor:pointer;font-size:11px;white-space:nowrap}
+.studio-shell .studio-context-details>div{position:absolute;top:calc(100% + 6px);right:0;z-index:24;background:var(--studio-surface);border:1px solid var(--studio-border);border-radius:8px;padding:8px 16px;width:min(320px,calc(100vw - 24px));max-height:calc(var(--studio-viewport-height,100dvh) - 120px);overflow:auto;overflow-wrap:anywhere;box-shadow:var(--shadow,0 6px 20px #0002)}
+.studio-shell .studio-main{grid-column:2;grid-row:3;min-width:0;min-height:0;padding:16px 24px 20px;overflow:auto;outline-offset:-3px}
+.studio-shell .studio-main>section,.studio-shell .studio-main>div{min-width:0}
+.studio-shell :is(button,input,textarea,select,summary,a):focus-visible,.studio-shell .studio-main:focus-visible{outline:2px solid var(--studio-accent);outline-offset:3px}
+.studio-shell .studio-skip{position:absolute;left:16px;top:8px;transform:translateY(-160%);z-index:40;background:var(--studio-surface);color:var(--studio-ink);padding:12px;border:2px solid var(--studio-accent);border-radius:5px}
+.studio-shell .studio-skip:focus{transform:none}
+/* Editor-owned geometry and controls are deliberately excluded. */
+.studio-shell .studio-main :is(button,summary):not(:where(.wf-editor *,.fd-wb *)){min-height:36px}
+.studio-shell .studio-main summary{cursor:pointer}
+.studio-shell .studio-connection{min-width:0}
+.studio-shell .studio-config{margin:0;padding:0;font-size:12px}
+.studio-shell .studio-editor-note{display:flex;align-items:center;gap:12px;justify-content:space-between;flex-wrap:wrap;margin:0;font-size:11px}
+.studio-shell .studio-editor-note p{margin:0}
+.studio-shell .studio-editor-help{font-size:11px;margin:0}
+.studio-shell .studio-editor-help[open]{flex-basis:100%}
+.studio-shell .studio-editor-help p{max-width:90ch}
+.studio-shell .studio-navigation-toggle{display:none;width:44px;min-width:44px;min-height:44px;padding:8px;font-size:20px;background:transparent}
+.studio-shell .studio-navigation-dialog{position:fixed;inset:0 auto 0 0;margin:0;width:min(288px,calc(100vw - 32px));height:100dvh;max-width:none;max-height:100dvh;padding:24px 18px;border:0;border-right:1px solid var(--studio-border);border-radius:0;background:var(--studio-chrome,var(--studio-surface));color:var(--studio-ink);overflow:auto;overscroll-behavior:contain;box-shadow:12px 0 40px #0003}
+.studio-shell .studio-navigation-dialog::backdrop{background:#0e172066}
+.studio-shell .studio-navigation-dialog-header{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:24px;font-size:14px}
+.studio-shell .studio-navigation-dialog-header button{min-width:44px;min-height:44px;padding:8px;font-size:12px}
+@media(max-width:1100px){.studio-shell .studio-appbar,.studio-shell .studio-context{padding-inline:16px}.studio-shell .studio-main{padding:14px 16px 16px}.studio-shell .studio-breadcrumbs>span{display:none}}
+@media(max-width:850px){
+ .studio.studio-shell{grid-template-columns:minmax(0,1fr);grid-template-rows:56px 44px minmax(0,1fr)}
+ .studio-shell .studio-sidebar{display:none}
+ .studio-shell .studio-appbar,.studio-shell .studio-context,.studio-shell .studio-main{grid-column:1}
+ .studio-shell .studio-appbar{padding:0 8px;gap:8px}
+ .studio-shell .studio-navigation-toggle{display:block;flex:none}
+ .studio-shell .studio-breadcrumbs{font-size:12px;flex:1}
+ .studio-shell .studio-shell-actions{gap:4px}
+ .studio-shell .studio-settings-button{font-size:11px;line-height:1.2;padding:6px;max-width:78px}
+ .studio-shell .studio-context{padding:0 12px;gap:10px;font-size:10px}
+ .studio-shell .studio-context-project{max-width:32%}
+ .studio-shell .studio-context-status{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
+ .studio-shell .studio-main{padding:10px 10px 12px}
+ .studio-shell .studio-main :is(button,summary):not(:where(.wf-editor *,.fd-wb *)){min-height:44px}
+}
+@media(prefers-reduced-motion:reduce){.studio-shell *,.studio-shell *::before,.studio-shell *::after{animation:none!important;transition:none!important;scroll-behavior:auto!important}}
+.studio-shell[data-motion=off] *,.studio-shell[data-motion=off] *::before,.studio-shell[data-motion=off] *::after{animation:none!important;transition:none!important;scroll-behavior:auto!important}

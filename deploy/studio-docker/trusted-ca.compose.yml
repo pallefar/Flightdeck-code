@@ -1,0 +1,12 @@
+# Optional host-approved PUBLIC corporate CA; never disable TLS verification.
+services:
+  studio-backend:
+    environment:
+      NODE_EXTRA_CA_CERTS: /run/studio-secrets/trusted-ca.pem
+    volumes:
+      - type: bind
+        source: ${STUDIO_TRUSTED_CA_FILE:?Set the path to a host-approved public CA PEM file}
+        target: /run/studio-secrets/trusted-ca.pem
+        read_only: true
+        bind:
+          create_host_path: false

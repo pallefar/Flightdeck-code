@@ -30,6 +30,8 @@ export interface PlannerRequestLike {
   readonly purpose: "draft" | "repair";
   /** 1-based. */
   readonly attempt: number;
+  /** Trusted transport context only; never part of the model message body. */
+  readonly signal?: AbortSignal;
 }
 
 /** Structural port of `@spec`'s `PlannerCompletion`. */
@@ -85,6 +87,7 @@ export function plannerLlm(provider: ModelProvider, options: PlannerLlmOptions =
       // format — a trailing assistant turn is a prefill, and a prefill is a 400
       // on Opus 5. The planner shapes the reply through its system prompt.
       messages: [{ role: "user", content: request.user }],
+      ...(request.signal === undefined ? {} : { signal: request.signal }),
       ...(options.model === undefined ? {} : { model: options.model }),
       ...(effort === undefined ? {} : { effort }),
       ...(options.maxTokens === undefined ? {} : { maxTokens: options.maxTokens }),

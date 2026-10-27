@@ -1,0 +1,14 @@
+# Optional trust for this private evaluation only. Never disable TLS checks.
+# Supply only a separately verified host-admin-trusted PUBLIC CA, never a key.
+# Use with staging.compose.yml and an explicit STUDIO_TRUSTED_PUBLIC_CA_FILE.
+services:
+  studio-staging:
+    environment:
+      NODE_EXTRA_CA_CERTS: /etc/studio/trust/host-approved-public-ca.pem
+    volumes:
+      - type: bind
+        source: ${STUDIO_TRUSTED_PUBLIC_CA_FILE:?A host-approved public CA file is required}
+        target: /etc/studio/trust/host-approved-public-ca.pem
+        read_only: true
+        bind:
+          create_host_path: false

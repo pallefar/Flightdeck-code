@@ -76,7 +76,7 @@ describe("the mini-app is the default", () => {
   it("never reaches a database from a route — only the capability adapter", () => {
     for (const file of app.files.filter((f) => f.kind === "routes-domain")) {
       expect(file.contents, file.path).not.toContain("rt.db");
-      expect(file.contents, file.path).toContain("ctx.capabilitiesFor(rt.id)");
+      expect(file.contents, file.path).toContain("ctx.capabilitiesFor(rt.id, req)");
     }
   });
 

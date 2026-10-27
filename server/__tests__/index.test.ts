@@ -30,7 +30,7 @@ const DRAFT = (() => {
 const PROMPT = "Show contract folders needing review, visible to legal and admin.";
 
 const serve = (llm?: () => Promise<{ text: string }>) =>
-  createServer({ operator: OPERATOR, ...(llm === undefined ? {} : { llm }) });
+  createServer({ operator: OPERATOR, ...(llm === undefined ? {} : { llm, llmBindingId: "explicit-fixture/model/policy-v1" }) });
 
 describe("who is allowed to ask", () => {
   it("⭐ refuses without the operator token — and does NOT run anyway as third-party", async () => {
@@ -165,20 +165,13 @@ describe("the whole path, over HTTP", () => {
     expect(called).toBe(0);
   });
 
-  it("health says whether a key is configured, and nothing about it", async () => {
-    const res = await serve(async () => ({ text: DRAFT })).inject({ method: "GET", url: "/api/studio/health" });
-    expect(res.statusCode).toBe(200);
-    const body = res.json() as Record<string, unknown>;
-    expect(body["ok"]).toBe(true);
-    expect(typeof body["modelKeyConfigured"]).toBe("boolean");
-    // ⭐ THE EFFECTIVE MODEL, never null on a healthy install. This said
-    // `null` on a default install — the field reads the FLIGHTDECK_MODEL
-    // override, and reported "none" for the model the provider would
-    // actually use. Found by booting the server, not by a test.
-    expect(body["model"]).toBe("claude-opus-5");
-    // The key's VALUE must not be reachable through this endpoint by any name.
-    const key = process.env["ANTHROPIC_API_KEY"];
-    if (key !== undefined && key.length > 0) expect(res.body).not.toContain(key);
+  it("public health reveals liveness only, not model configuration or secrets", async () => {
+    const app = serve(async () => ({ text: DRAFT }));
+    try {
+      const res = await app.inject({ method: "GET", url: "/api/studio/health" });
+      expect(res.statusCode).toBe(200);
+      expect(res.json()).toEqual({ ok: true });
+    } finally { await app.close(); }
   });
 
   it("health needs no token — an unauthenticated probe is how a deploy checks liveness", async () => {
@@ -210,7 +203,7 @@ const grantRow = (projectId: string, maxTier: 1 | 2 | 3 | 4): GrantRow => ({
 });
 
 const withGrants = (rows: readonly GrantRow[], llm: () => Promise<{ text: string }>) =>
-  createServer({ operator: OPERATOR, llm, store: createMemoryGrantStore({ rows }) });
+  createServer({ operator: OPERATOR, llm, llmBindingId: "explicit-fixture/model/policy-v1", store: createMemoryGrantStore({ rows }) });
 
 const ask = (payload: Record<string, unknown>) => ({
   method: "POST" as const,

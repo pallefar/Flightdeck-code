@@ -136,7 +136,7 @@ function emitTypesShim(plan: SubAppPlan): string {
  *
  * ⛔ NEVER APPLIED TO A HOST CHECKOUT — see the registry shim.
  */
-${imp("type { FastifyInstance }", "fastify")}
+${imp("type { FastifyInstance, FastifyRequest }", "fastify")}
 ${imp("type { Db }", "../db.js")}
 ${imp("type { WorkspaceRuntime }", "../workspace/types.js")}
 
@@ -154,13 +154,13 @@ export interface ContractFolder {
  * rather than installs — in standalone exactly as in the host. */
 export interface SubAppCapabilities {
   readContracts(): ContractFolder[];
-  writeInboxProposal(fileName: string, content: unknown): string;
+  writeInboxProposal(fileName: string, content: unknown): Promise<string>;
   listOwnInboxProposals(): string[];
   auditAppend(event: Record<string, unknown> & { event: string }): { hash: string };
 }
 
 export interface RegisterRoutesCtx {
-  capabilitiesFor(workspaceId: string): Promise<SubAppCapabilities>;
+  capabilitiesFor(workspaceId: string, req: FastifyRequest): Promise<SubAppCapabilities>;
 }
 
 export type NavSection = "Overview" | "Contract pipeline" | "Ops & insight" | "Admin" | "System apps";
@@ -180,6 +180,7 @@ export interface SubAppManifestData {
 }
 
 export interface SubAppManifest extends SubAppManifestData {
+  generatedBy?: "flightdeck-studio";
   initSchema(db: Db): void | Promise<void>;
   registerRoutes(app: FastifyInstance, ctx: RegisterRoutesCtx): void;
 }
@@ -226,6 +227,7 @@ declare module "fastify" {
 ${imp("{ z }", "zod")}
 
 export const subAppManifestSchema = z.object({
+  generatedBy: z.literal("flightdeck-studio").optional(),
   id: z.string().regex(/^[a-z0-9][a-z0-9-]*$/),
   label: z.string().min(1),
   version: z.string(),
@@ -438,7 +440,7 @@ export function makeStandaloneCapabilities(options: StandaloneDataOptions): SubA
       return readContractsFrom(root);
     },
 
-    writeInboxProposal(fileName: string, content: unknown): string {
+    async writeInboxProposal(fileName: string, content: unknown): Promise<string> {
       needsScope("write:inbox-proposal", "writeInboxProposal");
       // The host scopes a sub-app to its own \`<id>-\` prefix. So does this:
       // a standalone build that let an app write outside its prefix would be
@@ -668,6 +670,7 @@ ${imp("Fastify", "fastify")}
 
 ${imp("{ " + registerFn + " }", "../server/subapps/" + plan.id + "/routes/index.js")}
 ${imp("{ makeStandaloneCapabilities }", "./capabilities.js")}
+${imp("{ CapabilityDeniedError }", "../server/subapps/capabilities.js")}
 ${imp("type { SubAppCapabilities }", "../server/subapps/types.js")}
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -733,7 +736,17 @@ export function buildStandaloneServer(options: StandaloneServerOptions) {
     };
   });
 
-  ${registerFn}(app, { capabilitiesFor: async () => caps });
+  ${registerFn}(app, {
+    capabilitiesFor: async (workspaceId, req) => {
+      // This harness has one server-resolved workspace, project and actor.
+      // Body fields never certify identity or scope.
+      if (workspaceId !== "standalone" || req.workspace?.id !== workspaceId ||
+          req.project?.id !== "general" || req.principal?.username !== "standalone") {
+        throw new CapabilityDeniedError("standalone: request is outside the local operator context");
+      }
+      return caps;
+    },
+  });
 
   // ⭐ THE BUILT PAGE, SERVED BY THE SAME PROCESS.
   //

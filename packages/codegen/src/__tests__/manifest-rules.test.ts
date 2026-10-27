@@ -1,20 +1,12 @@
-/** The local copy of `subAppManifestSchema`, checked against REALITY.
- *
- * ⭐ This is the test that makes the copy trustworthy. Codegen cannot import
- * the host's schema, so it carries its own; a carried copy is worthless
- * unless something forces it to keep agreeing. What forces it here is the
- * four hand-written manifests in `pallefar/project-contract`: they are read
- * off disk AS SOURCE, parsed by the same reader the generated manifest goes
- * through, and validated by this copy. If the host widens or narrows a
- * rule, a real manifest stops matching and this goes red.
- *
- * Skipped, loudly, when the checkout is not present — a test that silently
- * passes because it found no files is worse than one that says why. */
+/** Live-source core metadata conformance, not generated-source admission or
+ * full host callback/runtime validation. AST schema drift checks are necessary:
+ * a handful of valid manifests cannot demonstrate equivalence of two schemas.
+ * Ordinary local runs skip without a checkout; an explicit release host must exist. */
 import fs from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { assertManifestWouldBoot, subAppManifestSchema } from "../manifest-rules";
-import { readEmittedManifest } from "../testing/readEmittedManifest";
+import { readHostManifestContract, readHostManifestMetadata } from "../testing/readHostManifestMetadata";
 import { HOST_ROOT } from "../../../guardrails/src/host-source";
 
 // ⚠ DERIVED, NOT HARDCODED. This was the literal Linux path, so on any
@@ -24,15 +16,33 @@ import { HOST_ROOT } from "../../../guardrails/src/host-source";
 const CONTRACT_SUBAPPS = `${HOST_ROOT}/flightdeck/server/subapps`;
 const REAL_MANIFESTS = ["shell-reference", "docusign", "maps", "advantage"];
 const available = fs.existsSync(CONTRACT_SUBAPPS);
+if (process.env.FLIGHTDECK_HOST_ROOT && !available) throw new Error(`Missing explicit host source: ${CONTRACT_SUBAPPS}`);
 
-describe.skipIf(!available)("the local schema copy agrees with the host's real manifests", () => {
+function liveContract() {
+  return readHostManifestContract(
+    fs.readFileSync(path.join(CONTRACT_SUBAPPS, "types.ts"), "utf8"),
+    fs.readFileSync(new URL("../manifest-rules.ts", import.meta.url), "utf8"),
+    fs.readFileSync(new URL("../spec-contract.ts", import.meta.url), "utf8"),
+  );
+}
+
+describe.skipIf(!available)("the local core metadata schema agrees with live host declarations", () => {
+  it("pins schema fields, required/optional semantics and core rules against authoritative AST", () => {
+    expect([...liveContract().coreFields].sort()).toEqual(Object.keys(subAppManifestSchema.shape).sort());
+  });
   for (const id of REAL_MANIFESTS) {
-    it(`accepts the hand-written ${id} manifest, read from its source`, () => {
+    it(`accepts the hand-written ${id} core metadata, read from its source`, () => {
       const source = fs.readFileSync(path.join(CONTRACT_SUBAPPS, id, "manifest.ts"), "utf8");
-      const data = readEmittedManifest(source);
-      expect(data.id).toBe(id);
-      // The real thing, boot rules and all — not just the Zod shape.
-      expect(() => assertManifestWouldBoot(data)).not.toThrow();
+      const contract = liveContract();
+      const { metadata, omittedMembers } = readHostManifestMetadata(source, contract);
+      expect(metadata.id).toBe(id);
+      expect(() => assertManifestWouldBoot(metadata)).not.toThrow();
+      expect(omittedMembers.length).toBeGreaterThan(0);
+      for (const member of omittedMembers) {
+        expect(contract.coreFields.has(member.name)).toBe(false);
+        expect(contract.omittedFields.get(member.name)).toBe(member.reason);
+        expect(source.slice(member.start, member.end)).toContain(member.name);
+      }
     });
   }
 });

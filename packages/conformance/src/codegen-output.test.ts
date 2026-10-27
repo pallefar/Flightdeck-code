@@ -60,21 +60,12 @@ describe.each(SPECS)("codegen output: %s", (_name, spec) => {
 
 /** ⭐ AND THE SAME OUTPUT, COMPILED AND MOUNTED.
  *
- * ⚠ THIS TEST DOES NOT ASSERT ZERO FINDINGS, and saying why is the point
- * of it. At the time it was written the compiler stage refused BOTH specs
- * above — the ones the static gate passes clean — for defects that are
- * real and that live in `@codegen`, not here:
- *
- *   • `caps.readContracts().find(...)` with no `await`. `.find` on a
- *     Promise is `undefined`, so the 404 below it fires on every request,
- *     always, silently.
- *   • two implicit `any` parameters and one possibly-undefined index,
- *     which are errors under the strictness this repo already compiles at.
- *   • `headers: undefined` passed to `fetch`, which `exactOptionalPropertyTypes`
- *     rejects.
- *
- * Pinning that list here would put a red test in somebody else's package
- * and would go stale the moment they fix one. What IS asserted is that
+ * This smoke test preserves actionable diagnostics without presuming a
+ * clean candidate. host-sdk-model.test.ts separately pins the current SDK
+ * to live-source declarations and asserts the exact executable candidates'
+ * verdicts. In particular readContracts is synchronous; async request-bound
+ * adapter acquisition and proposal writes must be awaited instead.
+ * What IS asserted here is that
  * the new stages RUN on real generated output and that everything they
  * say is actionable — a finding that named a file the candidate does not
  * contain, or carried a message nobody could act on, would be this

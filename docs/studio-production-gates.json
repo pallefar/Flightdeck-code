@@ -1,0 +1,1012 @@
+{
+  "schema_version": 1,
+  "audit_started_at": "2026-10-14T10:36:25Z",
+  "source_snapshot_at": "2026-10-14T10:46:12.741650+00:00",
+  "repository": "/Users/te451223/Flightdeck-code",
+  "git_head": "f80ad1f05018b8a38e720c3df59bff5ff0950cba",
+  "snapshot_warning": "Dirty concurrently edited checkout. Hashes/anchors describe per-file snapshot, not final release. Parallel production-serving work is unverified progress.",
+  "release_verdict": "blocked",
+  "scope": "Private single-operator development companion verified; not shared production, installed host DAG runtime or live provider verification.",
+  "total_gates": 20,
+  "counts_by_state": {
+    "blocked": 7,
+    "missing": 9,
+    "verified": 4
+  },
+  "counts_by_priority": {
+    "P0": 3,
+    "P1": 15,
+    "P2": 2
+  },
+  "audit_tests": {
+    "vitest_files": 5,
+    "vitest_passed": 58,
+    "vitest_failed": 0,
+    "duration_seconds": 9.91,
+    "node_passed": 4,
+    "node_failed": 0
+  },
+  "parent_baseline_not_rerun": {
+    "vitest_passed": 2765,
+    "vitest_failed": 3,
+    "failures": [
+      "maps",
+      "docusign",
+      "advantage"
+    ],
+    "node_passed": 4
+  },
+  "dependency_audit": {
+    "omit_dev_vulnerabilities": 0,
+    "full_entries": 7,
+    "moderate": 3,
+    "high": 2,
+    "critical": 2,
+    "image_dev_dependencies": true,
+    "note": "Advisory exploit prerequisites not established; no Vitest UI/RCE demonstrated."
+  },
+  "companion": {
+    "container_id": "cd43c2be987bf201256a2cc10d49435a689c37c3a9105deb77d195c796236973",
+    "started_at": "2026-10-14T09:46:56.211076293Z",
+    "image_id": "sha256:eda86b657b175767030f7a755650b3240e793673c5304bfee465745c9ad956e1",
+    "node": "v22.23.2",
+    "ui": "Vite5180, separate from API8787"
+  },
+  "unchanged_os": {
+    "container_id": "31ed1059114fad7413ad6b42437f6845e03b75e4017496f67f9103a9f020b0df",
+    "started_at": "2026-10-11T08:51:27.76866243Z"
+  },
+  "source_snapshots": {
+    "server/index.ts": {
+      "sha256": "dd7664991f837513eb145ea337c2956b14d73be53584b74c05a3adf5a0d6241a",
+      "line_count": 481
+    },
+    "server/workflow-workspace.ts": {
+      "sha256": "acfca11bd4d2eebf1b25a5c8f22d6a9c398587389feb66ded419722549578cd1",
+      "line_count": 143
+    },
+    "server/workflow-workspace-store.ts": {
+      "sha256": "daeb4ef27ce33702c3a858061b7894233ea8c283d30392d4d03951ef5f405aa9",
+      "line_count": 268
+    },
+    "server/workflow-approval.ts": {
+      "sha256": "5aea01b60882fe2f7d736197c16173e9b82955357c838abe203a2156fdb65c48",
+      "line_count": 192
+    },
+    "server/workflow-approval-store.ts": {
+      "sha256": "2e544bdfddd5a5ff4ea710f248f9a91d7eaa8c8c1fa878578c545bad286ea069",
+      "line_count": 197
+    },
+    "server/workflow-approval-lock.ts": {
+      "sha256": "d5ca02b0fbe825e64b906718fa2886945241ebb7b77287d49a0be09b7e364054",
+      "line_count": 31
+    },
+    "server/model-connections.ts": {
+      "sha256": "1d8e3607fd924f7e081e0d0fe796089714a5a07c3bf37390729b69c1c9ed320e",
+      "line_count": 130
+    },
+    "packages/providers/src/openai-compatible.ts": {
+      "sha256": "37fdef0a63258e11dfb8b8c31bb99894a2ec1cefc4ef29554f4a0424861d1878",
+      "line_count": 118
+    },
+    "packages/resources/transport.ts": {
+      "sha256": "decfa268f5521a8cf633599241028c37f7f7537d0226c5adcc86290d28aee00f",
+      "line_count": 80
+    },
+    "deploy/studio-docker/Dockerfile": {
+      "sha256": "f25bf6efa97d54db4d339605dcf6d5612dc3c6671f31aba8a52eecb57789cb29",
+      "line_count": 17
+    },
+    "deploy/studio-docker/bootstrap.mjs": {
+      "sha256": "e242ee6e8c43f9927996932935b211b1805b6c069ed091afd3b2cf944394f51e",
+      "line_count": 17
+    },
+    "deploy/studio-docker/secrets.mjs": {
+      "sha256": "abd8c68bacc4507b8b08b2344b9a45618f8c4fb300703b21ff3be9d8523737de",
+      "line_count": 52
+    },
+    "docker-compose.studio.yml": {
+      "sha256": "1b46ae5233dfb96b50f3eead0daa027a3a6a137b82c83464d69974c22e6ea1b5",
+      "line_count": 37
+    },
+    "vite.config.ts": {
+      "sha256": "54be5dc79a7ee72522ed0c4bae05dc07154beb2adc07a18ebc4a5ca83d4cef03",
+      "line_count": 27
+    },
+    "package.json": {
+      "sha256": "35d54b7b6bcf4a22fc343ec9ebb45ffbd38dca8f08623f1e29ab5725ac398c1e",
+      "line_count": 41
+    },
+    "package-lock.json": {
+      "sha256": "1bea0631e2b5f4151cb713b27feafd485fc55b90e0cbdc757773154a6a81207e",
+      "line_count": null
+    },
+    "scripts/test-all.mjs": {
+      "sha256": "5490e35bac56edcbb23b013814a9d6d51aabff6eee05bde870f51e7fa697c356",
+      "line_count": 26
+    },
+    "src/workbench/components/PreviewFrame.tsx": {
+      "sha256": "1365e49f568fef978e16b08d91e19ecd6bcb0668ea73754805c5561d3ad3b763",
+      "line_count": 85
+    },
+    "server/__tests__/workflow-approval-process.test.ts": {
+      "sha256": "84d59cbb4bc904a9c3ced92a68805b71c4563274502091728e58cc98946a5e6b",
+      "line_count": 135
+    },
+    "server/production-assets.ts": {
+      "sha256": "f324df24c2b668116054d3ebb12f0e00e0124daddb484931edc2d2007c45cd66",
+      "line_count": 95
+    }
+  },
+  "criteria_sources": [
+    {
+      "id": 1,
+      "title": "OWASP Authorization Cheat Sheet",
+      "url": "https://cheatsheetseries.owasp.org/cheatsheets/Authorization_Cheat_Sheet.html"
+    },
+    {
+      "id": 2,
+      "title": "Docker Compose production",
+      "url": "https://docs.docker.com/compose/how-tos/production"
+    },
+    {
+      "id": 3,
+      "title": "W3C WCAG 2.2 normative specification",
+      "url": "https://www.w3.org/TR/WCAG22",
+      "retrieval_note": "Normative TR text fetched HTTP200 by read-only Python retrieval. Separate Understanding pages challenged in parent browser; not claimed inspected."
+    },
+    {
+      "id": 4,
+      "title": "OWASP SSRF Prevention",
+      "url": "https://cheatsheetseries.owasp.org/cheatsheets/Server_Side_Request_Forgery_Prevention_Cheat_Sheet.html"
+    },
+    {
+      "id": 5,
+      "title": "OWASP CSRF Prevention",
+      "url": "https://cheatsheetseries.owasp.org/cheatsheets/Cross-Site_Request_Forgery_Prevention_Cheat_Sheet.html"
+    }
+  ],
+  "next_implementable_slices": [
+    "G05 immutable production assets/image+strict headers with real preview CSP regression (parallel worker in progress, not verified).",
+    "G07 expensive-route admission caps/barrier tests/deadline+drain/no phantom reservations.",
+    "G03/G08 ephemeral synthetic backup/restore/recovery verifier preserving consumed claims, rejecting mixed/rollback state."
+  ],
+  "gates": [
+    {
+      "id": "G01",
+      "priority": "P0",
+      "severity": "critical release risk under stated prerequisite",
+      "severity_basis": "Release impact, not a CVSS score or claim of a demonstrated exploit; verified controls are scoped to their stated prerequisite.",
+      "state": "blocked",
+      "title": "Trusted identity/project membership",
+      "owner_role": "Identity / host integration",
+      "threat_prerequisite": "Promoting declared single-operator companion to shared/multi-tenant service.",
+      "finding": "Bearer establishes one operator, not project membership. Arbitrary valid project IDs reach store. Missing production boundary, not exploit against local single-operator contract.",
+      "evidence": [
+        {
+          "path": "server/index.ts",
+          "anchor": "THIS IS SINGLE-OPERATOR",
+          "line_start": 33,
+          "line_end": 37,
+          "excerpt": " * \u26a0 THIS IS SINGLE-OPERATOR AUTHENTICATION and it is stated rather than\n * implied: one name, one secret, no sessions, no roles. It is the honest\n * shape for a Studio one person runs. Putting this behind a real identity\n * provider is a deployment's job, and the seam for it is `operatorOf()` \u2014\n * that is the only function that decides who is asking.",
+          "sha256": "dd7664991f837513eb145ea337c2956b14d73be53584b74c05a3adf5a0d6241a"
+        },
+        {
+          "path": "server/workflow-workspace.ts",
+          "anchor": "onRequest: async",
+          "line_start": 70,
+          "line_end": 75,
+          "excerpt": "    onRequest: async (request, reply) => {\n      let authenticated = false;\n      try { authenticated = deps.authenticate(request.headers.authorization); } catch { /* fail closed */ }\n      if (!authenticated) return reply.code(401).send({ error: 'authentication required' });\n    },\n    errorHandler: (error, _request, reply) => {",
+          "sha256": "acfca11bd4d2eebf1b25a5c8f22d6a9c398587389feb66ded419722549578cd1"
+        },
+        {
+          "path": "server/index.ts",
+          "anchor": "const authorizeResource:",
+          "line_start": 404,
+          "line_end": 405,
+          "excerpt": "  const authorizeResource: WorkflowResourceDependencies[\"authorize\"] = options.workflowResources?.authorize ?? resourceConfig?.authorize ?? (async (actor, _projectId, action) => actor === options.operator.actor && action !== \"execute\");\n  registerWorkflowResourceRoutes(app, {",
+          "sha256": "dd7664991f837513eb145ea337c2956b14d73be53584b74c05a3adf5a0d6241a"
+        }
+      ],
+      "safe_probe": "Isolated memory list store/nonsecret development bearer: audit-team-a and audit-team-b GET both200; both reach store. No active authentication.",
+      "remediation": "Server-resolved immutable subject/tenant/membership; deny by default before every lookup and reauthorize effects.",
+      "acceptance_tests": [
+        "Two identities/two tenants: cross-project drafts/history/skills/export denied before store/provider.",
+        "Membership revoked during effect yields zero calls."
+      ],
+      "criteria_source_ids": [
+        1
+      ]
+    },
+    {
+      "id": "G02",
+      "priority": "P0",
+      "severity": "critical release risk under stated prerequisite",
+      "severity_basis": "Release impact, not a CVSS score or claim of a demonstrated exploit; verified controls are scoped to their stated prerequisite.",
+      "state": "blocked",
+      "title": "Independent reviewer and cookie CSRF",
+      "owner_role": "Identity / approvals",
+      "threat_prerequisite": "Enabling reviewer runtime, especially cookie-backed identity.",
+      "finding": "Default bootstrap injects no reviewer. Trusted independent-human/queue seams exist, but route establishes no CSRF/origin policy. Cookie integration must supply it; current bearer-only development is not claimed cookie-CSRF vulnerable.",
+      "evidence": [
+        {
+          "path": "deploy/studio-docker/bootstrap.mjs",
+          "anchor": "const app=createServer",
+          "line_start": 10,
+          "line_end": 12,
+          "excerpt": " const app=createServer({operator});\n await app.listen({port:Number(process.env.PORT??8787),host:process.env.STUDIO_HOST??'127.0.0.1'});\n for(const signal of ['SIGTERM','SIGINT'])process.once(signal,()=>{void app.close().then(()=>process.exit(0));});",
+          "sha256": "e242ee6e8c43f9927996932935b211b1805b6c069ed091afd3b2cf944394f51e"
+        },
+        {
+          "path": "server/workflow-approval.ts",
+          "anchor": "const options:",
+          "line_start": 63,
+          "line_end": 95,
+          "excerpt": "    const options: RouteShorthandOptions = { bodyLimit: 4096, onRequest: async (req, reply) => {\n            const runtime = deps.approvals;\n            if (!runtime) {\n                if (!deps.authenticate(req.headers.authorization))\n                    return fail(reply, 401);\n                return fail(reply, 503);\n            }\n            let principal: WorkflowReviewerIdentity | null = null;\n            try {\n                principal = await runtime.resolveIdentity(req);\n            }\n            catch {\n                return fail(reply, 403);\n            }\n            if (!principal)\n                return fail(reply, 401);\n            if (!principal.active || !isNamedHuman(principal.name))\n                return fail(reply, 403);\n            const p = projectIdSchema.safeParse((req.params as {\n                projectId: string;\n            }).projectId);\n            if (!p.success)\n                return fail(reply, 400);\n            const action = req.method === 'POST' ? 'decide' : req.url.split('?')[0]?.endsWith('/review') ? 'review' : 'list';\n            try {\n                if (!await runtime.authorize(principal, { projectId: p.data, action }))\n                    return fail(reply, 403);\n            }\n            catch {\n                return fail(reply, 403);\n            }\n            identities.set(req, { ...principal });\n        }, errorHandler: (error, _req, reply) => fail(reply, error.statusCode === 413 ? 413 : 400) };",
+          "sha256": "5aea01b60882fe2f7d736197c16173e9b82955357c838abe203a2156fdb65c48"
+        },
+        {
+          "path": "server/workflow-approval.ts",
+          "anchor": "async function authorized",
+          "line_start": 101,
+          "line_end": 114,
+          "excerpt": "    async function authorized(req: FastifyRequest, r: ApprovalRecord, action: 'review' | 'decide') {\n        const runtime = deps.approvals!, p = identities.get(req)!;\n        if (r.run.projectId !== (req.params as {\n            projectId: string;\n        }).projectId)\n            throw new WorkspaceError(404);\n        const node = r.run.graphSnapshot.nodes.find(n => n.id === r.checkpoint.pending.nodeId)!;\n        const reviewer = resolveNode(r.run.graphSnapshot, node).config.reviewer as string;\n        if (p.name.trim().toLowerCase() === r.run.initiatedBy.trim().toLowerCase())\n            return false;\n        const allowed = await runtime.authorize(p, { projectId: r.run.projectId, nodeId: node.id, reviewer, runId: r.run.id, action });\n        const now = await runtime.resolveIdentity(req);\n        return allowed && !!now && now.active && isNamedHuman(now.name) && now.name === p.name;\n    }",
+          "sha256": "5aea01b60882fe2f7d736197c16173e9b82955357c838abe203a2156fdb65c48"
+        }
+      ],
+      "safe_probe": "Correct live unauth approval queue401. Focused tests verify default authenticated unavailable503; active Docker not authenticated.",
+      "remediation": "Independent identity, project/queue/run/node authority; explicit origin/CSRF and Secure/HttpOnly/SameSite cookie-session contract.",
+      "acceptance_tests": [
+        "Creator/queue outsider cannot view or approve.",
+        "Cross-origin/missing CSRF cookie decision denied before journal/claims.",
+        "Exact digest/reviewer/receipt/original history readbacks."
+      ],
+      "criteria_source_ids": [
+        1,
+        5
+      ]
+    },
+    {
+      "id": "G03",
+      "priority": "P0",
+      "severity": "critical release risk under stated prerequisite",
+      "severity_basis": "Release impact, not a CVSS score or claim of a demonstrated exploit; verified controls are scoped to their stated prerequisite.",
+      "state": "missing",
+      "title": "Consistent restore and anti-rollback",
+      "owner_role": "Storage / operations",
+      "threat_prerequisite": "Volume loss/mixed-age restore or pre-consumption rollback.",
+      "finding": "HMAC journals/CAS/permanent claims exist; no production restore/anti-rollback verification. HMAC authenticates integrity, not freshness. Old valid snapshot can omit later claims and restore pre-consumption state.",
+      "evidence": [
+        {
+          "path": "server/workflow-approval-store.ts",
+          "anchor": "private async key()",
+          "line_start": 107,
+          "line_end": 108,
+          "excerpt": "    private async key() { return boundedRead(join(this.directory, '.integrity-key'), 32); }\n    private validate(value: unknown): ApprovalRecord {",
+          "sha256": "2e544bdfddd5a5ff4ea710f248f9a91d7eaa8c8c1fa878578c545bad286ea069"
+        },
+        {
+          "path": "server/workflow-approval-store.ts",
+          "anchor": "Permanent, fsynced",
+          "line_start": 188,
+          "line_end": 196,
+          "excerpt": "    /** Permanent, fsynced run/gate/digest one-time claim, before ANY restored adapter execution. */\n    async claim(id: string) { try {\n        await mkdir(await this.claimPath(id), { mode: 0o700 });\n    }\n    catch (e) {\n        if ((e as NodeJS.ErrnoException).code === 'EEXIST')\n            throw new WorkspaceError(409);\n        throw e;\n    } await syncDirectory(this.directory); }",
+          "sha256": "2e544bdfddd5a5ff4ea710f248f9a91d7eaa8c8c1fa878578c545bad286ea069"
+        },
+        {
+          "path": "server/workflow-approval.ts",
+          "anchor": "Decision write, permanent",
+          "line_start": 165,
+          "line_end": 171,
+          "excerpt": "                // Decision write, permanent reservation, run CAS, restored execution: never reverse this order.\n                await runtime.store.write(next);\n                await runtime.store.claim(r.id);\n                if (!deps.store.beginResume)\n                    throw new WorkspaceError(503);\n                await deps.store.beginResume(r.run.projectId, r.run.draftId, r.run.id, r.run);\n                if (expired || body.decision === 'reject') {",
+          "sha256": "5aea01b60882fe2f7d736197c16173e9b82955357c838abe203a2156fdb65c48"
+        },
+        {
+          "path": "docker-compose.studio.yml",
+          "anchor": "studio-private:/state",
+          "line_start": 27,
+          "line_end": 29,
+          "excerpt": "      - studio-private:/state\n    tmpfs:\n      - /tmp:rw,noexec,nosuid,size=64m,mode=1777",
+          "sha256": "1b46ae5233dfb96b50f3eead0daa027a3a6a137b82c83464d69974c22e6ea1b5"
+        }
+      ],
+      "safe_probe": "Source ordering and real process tests inspected. No existing volume/key/backup read/copied/mutated; restore drill not performed.",
+      "remediation": "Quiesced consistent encrypted snapshot of workspace/resources/grants/key/journals/claims. Ephemeral synthetic restore verification. External monotonic restore epoch or restored resumes blocked pending reconciliation.",
+      "acceptance_tests": [
+        "Consumed gate cannot replay after restore.",
+        "Missing key/mixed state/missing claims/old epoch fail closed.",
+        "Document RPO/RTO/escrow/retention/audited reconciliation."
+      ],
+      "criteria_source_ids": []
+    },
+    {
+      "id": "G04",
+      "priority": "P1",
+      "severity": "high release risk under stated prerequisite",
+      "severity_basis": "Release impact, not a CVSS score or claim of a demonstrated exploit; verified controls are scoped to their stated prerequisite.",
+      "state": "missing",
+      "title": "Model egress origin/address policy",
+      "owner_role": "Provider / security",
+      "threat_prerequisite": "Trusted endpoint config points to unapproved HTTPS origin or changing DNS.",
+      "finding": "Model validator accepts arbitrary HTTPS including metadata/loopback literals; no model DNS pinning. Browser cannot set endpoints. Resource REST/MCP has separate stronger transport. Not demonstrated unauthenticated SSRF.",
+      "evidence": [
+        {
+          "path": "packages/providers/src/openai-compatible.ts",
+          "anchor": "validateModelBaseUrl",
+          "line_start": 21,
+          "line_end": 31,
+          "excerpt": "export function validateModelBaseUrl(baseUrl: string): string {\n  try {\n    if (baseUrl.trim() !== baseUrl || /[\\\\\\s?#]/.test(baseUrl)) throw new Error();\n    const url = new URL(baseUrl);\n    const authority = /^https?:\\/\\/([^/]+)/.exec(baseUrl)?.[1];\n    const loopback = /^(127\\.0\\.0\\.1|\\[::1\\])(?::[0-9]+)?$/.test(authority ?? '');\n    if (!authority || authority.includes('@') || url.username || url.password || url.search || url.hash ||\n        !(url.protocol === 'https:' || (url.protocol === 'http:' && loopback))) throw new Error();\n    return url.toString().replace(/\\/$/, '');\n  } catch { throw new Error('Invalid model connection configuration'); }\n}",
+          "sha256": "37fdef0a63258e11dfb8b8c31bb99894a2ec1cefc4ef29554f4a0424861d1878"
+        },
+        {
+          "path": "packages/providers/src/openai-compatible.ts",
+          "anchor": "options.fetchImpl ?? fetch",
+          "line_start": 66,
+          "line_end": 75,
+          "excerpt": "        const response = await (options.fetchImpl ?? fetch)(url, {\n          signal: controller.signal,\n          method: 'POST',\n          redirect: 'error',\n          headers: {\n            'content-type': 'application/json',\n            ...(options.apiKey ? {authorization: *** ${options.apiKey}`} : {}),\n          },\n          body: bodyJson,\n        });",
+          "sha256": "37fdef0a63258e11dfb8b8c31bb99894a2ec1cefc4ef29554f4a0424861d1878"
+        },
+        {
+          "path": "packages/resources/transport.ts",
+          "anchor": "const addresses =",
+          "line_start": 41,
+          "line_end": 52,
+          "excerpt": "    const addresses = development ? [{address:'127.0.0.1',family:4}] : await Promise.race([lookup(url.hostname,{all:true}), new Promise<never>((_,reject)=>controller.signal.addEventListener('abort',()=>reject(new ResourceError(504)),{once:true}))]);\n    if(!addresses.length || (!development && addresses.some(a=>!publicIPv4(a.address)))) throw new ResourceError(403);\n    if(controller.signal.aborted) throw new ResourceError(504);\n    const address = addresses[0]!;\n    const payload = options.body===undefined ? undefined : JSON.stringify(options.body);\n    if(payload && Buffer.byteLength(payload)>32_000) throw new ResourceError(413);\n    return await new Promise<{value:unknown; headers:Record<string,string|string[]|undefined>; durationMs:number}>((resolve,reject)=>{\n      const started = performance.now();\n      const req = (url.protocol==='https:' ? httpsRequest : httpRequest)(url, { method:options.method, headers:{accept:'application/json, text/event-stream',...(payload ? {'content-type':'application/json','content-length':String(Buffer.byteLength(payload))} : {}),...options.headers}, signal:controller.signal, agent:false,\n        // Pin the checked address; never resolve a second time at connect.\n        lookup:(_hostname,_options,callback)=>callback(null,address.address,address.family)\n      },res=>{",
+          "sha256": "decfa268f5521a8cf633599241028c37f7f7537d0226c5adcc86290d28aee00f"
+        }
+      ],
+      "safe_probe": "Validation-only accepted HTTPS169.254.169.254, HTTPS127.0.0.1 and arbitrary HTTPS domain; metadataHTTP rejected. No DNS/network to those addresses.",
+      "remediation": "Production exact-origin allowlist/address denial and TLS-preserving socket pinning; reject redirects; origin-bound credentials; explicit development loopback exception.",
+      "acceptance_tests": [
+        "DNS rebinding/mixedprivate/metadata/mappedIPv6/redirect fail before secret/network.",
+        "Approved TLS bounded request succeeds."
+      ],
+      "criteria_source_ids": [
+        4
+      ]
+    },
+    {
+      "id": "G05",
+      "priority": "P1",
+      "severity": "high release risk under stated prerequisite",
+      "severity_basis": "Release impact, not a CVSS score or claim of a demonstrated exploit; verified controls are scoped to their stated prerequisite.",
+      "state": "blocked",
+      "title": "Production assets and CSP",
+      "owner_role": "Deployment / parallel worker",
+      "threat_prerequisite": "Expose Vite demo as production UI.",
+      "finding": "Active5180 still Vite react-refresh; no observed CSP/nosniff/frame/permissions headers. Parallel production-assets changed during audit; not credited verified/deployed. Host4173 headers do not protect Studio.",
+      "evidence": [
+        {
+          "path": "vite.config.ts",
+          "anchor": "server: {",
+          "line_start": 23,
+          "line_end": 27,
+          "excerpt": "  server: {\n    port: 5180,\n    proxy: { \"/api\": `http://localhost:${process.env[\"PORT\"] ?? 8787}` },\n  },\n});",
+          "sha256": "54be5dc79a7ee72522ed0c4bae05dc07154beb2adc07a18ebc4a5ca83d4cef03"
+        },
+        {
+          "path": "deploy/studio-docker/Dockerfile",
+          "anchor": "FROM node:22-slim",
+          "line_start": 1,
+          "line_end": 17,
+          "excerpt": "FROM node:22-slim\nWORKDIR /app\nCOPY package.json package-lock.json ./\nRUN --mount=type=secret,id=studio_ca \\\n    if [ -f /run/secrets/studio_ca ]; then export NODE_EXTRA_CA_CERTS=/run/secrets/studio_ca; fi; \\\n    npm ci --ignore-scripts --include=dev --no-audit --no-fund && npm cache clean --force\nCOPY server ./server\nCOPY packages ./packages\nCOPY tsconfig.json ./\nCOPY deploy/studio-docker ./deploy/studio-docker\nRUN node --test deploy/studio-docker/*.test.mjs \\\n && mkdir -p /state /run/studio-secrets \\\n && chown node:node /state && chmod 0700 /state\nUSER node\nENV NODE_ENV=production STUDIO_STATE_DIR=/state\nEXPOSE 8787\nCMD [\"node\", \"--import\", \"tsx\", \"deploy/studio-docker/bootstrap.mjs\"]",
+          "sha256": "f25bf6efa97d54db4d339605dcf6d5612dc3c6671f31aba8a52eecb57789cb29"
+        },
+        {
+          "path": "src/workbench/components/PreviewFrame.tsx",
+          "anchor": "const attach =",
+          "line_start": 57,
+          "line_end": 67,
+          "excerpt": "    const attach = (): void => {\n      const doc = frame.contentDocument;\n      if (doc === null) return;\n      if (doc.getElementById(STYLE_ID) === null) {\n        const style = doc.createElement(\"style\");\n        style.id = STYLE_ID;\n        style.textContent = css;\n        doc.head.appendChild(style);\n      }\n      setBody(doc.body);\n    };",
+          "sha256": "1365e49f568fef978e16b08d91e19ecd6bcb0668ea73754805c5561d3ad3b763"
+        },
+        {
+          "path": "src/workbench/components/PreviewFrame.tsx",
+          "anchor": "sandbox=",
+          "line_start": 18,
+          "line_end": 19,
+          "excerpt": " * \u2500\u2500 WHY `sandbox=\"allow-same-origin\"` AND NOTHING ELSE \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n * Note what is NOT in that list. No `allow-scripts`: the frame's document",
+          "sha256": "1365e49f568fef978e16b08d91e19ecd6bcb0668ea73754805c5561d3ad3b763"
+        },
+        {
+          "path": "server/production-assets.ts",
+          "anchor": "registerProductionAssets",
+          "line_start": 50,
+          "line_end": 56,
+          "excerpt": "export function registerProductionAssets(app: FastifyInstance, root: string): void {\n  const files = new Map<string, Asset>();\n  try {\n    if (!isAbsolute(root) || root.length > 4096 || root.includes(\"\\0\") || root.split(/[\\\\/]/).some(part => part === \".\" || part === \"..\") || root.includes(\"\\\\\")) throw refused();\n    let parent = parse(root).root;\n    checkedDirectory(parent);\n    for (const part of root.slice(parent.length).split(\"/\").filter(Boolean)) { parent = join(parent, part); checkedDirectory(parent); }",
+          "sha256": "f324df24c2b668116054d3ebb12f0e00e0124daddb484931edc2d2007c45cd66"
+        }
+      ],
+      "safe_probe": "GET5180 HTML react-refresh/no-cache. New worker slice not independently exercised.",
+      "remediation": "Immutable built assets/image, strict script-src without unsafe-inline/eval; cache-hash/MIME/frame/referrer/permissions/TLS/reverse-proxy policy; real preview style compatibility without weakening script policy.",
+      "acceptance_tests": [
+        "Real built UI/Workbench preview under CSP.",
+        "Traversal/source/secrets wrongMIME/API SPA fallback denied.",
+        "Preview sandbox retains no allow-scripts; no live deployment mutation."
+      ],
+      "criteria_source_ids": [
+        2
+      ]
+    },
+    {
+      "id": "G06",
+      "priority": "P1",
+      "severity": "high release risk under stated prerequisite",
+      "severity_basis": "Release impact, not a CVSS score or claim of a demonstrated exploit; verified controls are scoped to their stated prerequisite.",
+      "state": "blocked",
+      "title": "Installed-image audit and digest pin",
+      "owner_role": "Build / dependencies",
+      "threat_prerequisite": "Affected tool API/UI or polluted options reachable; presence alone not exploit.",
+      "finding": "Omit-dev audit0; full audit7 entries:3moderate/2high/2critical. Docker installs dev. Actual image Vitest2.1.9/tinypool1.1.1/source-map-js1.2.1. No exposed Vitest UI/RCE established. node:22-slim mutable.",
+      "evidence": [
+        {
+          "path": "deploy/studio-docker/Dockerfile",
+          "anchor": "FROM node:22-slim",
+          "line_start": 1,
+          "line_end": 6,
+          "excerpt": "FROM node:22-slim\nWORKDIR /app\nCOPY package.json package-lock.json ./\nRUN --mount=type=secret,id=studio_ca \\\n    if [ -f /run/secrets/studio_ca ]; then export NODE_EXTRA_CA_CERTS=/run/secrets/studio_ca; fi; \\\n    npm ci --ignore-scripts --include=dev --no-audit --no-fund && npm cache clean --force",
+          "sha256": "f25bf6efa97d54db4d339605dcf6d5612dc3c6671f31aba8a52eecb57789cb29"
+        },
+        {
+          "path": "deploy/studio-docker/Dockerfile",
+          "anchor": "CMD [",
+          "line_start": 17,
+          "line_end": 17,
+          "excerpt": "CMD [\"node\", \"--import\", \"tsx\", \"deploy/studio-docker/bootstrap.mjs\"]",
+          "sha256": "f25bf6efa97d54db4d339605dcf6d5612dc3c6671f31aba8a52eecb57789cb29"
+        },
+        {
+          "path": "package.json",
+          "anchor": "\"devDependencies\"",
+          "line_start": 31,
+          "line_end": 39,
+          "excerpt": "  \"devDependencies\": {\n    \"@types/node\": \"^22.10.0\",\n    \"@types/react\": \"^19.0.0\",\n    \"@types/react-dom\": \"^19.0.0\",\n    \"@vitejs/plugin-react\": \"^4.3.4\",\n    \"tsx\": \"^4.19.2\",\n    \"typescript\": \"^5.7.2\",\n    \"vite\": \"^6.0.5\",\n    \"vitest\": \"^2.1.8\"",
+          "sha256": "35d54b7b6bcf4a22fc343ec9ebb45ffbd38dca8f08623f1e29ab5725ac398c1e"
+        }
+      ],
+      "safe_probe": "Audits exit0/1; filtered image manifests; Node22.23.2/Fastify5.12.5/tsx4.23.14. No env/credential dump.",
+      "remediation": "Multi-stage runtime-only image; compile server or explicit tsx runtime packaging; upgrade affected tools with tests; actual image+OS/SBOM scans and digest pin.",
+      "acceptance_tests": [
+        "Installed-set audit passes policy or approved exception; unnecessary tools absent.",
+        "Signed digest/SBOM/provenance matches tested artifact."
+      ],
+      "criteria_source_ids": [
+        2
+      ]
+    },
+    {
+      "id": "G07",
+      "priority": "P1",
+      "severity": "high release risk under stated prerequisite",
+      "severity_basis": "Release impact, not a CVSS score or claim of a demonstrated exploit; verified controls are scoped to their stated prerequisite.",
+      "state": "missing",
+      "title": "Bound request admission/effect budgets",
+      "owner_role": "API / runtime",
+      "threat_prerequisite": "Authenticated flood or stolen bearer.",
+      "finding": "Body/adapter/file limits exist; no aggregate rate/concurrency/spend caps. Isolated12 requests entered12 injected provider calls simultaneously. Storage serialization queue also unbounded.",
+      "evidence": [
+        {
+          "path": "server/index.ts",
+          "anchor": "const app = Fastify",
+          "line_start": 195,
+          "line_end": 203,
+          "excerpt": "  const app = Fastify({\n    // \u26a0 NO REQUEST LOGGING. The body is a prompt, and a prompt is the one\n    // thing in this system most likely to contain a person's name \u2014 that is\n    // the entire reason the pseudonymiser sits in front of it. A default\n    // access log would write it to disk before any of that ran.\n    logger: false,\n    bodyLimit: 1_000_000,\n  });\n",
+          "sha256": "dd7664991f837513eb145ea337c2956b14d73be53584b74c05a3adf5a0d6241a"
+        },
+        {
+          "path": "server/index.ts",
+          "anchor": "\"/api/studio/blocks/propose\"",
+          "line_start": 392,
+          "line_end": 399,
+          "excerpt": "  app.post(\"/api/studio/blocks/propose\", async (request, reply) => {\n    if (!presentsOperatorToken(request.headers.authorization, options.operator.token)) return reply.code(401).send({ error: \"operator token required\" });\n    const parsed = z.object({ prompt: z.string().trim().min(1).max(2000), connectionId: z.enum(MODEL_CONNECTION_IDS).optional() }).strict().safeParse(request.body);\n    if (!parsed.success) return reply.code(400).send({ error: \"malformed block request\" });\n    const model = selectModel(parsed.data.connectionId);\n    if (\"status\" in model) return reply.code(409).send(model);\n    return reply.send(await proposeStudioBlock(parsed.data.prompt, { llm: model.llm, ctx: { actor: options.operator.actor }, digest, authorship: \"first-party-operator\" }));\n  });",
+          "sha256": "dd7664991f837513eb145ea337c2956b14d73be53584b74c05a3adf5a0d6241a"
+        },
+        {
+          "path": "server/workflow-workspace-store.ts",
+          "anchor": "function serialized",
+          "line_start": 113,
+          "line_end": 119,
+          "excerpt": "function serialized<T>(path: string, work: () => Promise<T>): Promise<T> {\n  const previous = queues.get(path) ?? Promise.resolve();\n  const next = previous.catch(() => {}).then(work);\n  queues.set(path, next);\n  void next.finally(() => { if (queues.get(path) === next) queues.delete(path); }).catch(() => {});\n  return next;\n}",
+          "sha256": "daeb4ef27ce33702c3a858061b7894233ea8c283d30392d4d03951ef5f405aa9"
+        }
+      ],
+      "safe_probe": "Isolated nonsecret barrier LLM: sent12/calls12/peak12; twelve200 outcomes; no real network/billing.",
+      "remediation": "Global/actor/project cap; bounded queue/rate/deadline/effect-cost budgets; overload429/503 before reservation/provider, Retry-After and drain/cancel policy.",
+      "acceptance_tests": [
+        "Barrier burst only cap enters provider; bounded rejection/queue; no leaked permit.",
+        "Rejected admission reserves no phantom run.",
+        "Abort/drain leaves uncertainty interrupted with no automatic retry."
+      ],
+      "criteria_source_ids": []
+    },
+    {
+      "id": "G08",
+      "priority": "P1",
+      "severity": "high release risk under stated prerequisite",
+      "severity_basis": "Release impact, not a CVSS score or claim of a demonstrated exploit; verified controls are scoped to their stated prerequisite.",
+      "state": "missing",
+      "title": "Stale-lock recovery without replay",
+      "owner_role": "Storage / operations",
+      "threat_prerequisite": "Crash holding lock or after effect before finish.",
+      "finding": "No auto lock reclaim is correct, but recovery/status/reconciliation not evidenced. Clearing claims/retrying uncertain effects unsafe.",
+      "evidence": [
+        {
+          "path": "server/workflow-approval-lock.ts",
+          "anchor": "Crashed locks",
+          "line_start": 10,
+          "line_end": 30,
+          "excerpt": "/** Crashed locks are never automatically reclaimed: investigate before retry. */\nexport async function workflowFileLock<T>(path: string, work: () => Promise<T>): Promise<T> {\n    for (let i = 0;; i++) {\n        try {\n            await mkdir(path, { mode: 0o700 });\n            break;\n        }\n        catch (error) {\n            if ((error as NodeJS.ErrnoException).code !== 'EEXIST')\n                throw error;\n            if (i >= 100)\n                throw new WorkspaceError(409);\n            await new Promise(r => setTimeout(r, 20));\n        }\n    }\n    try {\n        return await work();\n    }\n    finally {\n        await rmdir(path);\n    }",
+          "sha256": "d5ca02b0fbe825e64b906718fa2886945241ebb7b77287d49a0be09b7e364054"
+        },
+        {
+          "path": "server/workflow-workspace-store.ts",
+          "anchor": "const visible =",
+          "line_start": 207,
+          "line_end": 212,
+          "excerpt": "  const visible = (run: WorkflowRun): WorkflowRun => run.state === 'running' && run.executionEpoch !== executionEpoch ? { ...run, state: 'interrupted' } : run;\n  return {\n    async reserveRun(projectId, draftId, revision, input, actor) {\n      return mutation(async () => {\n        const data = await read(); const draft = requireDraft(data, projectId, draftId);\n        if (draft.revision !== revision || data.runs.some(r => r.draftId === draftId && (r.draftRevision === revision || r.resumable || r.state === 'running' || r.state === 'interrupted'))) throw new WorkspaceError(409);",
+          "sha256": "daeb4ef27ce33702c3a858061b7894233ea8c283d30392d4d03951ef5f405aa9"
+        },
+        {
+          "path": "server/workflow-approval.ts",
+          "anchor": "claimed ||",
+          "line_start": 117,
+          "line_end": 119,
+          "excerpt": "        const state = r.state === 'consumed' || r.state === 'rejected' || r.state === 'expired' ? r.state : claimed || r.state === 'approved' ? 'interrupted' : Date.parse(r.expiresAt) <= Date.now() ? 'expired' : r.state;\n        return { id: r.id, revision: r.revision, runId: r.run.id, projectId: r.run.projectId, draftId: r.run.draftId, draftRevision: r.run.draftRevision, nodeId: r.checkpoint.pending.nodeId, state, contextDigest: r.contextDigest, createdAt: r.createdAt, expiresAt: r.expiresAt, ...(r.decisionBy ? { decisionBy: r.decisionBy, decidedAt: r.decidedAt } : {}), ...(includeContext ? { context: r.context } : {}) };\n    }",
+          "sha256": "5aea01b60882fe2f7d736197c16173e9b82955357c838abe203a2156fdb65c48"
+        }
+      ],
+      "safe_probe": "Scratch stale.lock409 after2083ms; workInvokedfalse. Real competition/crash tests passed.",
+      "remediation": "Readonly interruption diagnostics and audited quiesce/liveness/lock-owner/snapshot/claim reconciliation retaining permanent claims.",
+      "acceptance_tests": [
+        "Crash matrix journal/claim/CAS/effect/finish fails closed.",
+        "Recovery never clears permanent claims or auto retries uncertain effects."
+      ],
+      "criteria_source_ids": []
+    },
+    {
+      "id": "G09",
+      "priority": "P1",
+      "severity": "high release risk under stated prerequisite",
+      "severity_basis": "Release impact, not a CVSS score or claim of a demonstrated exploit; verified controls are scoped to their stated prerequisite.",
+      "state": "missing",
+      "title": "Payload privacy/retention/export authority",
+      "owner_role": "Privacy / storage",
+      "threat_prerequisite": "Personal/business data in saved input/output/private context.",
+      "finding": "captureData:false excludes node snapshots, not saved input/output/pendingData. Secret-field rejection not anonymization. No retention/delete mechanism evidenced; global caps exhaust.",
+      "evidence": [
+        {
+          "path": "server/workflow-workspace-store.ts",
+          "anchor": "initiatedBy: actorSchema, input:",
+          "line_start": 77,
+          "line_end": 80,
+          "excerpt": "  initiatedBy: actorSchema, input: workspaceInputSchema,\n  startedAt: z.string().datetime(), finishedAt: z.string().datetime().nullable(),\n  resumable: z.boolean(), pauseDisposition: z.enum(['not-paused', 'unavailable-no-resume', 'review-pending']), executionEpoch: z.string().uuid(),\n}).strict().superRefine((run, ctx) => {",
+          "sha256": "daeb4ef27ce33702c3a858061b7894233ea8c283d30392d4d03951ef5f405aa9"
+        },
+        {
+          "path": "server/workflow-workspace.ts",
+          "anchor": "return { status: result.status",
+          "line_start": 35,
+          "line_end": 36,
+          "excerpt": "  return { status: result.status, output: result.output, trace, ...(result.pendingNodeId === undefined ? {} : { pendingNodeId: result.pendingNodeId }), ...(result.reason === undefined ? {} : { reason: reason(result.reason) }) };\n}",
+          "sha256": "acfca11bd4d2eebf1b25a5c8f22d6a9c398587389feb66ded419722549578cd1"
+        },
+        {
+          "path": "server/workflow-approval-store.ts",
+          "anchor": "gate: resolved.config",
+          "line_start": 67,
+          "line_end": 69,
+          "excerpt": "        gate: resolved.config, pendingData: c.pending.data, graphSnapshot: run.graphSnapshot,\n        resourceReferences: run.graphSnapshot.nodes.filter(n => resolveNode(run.graphSnapshot, n).type === 'resource').map(n => ({ nodeId: n.id, ...resolveNode(run.graphSnapshot, n).config })), createdAt, expiresAt };\n}",
+          "sha256": "2e544bdfddd5a5ff4ea710f248f9a91d7eaa8c8c1fa878578c545bad286ea069"
+        },
+        {
+          "path": "server/workflow-workspace-store.ts",
+          "anchor": "MAX_RUNS =",
+          "line_start": 15,
+          "line_end": 16,
+          "excerpt": "export const MAX_RUNS = 256;\nconst revisionSchema = z.number().int().min(1).max(Number.MAX_SAFE_INTEGER);",
+          "sha256": "daeb4ef27ce33702c3a858061b7894233ea8c283d30392d4d03951ef5f405aa9"
+        }
+      ],
+      "safe_probe": "Synthetic name/email/address passes safeWorkspaceValue. No real personal/private history read. Initial local/sessionStorage empty.",
+      "remediation": "Classify/minimize/encrypt storage/backups; retention/erase/legal hold preserving no-replay authority; separate history/context/export permissions.",
+      "acceptance_tests": [
+        "Unauthorized payload/export deny before lookup.",
+        "Retention keeps consumed authority; store-full maintenance controlled; no payload logs."
+      ],
+      "criteria_source_ids": [
+        1
+      ]
+    },
+    {
+      "id": "G10",
+      "priority": "P1",
+      "severity": "high release risk under stated prerequisite",
+      "severity_basis": "Release impact, not a CVSS score or claim of a demonstrated exploit; verified controls are scoped to their stated prerequisite.",
+      "state": "missing",
+      "title": "Secrets/HMAC lifecycle",
+      "owner_role": "Security / operations",
+      "threat_prerequisite": "Compromise/rotation/revocation/key-loss restore.",
+      "finding": "Private bootstrap and missing-key refusal implemented; operational revocation/versioned rotation/backup-key lifecycle not evidenced. Private files do not resist Docker administrator.",
+      "evidence": [
+        {
+          "path": "deploy/studio-docker/secrets.mjs",
+          "anchor": "async function readSecret",
+          "line_start": 9,
+          "line_end": 27,
+          "excerpt": "async function readSecret(path) {\n let file;\n try {\n  if(typeof path!=='string'||!path||!path.startsWith('/')||path.split('/').some(p=>p==='.'||p==='..'))throw refused();\n  const parts=path.split('/').filter(Boolean);\n  for(let i=1;i<parts.length;i++) {\n   const parent=await lstat('/'+parts.slice(0,i).join('/'));\n   if(!parent.isDirectory()||parent.isSymbolicLink())throw refused();\n  }\n  file=await open(path,constants.O_RDONLY|constants.O_NOFOLLOW|constants.O_NONBLOCK);\n  const info=await file.stat();\n  if(!info.isFile()||info.size<1||info.size>8192||(info.mode&0o077)!==0||(info.mode&0o7000)!==0||![0,process.getuid()].includes(info.uid))throw refused();\n  const bytes=Buffer.alloc(8193);const {bytesRead}=await file.read(bytes,0,bytes.length,0);\n  if(bytesRead<1||bytesRead>8192)throw refused();\n  const raw=new TextDecoder('utf-8',{fatal:true}).decode(bytes.subarray(0,bytesRead));\n  const value=raw.replace(/\\r?\\n$/,'');\n  if(!value.trim()||/[\\r\\n\\x00-\\x1f\\x7f]/.test(value))throw refused();\n  return value;\n } catch {throw refused();} finally {await file?.close();}",
+          "sha256": "abd8c68bacc4507b8b08b2344b9a45618f8c4fb300703b21ff3be9d8523737de"
+        },
+        {
+          "path": "deploy/studio-docker/secrets.mjs",
+          "anchor": "STUDIO_OPERATOR_TOKEN===undefined",
+          "line_start": 42,
+          "line_end": 49,
+          "excerpt": "  if(output.STUDIO_OPERATOR_TOKEN===undefined) {\n   const tokenPath=join(stateDir,'operator-token');\n   try {\n    const file=await open(tokenPath,constants.O_WRONLY|constants.O_CREAT|constants.O_EXCL|constants.O_NOFOLLOW,0o600);\n    try {await file.writeFile(randomBytes(32).toString('hex'));await file.sync();} finally {await file.close();}\n   } catch(error) {if(error.code!=='EEXIST')throw refused();}\n   output.STUDIO_OPERATOR_TOKEN=await readSecret(tokenPath);\n  }",
+          "sha256": "abd8c68bacc4507b8b08b2344b9a45618f8c4fb300703b21ff3be9d8523737de"
+        },
+        {
+          "path": "server/workflow-approval-store.ts",
+          "anchor": "async initialize()",
+          "line_start": 79,
+          "line_end": 105,
+          "excerpt": "    async initialize() {\n        await privateDirectory(this.directory);\n        await workflowFileLock(join(this.directory, '.key-lock'), async () => {\n            const path = join(this.directory, '.integrity-key');\n            try {\n                const key = await boundedRead(path, 32);\n                if (key.length !== 32)\n                    throw new WorkspaceError(503);\n            }\n            catch (e) {\n                if ((e as NodeJS.ErrnoException).code !== 'ENOENT')\n                    throw e;\n                const { readdir } = await import('node:fs/promises');\n                if ((await readdir(this.directory)).some(n => n.endsWith('.json') || n.startsWith('.claim-')))\n                    throw new WorkspaceError(503);\n                const h = await open(path, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW, 0o600);\n                try {\n                    await h.writeFile(randomBytes(32));\n                    await h.sync();\n                }\n                finally {\n                    await h.close();\n                }\n                await syncDirectory(this.directory);\n            }\n        });\n    }",
+          "sha256": "2e544bdfddd5a5ff4ea710f248f9a91d7eaa8c8c1fa878578c545bad286ea069"
+        }
+      ],
+      "safe_probe": "Four bootstrap/secret tests passed; active key/token never read/provisioned.",
+      "remediation": "Operator/provider rotation+revocation, versioned authenticated envelopes/integrity keys and protected escrow; subject sessions for shared deployment.",
+      "acceptance_tests": [
+        "Old/revoked identity denied.",
+        "Interrupted rotation preserves valid journals; missing key over existing records never regenerated."
+      ],
+      "criteria_source_ids": []
+    },
+    {
+      "id": "G11",
+      "priority": "P1",
+      "severity": "high release risk under stated prerequisite",
+      "severity_basis": "Release impact, not a CVSS score or claim of a demonstrated exploit; verified controls are scoped to their stated prerequisite.",
+      "state": "missing",
+      "title": "Readiness/bounded graceful drain",
+      "owner_role": "Operations / API",
+      "threat_prerequisite": "Healthy process but unavailable storage/reviewer/provider routed fully capable.",
+      "finding": "Minimal public health is liveness only; model not-probed, reviewer unavailable. Close hook exists; bounded drain/readiness transition not verified.",
+      "evidence": [
+        {
+          "path": "server/index.ts",
+          "anchor": "Public liveness reads",
+          "line_start": 243,
+          "line_end": 249,
+          "excerpt": "    // Public liveness reads no model configuration. Authenticated details\n    // describe configuration only; they never probe or claim live service.\n    if (!presentsOperatorToken(request.headers.authorization, options.operator.token)) return { ok: true };\n    const selectedId = modelConnections.selectedId ?? null;\n    const descriptor = selectedId === null ? undefined : modelConnections.descriptors.find(connection => connection.id === selectedId);\n    return { ok: true, selectedId, model: descriptor?.model ?? null, modelStatus: descriptor?.status ?? \"unselected\", verification: \"not-probed\" };\n  });",
+          "sha256": "dd7664991f837513eb145ea337c2956b14d73be53584b74c05a3adf5a0d6241a"
+        },
+        {
+          "path": "docker-compose.studio.yml",
+          "anchor": "healthcheck:",
+          "line_start": 30,
+          "line_end": 36,
+          "excerpt": "    healthcheck:\n      test: [CMD, node, -e, \"fetch('http://127.0.0.1:8787/api/studio/health').then(async r=>{const j=await r.json();if(!r.ok||j.ok!==true||Object.keys(j).length!==1)process.exit(1)}).catch(()=>process.exit(1))\"]\n      interval: 10s\n      timeout: 3s\n      retries: 6\n      start_period: 10s\nvolumes:",
+          "sha256": "1b46ae5233dfb96b50f3eead0daa027a3a6a137b82c83464d69974c22e6ea1b5"
+        },
+        {
+          "path": "deploy/studio-docker/bootstrap.mjs",
+          "anchor": "for(const signal",
+          "line_start": 12,
+          "line_end": 13,
+          "excerpt": " for(const signal of ['SIGTERM','SIGINT'])process.once(signal,()=>{void app.close().then(()=>process.exit(0));});\n process.stdout.write('studio: backend ready\\n');",
+          "sha256": "e242ee6e8c43f9927996932935b211b1805b6c069ed091afd3b2cf944394f51e"
+        }
+      ],
+      "safe_probe": "Live health200 {ok:true}/Dockerhealthy; no authenticated model probe.",
+      "remediation": "Separate safe capability readiness/live; readonly integrity/storage checks, no billable health probe; shutdown transition+deadline.",
+      "acceptance_tests": [
+        "Unconfigured capability shown unavailable while livenesshealthy.",
+        "Drain rejects admissions; uncertain effects interrupted/no rerun."
+      ],
+      "criteria_source_ids": []
+    },
+    {
+      "id": "G12",
+      "priority": "P2",
+      "severity": "medium release risk / quality gate",
+      "severity_basis": "Release impact, not a CVSS score or claim of a demonstrated exploit; verified controls are scoped to their stated prerequisite.",
+      "state": "missing",
+      "title": "Nonsecret operational observability",
+      "owner_role": "Operations / security",
+      "threat_prerequisite": "Failures/denials/locks without incident correlation.",
+      "finding": "logger:false prevents raw access logging; no metrics/request-correlation sink observed. Trace durations are not operational alerting or tamper-resistant audit.",
+      "evidence": [
+        {
+          "path": "server/index.ts",
+          "anchor": "logger: false",
+          "line_start": 200,
+          "line_end": 202,
+          "excerpt": "    logger: false,\n    bodyLimit: 1_000_000,\n  });",
+          "sha256": "dd7664991f837513eb145ea337c2956b14d73be53584b74c05a3adf5a0d6241a"
+        },
+        {
+          "path": "server/workflow-workspace.ts",
+          "anchor": "const trace = result.trace",
+          "line_start": 33,
+          "line_end": 35,
+          "excerpt": "  const trace = result.trace.map(({ nodeId, status, message, details, humanName }) => ({ nodeId, status, ...(humanName === undefined ? {} : { humanName }), ...(message === undefined ? {} : { message: reason(message) }), ...(details === undefined ? {} : { details: { durationMs: details.durationMs, ...(details.selectedPort === undefined ? {} : { selectedPort: details.selectedPort }), ...(details.errorCode === undefined ? {} : { errorCode: details.errorCode }) } }) }));\n  if (!safeWorkspaceValue(result.output, MAX_INPUT_BYTES)) return { status: 'blocked', output: null, trace, reason: 'Unsafe or oversized output' };\n  return { status: result.status, output: result.output, trace, ...(result.pendingNodeId === undefined ? {} : { pendingNodeId: result.pendingNodeId }), ...(result.reason === undefined ? {} : { reason: reason(result.reason) }) };",
+          "sha256": "acfca11bd4d2eebf1b25a5c8f22d6a9c398587389feb66ded419722549578cd1"
+        }
+      ],
+      "safe_probe": "Server search no metrics/requestId hooks; no invented telemetry.",
+      "remediation": "Bounded safe event categories/request traceIDs/capacity-interruption-denial counters; never prompts/names/tokens/paths in labels; authorize operational audit.",
+      "acceptance_tests": [
+        "Synthetic secret absent all events/labels.",
+        "Faults correlate; store-full/stale-lock/overload alerts exercised."
+      ],
+      "criteria_source_ids": []
+    },
+    {
+      "id": "G13",
+      "priority": "P1",
+      "severity": "high release risk under stated prerequisite",
+      "severity_basis": "Release impact, not a CVSS score or claim of a demonstrated exploit; verified controls are scoped to their stated prerequisite.",
+      "state": "missing",
+      "title": "CI/approved release artifact",
+      "owner_role": "Release engineering",
+      "threat_prerequisite": "Promote manual dirty checkout without repeatable artifact checks.",
+      "finding": "No .github files found. Test entry correctly aggregates Vitest+node without shell. Other CI not queried; immutable approved artifact/SBOM pipeline not verified.",
+      "evidence": [
+        {
+          "path": "scripts/test-all.mjs",
+          "anchor": "for (const [command",
+          "line_start": 16,
+          "line_end": 22,
+          "excerpt": "  for (const [command, args] of commands) {\n    const result = spawnSync(command, args, { cwd: root, stdio: \"inherit\", shell: false });\n    if (result.error) console.error(`Test runner could not start: ${result.error.message}`);\n    if (result.status !== 0) exitCode = 1;\n  }\n  return exitCode;\n}",
+          "sha256": "5490e35bac56edcbb23b013814a9d6d51aabff6eee05bde870f51e7fa697c356"
+        },
+        {
+          "path": "package.json",
+          "anchor": "\"build\"",
+          "line_start": 13,
+          "line_end": 18,
+          "excerpt": "    \"build\": \"tsc -b && vite build\",\n    \"typecheck\": \"tsc --noEmit\",\n    \"test\": \"node scripts/test-all.mjs\",\n    \"test:vitest\": \"vitest run\",\n    \"test:docker\": \"node --test deploy/studio-docker/*.test.mjs\",\n    \"lint\": \"eslint .\",",
+          "sha256": "35d54b7b6bcf4a22fc343ec9ebb45ffbd38dca8f08623f1e29ab5725ac398c1e"
+        }
+      ],
+      "safe_probe": "Read-only .github enumeration empty; git diff --check0.",
+      "remediation": "Frozen typecheck/build/all-tests/hostABI/conformance/productionCSP browser/accessibility/image audit/SBOM and signed approval pipeline.",
+      "acceptance_tests": [
+        "Both test families report even failure; no skipped/weakened gates.",
+        "Exact tested digest promoted."
+      ],
+      "criteria_source_ids": [
+        2
+      ]
+    },
+    {
+      "id": "G14",
+      "priority": "P1",
+      "severity": "high release risk under stated prerequisite",
+      "severity_basis": "Release impact, not a CVSS score or claim of a demonstrated exploit; verified controls are scoped to their stated prerequisite.",
+      "state": "blocked",
+      "title": "Strict manifest baseline/final full suite",
+      "owner_role": "Codegen / conformance",
+      "threat_prerequisite": "Declare green with known refusals/concurrent changes.",
+      "finding": "Parent supplied2765pass/3maps,docusign,advantage failures +4node. Auditor58focused+4node only; not final full-suite release result.",
+      "evidence": [
+        {
+          "path": "scripts/test-all.mjs",
+          "anchor": "createTestCommands",
+          "line_start": 7,
+          "line_end": 12,
+          "excerpt": "export function createTestCommands(vitestArgs = []) {\n  return [\n    [process.execPath, [fileURLToPath(new URL(\"../node_modules/vitest/vitest.mjs\", import.meta.url)), \"run\", ...vitestArgs]],\n    [process.execPath, [\"--test\", \"deploy/studio-docker/*.test.mjs\"]],\n  ];\n}",
+          "sha256": "5490e35bac56edcbb23b013814a9d6d51aabff6eee05bde870f51e7fa697c356"
+        }
+      ],
+      "safe_probe": "5files58tests pass9.91s;4node pass; full baseline not duplicated.",
+      "remediation": "Resolve strict computed-manifest support or reviewed scope exclusion without weakened parser; final host-aware full suite on frozen artifact.",
+      "acceptance_tests": [
+        "Every release criterion verified; no hidden filters/skips/parser relaxation."
+      ],
+      "criteria_source_ids": []
+    },
+    {
+      "id": "G15",
+      "priority": "P2",
+      "severity": "medium release risk / quality gate",
+      "severity_basis": "Release impact, not a CVSS score or claim of a demonstrated exploit; verified controls are scoped to their stated prerequisite.",
+      "state": "blocked",
+      "title": "Canvas usability/accessibility verification",
+      "owner_role": "UX / accessibility",
+      "threat_prerequisite": "Infer accessibility from limited builder screenshots.",
+      "finding": "Observed builder1280x577/390x844 no horizontal document overflow. UI changed mid-audit. No signed-in/fullkeyboard/screenreader/editor-focus certification. Parent baseline canvas about152px useful height, not independently remeasured.",
+      "evidence": [],
+      "safe_probe": "Named readonly browser; password token input; unauth create/check disabled; no credentials/graph changes.",
+      "remediation": "Verify useful canvas viewport, retained drafts, native modal focus-return, keyboard equivalents, zoom/reflow and target exceptions after shell refactor.",
+      "acceptance_tests": [
+        "Desktop1280x577/mobile390 usable canvas.",
+        "Visible non-obscured focus;24x24CSSpx targets or valid exceptions.",
+        "Keyboard connect/settings/apply/undo; retain state across areas."
+      ],
+      "criteria_source_ids": [
+        3
+      ]
+    },
+    {
+      "id": "G16",
+      "priority": "P1",
+      "severity": "high release risk under stated prerequisite",
+      "severity_basis": "Release impact, not a CVSS score or claim of a demonstrated exploit; verified controls are scoped to their stated prerequisite.",
+      "state": "blocked",
+      "title": "Host runtime/live provider scope",
+      "owner_role": "Host / providers",
+      "threat_prerequisite": "Infer installed DAG/live service from theme/launcher/config.",
+      "finding": "Actual host launcher separate signed-in tab. No live model calls;4destinations configured/not-probed separated; Codex blocked/Flightdeck bridge absent. Runtime install/publication not verified.",
+      "evidence": [
+        {
+          "path": "server/model-connections.ts",
+          "anchor": "MODEL_CONNECTION_IDS =",
+          "line_start": 11,
+          "line_end": 12,
+          "excerpt": "export const MODEL_CONNECTION_IDS = ['codex-chatgpt', 'flightdeck', 'local', 'anthropic'] as const;\nexport type ModelConnectionId = typeof MODEL_CONNECTION_IDS[number];",
+          "sha256": "1d8e3607fd924f7e081e0d0fe796089714a5a07c3bf37390729b69c1c9ed320e"
+        },
+        {
+          "path": "server/model-connections.ts",
+          "anchor": "id === 'codex-chatgpt' ?",
+          "line_start": 79,
+          "line_end": 80,
+          "excerpt": "      id === 'codex-chatgpt' ? CODEX_SAFETY_BLOCKER : id === 'flightdeck' ? 'Approved Studio host bridge/task contract is not configured' : 'Connection is not configured'});\n  }",
+          "sha256": "1d8e3607fd924f7e081e0d0fe796089714a5a07c3bf37390729b69c1c9ed320e"
+        }
+      ],
+      "safe_probe": "Host StudioHome.tsx4-10/153 inspected /Users/te451223/project-contract. OS4173 GET200; no publish/auth/provider execution.",
+      "remediation": "Standalone scope explicit, approved host SDK/task/membership/registry mounting contract and separately reviewed user-authorized provider completion.",
+      "acceptance_tests": [
+        "Actual host scope proved or release explicitly standalone.",
+        "No fallback/OAuth extraction/configured-equals-live claim."
+      ],
+      "criteria_source_ids": []
+    },
+    {
+      "id": "V01",
+      "priority": "P1",
+      "severity": "high release risk under stated prerequisite",
+      "severity_basis": "Release impact, not a CVSS score or claim of a demonstrated exploit; verified controls are scoped to their stated prerequisite.",
+      "state": "verified",
+      "title": "Private loopback Docker isolation",
+      "owner_role": "Deployment",
+      "threat_prerequisite": "Only single-operator private scope.",
+      "finding": "Actual nonroot/read-only/capdrop/no-new-privileges/memory+PID/loopback match source.",
+      "evidence": [
+        {
+          "path": "docker-compose.studio.yml",
+          "anchor": "user:",
+          "line_start": 8,
+          "line_end": 29,
+          "excerpt": "    user: \"1000:1000\"\n    init: true\n    read_only: true\n    cap_drop: [ALL]\n    security_opt: [no-new-privileges:true]\n    pids_limit: 128\n    mem_limit: 768m\n    restart: unless-stopped\n    environment:\n      STUDIO_OPERATOR: ${STUDIO_OPERATOR:-Karsten Haldan}\n      STUDIO_HOST: 0.0.0.0\n      PORT: \"8787\"\n      STUDIO_STATE_DIR: /state\n      STUDIO_GRANTS_FILE: /state/grants.json\n      STUDIO_WORKSPACE_FILE: /state/workflow-workspace.json\n      STUDIO_MODEL_CONNECTION: ${STUDIO_MODEL_CONNECTION:-anthropic}\n    ports:\n      - \"127.0.0.1:8787:8787\"\n    volumes:\n      - studio-private:/state\n    tmpfs:\n      - /tmp:rw,noexec,nosuid,size=64m,mode=1777",
+          "sha256": "1b46ae5233dfb96b50f3eead0daa027a3a6a137b82c83464d69974c22e6ea1b5"
+        }
+      ],
+      "safe_probe": "Filtered inspect:user1000:1000,readonlytrue,CapDropALL,memory805306368,pids128,127.0.0.1:8787; live unauth workflow/model/approval/create401.",
+      "remediation": "Retain isolation.",
+      "acceptance_tests": [
+        "No restart/recreate/deployment mutation during audit."
+      ],
+      "criteria_source_ids": [
+        2
+      ]
+    },
+    {
+      "id": "V02",
+      "priority": "P1",
+      "severity": "high release risk under stated prerequisite",
+      "severity_basis": "Release impact, not a CVSS score or claim of a demonstrated exploit; verified controls are scoped to their stated prerequisite.",
+      "state": "verified",
+      "title": "Durable ordered approval/crash refusal",
+      "owner_role": "Approval / execution",
+      "threat_prerequisite": "At-most-one claimed resume, NOT transactional exactly-once external effects.",
+      "finding": "HMAC/order/runCAS/permanent claim/independent identity core and real process tests pass.",
+      "evidence": [
+        {
+          "path": "server/workflow-approval-store.ts",
+          "anchor": "checkpoint.graphBinding",
+          "line_start": 110,
+          "line_end": 111,
+          "excerpt": "        if (r.run.state !== 'paused' || r.run.result?.pendingNodeId !== r.checkpoint.pending.nodeId || r.run.initiatedBy !== r.checkpoint.options.initiator || r.checkpoint.graphBinding !== canonicalWorkflowValue(r.run.graphSnapshot) || digest(approvalContext(r.run, r.checkpoint, r.createdAt, r.expiresAt)) !== r.contextDigest || digest(r.context) !== r.contextDigest)\n            throw new WorkspaceError(503);",
+          "sha256": "2e544bdfddd5a5ff4ea710f248f9a91d7eaa8c8c1fa878578c545bad286ea069"
+        },
+        {
+          "path": "server/workflow-approval.ts",
+          "anchor": "Decision write, permanent",
+          "line_start": 165,
+          "line_end": 181,
+          "excerpt": "                // Decision write, permanent reservation, run CAS, restored execution: never reverse this order.\n                await runtime.store.write(next);\n                await runtime.store.claim(r.id);\n                if (!deps.store.beginResume)\n                    throw new WorkspaceError(503);\n                await deps.store.beginResume(r.run.projectId, r.run.draftId, r.run.id, r.run);\n                if (expired || body.decision === 'reject') {\n                    const trace: RunResult['trace'] = r.run.result!.trace.filter(t => t.nodeId !== r.checkpoint.pending.nodeId).map(t => ({ nodeId: t.nodeId, status: t.status, ...(t.message === undefined ? {} : { message: t.message }), ...(t.humanName === undefined ? {} : { humanName: t.humanName }) }));\n                    const run = await deps.store.finishRun(r.run.projectId, r.run.draftId, r.run.id, { status: 'blocked', output: null, trace, reason: expired ? 'Approval expired' : 'Approval rejected' });\n                    return reply.code(expired ? 409 : 200).send({ approval: await dto(next), run });\n                }\n                const proof = {};\n                const runner = createWorkflowRunner(r.run.graphSnapshot, { ...deps.adaptersFor(r.run), authorizeHuman: async (auth, context) => auth.proof === proof && auth.humanName === next.decisionBy && context.nodeId === r.checkpoint.pending.nodeId && context.initiator === r.run.initiatedBy }, { initiator: r.run.initiatedBy, maxDataBytes: 100000, captureData: false });\n                const paused = runner.restore(r.checkpoint);\n                const result = await runner.resume(paused, { humanName: next.decisionBy!, proof });\n                const run = await deps.store.finishRun(r.run.projectId, r.run.draftId, r.run.id, deps.sanitize(result), result.status === 'paused');\n                if (result.status === 'paused')",
+          "sha256": "5aea01b60882fe2f7d736197c16173e9b82955357c838abe203a2156fdb65c48"
+        },
+        {
+          "path": "server/__tests__/workflow-approval-process.test.ts",
+          "anchor": "restarts into two independent",
+          "line_start": 69,
+          "line_end": 84,
+          "excerpt": "it('restarts into two independent processes and reserves once before actual downstream REST', async () => {\n    const { approval, run } = await pause();\n    await runtime.app.close();\n    const responses = await Promise.all([child(approval), child(approval)]);\n    expect(responses.map(r => r.status).sort()).toEqual([200, 409]);\n    expect(hits).toBe(1);\n    expect(mcp).toBe(1);\n    expect(finishes).toBe(1);\n    expect(responses.find(r => r.status === 200).body.run.result.output).toEqual({ receivedValid: true, finishes: 1 });\n    runtime = fixtureRuntime(root, origin);\n    const read = await runtime.app.inject({ method: 'GET', url: `${base}/${run.draftId}/runs/${run.id}`, headers });\n    expect(read.json().run.state).toBe('completed');\n    expect(read.json().run.id).toBe(run.id);\n    expect(read.json().run.result.output).toEqual({ receivedValid: true, finishes: 1 });\n    expect((await child(approval)).status).toBe(409);\n    expect(finishes).toBe(1);",
+          "sha256": "84d59cbb4bc904a9c3ced92a68805b71c4563274502091728e58cc98946a5e6b"
+        }
+      ],
+      "safe_probe": "18approval+5process pass; competing200/409; upstreamREST/MCP1, downstream1; actual abrupt exit17 refuses replay.",
+      "remediation": "Retain core; close identity/backup/recovery gates.",
+      "acceptance_tests": [
+        "Same process suite on final artifact."
+      ],
+      "criteria_source_ids": []
+    },
+    {
+      "id": "V03",
+      "priority": "P1",
+      "severity": "high release risk under stated prerequisite",
+      "severity_basis": "Release impact, not a CVSS score or claim of a demonstrated exploit; verified controls are scoped to their stated prerequisite.",
+      "state": "verified",
+      "title": "Resource DNS-pin bounded transport",
+      "owner_role": "Resources / security",
+      "threat_prerequisite": "This REST/MCP path only, not model fetch.",
+      "finding": "Private/special/IPv6 denial, socketDNS pinning, no redirects, bounded time/body and credential origins implemented.",
+      "evidence": [
+        {
+          "path": "packages/resources/transport.ts",
+          "anchor": "function publicIPv4",
+          "line_start": 26,
+          "line_end": 30,
+          "excerpt": "function publicIPv4(address:string) {\n  if (isIP(address)!==4) return false; // IPv6 unsupported: reject rather than misclassify mapped/special ranges.\n  const [a,b] = address.split('.').map(Number);\n  return a!==undefined && b!==undefined && a>0 && a<224 && ![10,127].includes(a) && !(a===100 && b>=64 && b<=127) && !(a===169 && b===254) && !(a===172 && b>=16 && b<=31) && !(a===192 && [0,88,168].includes(b)) && !(a===198 && [18,19,51].includes(b)) && !(a===203 && b===0);\n}",
+          "sha256": "decfa268f5521a8cf633599241028c37f7f7537d0226c5adcc86290d28aee00f"
+        },
+        {
+          "path": "packages/resources/transport.ts",
+          "anchor": "const addresses =",
+          "line_start": 41,
+          "line_end": 63,
+          "excerpt": "    const addresses = development ? [{address:'127.0.0.1',family:4}] : await Promise.race([lookup(url.hostname,{all:true}), new Promise<never>((_,reject)=>controller.signal.addEventListener('abort',()=>reject(new ResourceError(504)),{once:true}))]);\n    if(!addresses.length || (!development && addresses.some(a=>!publicIPv4(a.address)))) throw new ResourceError(403);\n    if(controller.signal.aborted) throw new ResourceError(504);\n    const address = addresses[0]!;\n    const payload = options.body===undefined ? undefined : JSON.stringify(options.body);\n    if(payload && Buffer.byteLength(payload)>32_000) throw new ResourceError(413);\n    return await new Promise<{value:unknown; headers:Record<string,string|string[]|undefined>; durationMs:number}>((resolve,reject)=>{\n      const started = performance.now();\n      const req = (url.protocol==='https:' ? httpsRequest : httpRequest)(url, { method:options.method, headers:{accept:'application/json, text/event-stream',...(payload ? {'content-type':'application/json','content-length':String(Buffer.byteLength(payload))} : {}),...options.headers}, signal:controller.signal, agent:false,\n        // Pin the checked address; never resolve a second time at connect.\n        lookup:(_hostname,_options,callback)=>callback(null,address.address,address.family)\n      },res=>{\n        const fail = (status:number)=>{ res.destroy(); reject(new ResourceError(status)); };\n        if(options.notification && res.statusCode===202) {res.resume(); resolve({value:null,headers:res.headers,durationMs:performance.now()-started}); return;}\n        if(!res.statusCode || res.statusCode<200 || res.statusCode>=300) {fail(502);return;}\n        const contentType = res.headers['content-type'] ?? '';\n        if(!contentType.startsWith('application/json') && !(options.rpcId!==undefined && contentType.startsWith('text/event-stream'))) {fail(502);return;}\n        let bytes=0; const chunks:Buffer[]=[];\n        res.on('error',()=>reject(new ResourceError(502)));\n        res.on('data',(chunk:Buffer)=>{\n          bytes+=chunk.length;\n          if(bytes>Math.min(policy.maxBytes ?? 64_000,256_000)) {fail(413);return;}\n          chunks.push(chunk);",
+          "sha256": "decfa268f5521a8cf633599241028c37f7f7537d0226c5adcc86290d28aee00f"
+        }
+      ],
+      "safe_probe": "3resource-security+1transport pass; process fixture realREST/MCP/effect revocation.",
+      "remediation": "Keep explicit development exceptions.",
+      "acceptance_tests": [
+        "Actual socket/no-credential-forwarding release regression."
+      ],
+      "criteria_source_ids": [
+        4
+      ]
+    },
+    {
+      "id": "V04",
+      "priority": "P1",
+      "severity": "high release risk under stated prerequisite",
+      "severity_basis": "Release impact, not a CVSS score or claim of a demonstrated exploit; verified controls are scoped to their stated prerequisite.",
+      "state": "verified",
+      "title": "Private bootstrap/constant failures",
+      "owner_role": "Deployment / security",
+      "threat_prerequisite": "No rotation/encryption/admin-resistance claim.",
+      "finding": "Private bounded regularUTF8 whitelist, generated strong stable token and constant errors verified.",
+      "evidence": [
+        {
+          "path": "deploy/studio-docker/secrets.mjs",
+          "anchor": "async function readSecret",
+          "line_start": 9,
+          "line_end": 27,
+          "excerpt": "async function readSecret(path) {\n let file;\n try {\n  if(typeof path!=='string'||!path||!path.startsWith('/')||path.split('/').some(p=>p==='.'||p==='..'))throw refused();\n  const parts=path.split('/').filter(Boolean);\n  for(let i=1;i<parts.length;i++) {\n   const parent=await lstat('/'+parts.slice(0,i).join('/'));\n   if(!parent.isDirectory()||parent.isSymbolicLink())throw refused();\n  }\n  file=await open(path,constants.O_RDONLY|constants.O_NOFOLLOW|constants.O_NONBLOCK);\n  const info=await file.stat();\n  if(!info.isFile()||info.size<1||info.size>8192||(info.mode&0o077)!==0||(info.mode&0o7000)!==0||![0,process.getuid()].includes(info.uid))throw refused();\n  const bytes=Buffer.alloc(8193);const {bytesRead}=await file.read(bytes,0,bytes.length,0);\n  if(bytesRead<1||bytesRead>8192)throw refused();\n  const raw=new TextDecoder('utf-8',{fatal:true}).decode(bytes.subarray(0,bytesRead));\n  const value=raw.replace(/\\r?\\n$/,'');\n  if(!value.trim()||/[\\r\\n\\x00-\\x1f\\x7f]/.test(value))throw refused();\n  return value;\n } catch {throw refused();} finally {await file?.close();}",
+          "sha256": "abd8c68bacc4507b8b08b2344b9a45618f8c4fb300703b21ff3be9d8523737de"
+        },
+        {
+          "path": "deploy/studio-docker/bootstrap.mjs",
+          "anchor": "startup refused",
+          "line_start": 15,
+          "line_end": 17,
+          "excerpt": " process.stderr.write('studio: startup refused (check private configuration)\\n');\n process.exit(1);\n}",
+          "sha256": "e242ee6e8c43f9927996932935b211b1805b6c069ed091afd3b2cf944394f51e"
+        }
+      ],
+      "safe_probe": "4node pass; active key/token never read.",
+      "remediation": "Retain guards; lifecycleG10 missing.",
+      "acceptance_tests": [
+        "No secret output/environment dumps."
+      ],
+      "criteria_source_ids": []
+    }
+  ]
+}

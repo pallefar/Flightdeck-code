@@ -116,6 +116,38 @@ describe("function depth", () => {
 });
 
 describe("imports", () => {
+  it("does not treat the Studio admission regex template as a live import", () => {
+    const source = 'const importPattern = new RegExp(`^import \\\\{ [A-Za-z_$][A-Za-z0-9_$]* \\\\} from "\\\\./${id}/manifest\\\\.js";$`);';
+    expect(scan(source).imports).toEqual([]);
+  });
+
+  it("keeps executable imports inside nested template interpolations visible", () => {
+    const source = 'const value = `outer ${import("../../registry.js")} ${`inner ${ { fs: require("node:fs") } } text`}`;';
+    expect(scan(source).imports.map(({ specifier, form }) => [specifier, form])).toEqual([
+      ["../../registry.js", "dynamic"],
+      ["node:fs", "require"],
+    ]);
+  });
+
+  it.each([
+    'const text = `import { fs } from "node:fs";`;',
+    'const text = `export { fs } from "node:fs";`;',
+    'const text = `import "node:fs";`;',
+    'const text = `import("node:fs"); require("node:fs");`;',
+    'const text = \'import { fs } from "node:fs";\';',
+    'const pattern = /import "node:fs"/;',
+    '/* import "node:fs"; */',
+    'const text = `outer ${`import("node:fs")`} raw`;',
+    'const text = `literal \\${import("node:fs")} raw`;',
+  ])("ignores import-shaped literal/comment text without hiding the next live edge: %s", (decoy) => {
+    const source = `${decoy}\nimport { real } from "unauthorized-package";`;
+    const file = scan(source);
+    expect(file.imports.map(({ specifier, form }) => [specifier, form])).toEqual([
+      ["unauthorized-package", "static"],
+    ]);
+    expect(file.positionAt(file.imports[0]!.offset).line).toBe(2);
+  });
+
   const source = [
     `import { z } from "zod";`,
     `import type { FastifyInstance } from "fastify";`,

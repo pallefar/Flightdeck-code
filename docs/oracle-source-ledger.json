@@ -1,0 +1,240 @@
+{
+  "version": 1,
+  "sourceCount": 26,
+  "sources": [
+    {
+      "id": 1,
+      "url": "https://docs.oracle.com/en/cloud/saas/fusion-ai/26d/aiaas/index.html",
+      "title": "🐴 How do I use AI Agent Studio?",
+      "quote": "How do I use AI Agent Studio?\n\nG59779-01\n\n26D",
+      "classification": "documentation assertion",
+      "release": "26D",
+      "captureSha256": "0fc4e02238ed93d5e900a52efd03765a8e15984f4fe90988ff4c9c1710bee4cd"
+    },
+    {
+      "id": 2,
+      "url": "https://docs.oracle.com/en/cloud/saas/fusion-ai/26d/aiaas/choose-how-to-create-workflows-and-agentic-applications.html",
+      "title": "🐴 Choose How to Create Workflows and Agentic Applications",
+      "quote": "You can create workflows in either of these ways:",
+      "classification": "documentation assertion",
+      "release": "26D",
+      "captureSha256": "6665054080091242afc6ac890f3db2f22e2d9168bf6e1240180af071d5391358"
+    },
+    {
+      "id": 3,
+      "url": "https://docs.oracle.com/en/cloud/saas/fusion-ai/26d/aiaas/create-workflows.html",
+      "title": "🐴 Create Workflows",
+      "quote": "Specify where to send an email when a workflow instance runs into a permanent error.",
+      "classification": "documentation assertion",
+      "release": "26D",
+      "captureSha256": "f98acfd463d7bd144a875c2bd438068002de5c7c6df8a3ab2a1d2a2f8b3c5189"
+    },
+    {
+      "id": 4,
+      "url": "https://docs.oracle.com/en/cloud/saas/fusion-ai/26d/aiaas/nodes-in-workflows.html",
+      "title": "🐴 Nodes in Workflows",
+      "quote": "Here are some of the nodes that are available for workflows:",
+      "classification": "documentation assertion",
+      "release": "26D",
+      "captureSha256": "814058bb589eb9d3cd2213db3146ea31f2b5be3b4c3ebffd530212d08978e9c4"
+    },
+    {
+      "id": 5,
+      "url": "https://docs.oracle.com/en/cloud/saas/fusion-ai/26d/aiaas/variables-specific-to-workflows.html",
+      "title": "🐴 Variables Specific to Workflows",
+      "quote": "Node inputs are variables used to pass input to the node in the workflow.",
+      "classification": "documentation assertion",
+      "release": "26D",
+      "captureSha256": "bc51ad66047d5d25bab5bb9647e3ca13833478d60edb16375e19d6963d50998e"
+    },
+    {
+      "id": 6,
+      "url": "https://docs.oracle.com/en/cloud/saas/fusion-ai/26d/aiaas/expressions-in-ai-agent-studio.html",
+      "title": "🐴 Expressions",
+      "quote": "You can directly enter expressions in the required format,",
+      "classification": "documentation assertion",
+      "release": "26D",
+      "captureSha256": "6fbdf96d00333a4eeb2c1a677f0da4c81950754702af18944acb80c691a13706"
+    },
+    {
+      "id": 7,
+      "url": "https://docs.oracle.com/en/cloud/saas/fusion-ai/26d/aiaas/configure-workflow-triggers.html",
+      "title": "🐴 Configure Workflow Triggers",
+      "quote": "Triggers activate after the workflow is published.",
+      "classification": "documentation assertion",
+      "release": "26D",
+      "captureSha256": "51beb76aecc7e612b5c88491d2cfc4094919bcef0bc6de76956bc1b78fcbe37e"
+    },
+    {
+      "id": 8,
+      "url": "https://docs.oracle.com/en/cloud/saas/fusion-ai/26d/aiaas/add-external-rest-tool.html",
+      "title": "🐴 Add External REST Tool",
+      "quote": "Select Require Human Approval to ensure that a person reviews and approves any action before the tool runs.",
+      "classification": "documentation assertion",
+      "release": "26D",
+      "captureSha256": "cb85193fc83fc1e2205f1d13bb0c679e00284413bab4e6ac9f09eb8c1451a228"
+    },
+    {
+      "id": 9,
+      "url": "https://docs.oracle.com/en/cloud/saas/fusion-ai/26d/aiaas/add-mcp-tool.html",
+      "title": "🐴 Add MCP Tool",
+      "quote": "Add a new tool of type MCP.",
+      "classification": "documentation assertion",
+      "release": "26D",
+      "captureSha256": "7f24cd674f027e4c5310a5e95e1cf92956a0a2c2c71d53c3fac0f51c41bd0503"
+    },
+    {
+      "id": 10,
+      "url": "https://docs.oracle.com/en/cloud/saas/fusion-ai/26d/aiaas/configure-tool-nodes-in-a-workflow.html",
+      "title": "🐴 Configure Tool Nodes in a Workflow",
+      "quote": "Function: Select the function to use from the connector.",
+      "classification": "documentation assertion",
+      "release": "26D",
+      "captureSha256": "5cb9612460a5e0621b9a75ccf30e5bb3741a1460bd43eb23d4b28d13aa332681"
+    },
+    {
+      "id": 11,
+      "url": "https://docs.oracle.com/en/cloud/saas/fusion-ai/26d/aiaas/add-an-approval-process-channel-to-a-human-approval-node-of-workflows.html",
+      "title": "🐴 Add an Approval Process Channel to a Human Approval Node of Workflows",
+      "quote": "The workflow resumes after the required approval outcome is received.",
+      "classification": "documentation assertion",
+      "release": "26D",
+      "captureSha256": "4899a9c5458b7edec0c4d42a2f25f28aa087943d33322efec0abf97e38a44276"
+    },
+    {
+      "id": 12,
+      "url": "https://docs.oracle.com/en/cloud/saas/fusion-ai/26d/aiaas/add-a-reference-block-to-a-reference-node-of-workflows.html",
+      "title": "🐴 Add a Reference Block to a Reference Node of Workflows",
+      "quote": "Reference blocks define reusable logic in agentic workflows.",
+      "classification": "documentation assertion",
+      "release": "26D",
+      "captureSha256": "f97053c03d1e6feb2e72809c129bac145819d06a135f7ce5769730c21458d2b0"
+    },
+    {
+      "id": 13,
+      "url": "https://docs.oracle.com/en/cloud/saas/fusion-ai/26d/aiaas/edit-a-workflow.html",
+      "title": "🐴 Edit a Workflow",
+      "quote": "You can edit workflows that are in draft status.",
+      "classification": "documentation assertion",
+      "release": "26D",
+      "captureSha256": "12f35cada0961fef649f8fd9a35b0a9d6edfadf4f2f894b48c4b96517ff207ff"
+    },
+    {
+      "id": 14,
+      "url": "https://docs.oracle.com/en/cloud/saas/fusion-ai/26d/aiaas/overview-of-the-debugger.html",
+      "title": "🐴 Overview of the Debugger",
+      "quote": "Duration: How long the node took to run.",
+      "classification": "documentation assertion",
+      "release": "26D",
+      "captureSha256": "7adb187ec83e7a32279b9b7c68d3cb39f9a8af4d4a989e20591bb66263965315"
+    },
+    {
+      "id": 15,
+      "url": "https://docs.oracle.com/en/cloud/saas/fusion-ai/26d/aiaas/create-and-use-run-profiles.html",
+      "title": "🐴 Create and Use Run Profiles",
+      "quote": "Use run profiles to save and replay common test inputs without retyping prompts,",
+      "classification": "documentation assertion",
+      "release": "26D",
+      "captureSha256": "9b95b4da1bb5837a1628100573bfa067ecf1160b2241beb376eaab8ece7b3011"
+    },
+    {
+      "id": 16,
+      "url": "https://docs.oracle.com/en/cloud/saas/fusion-ai/26d/aiaas/inspect-node-results.html",
+      "title": "🐴 Inspect Node Results",
+      "quote": "For Loop and While Loop nodes, inspect the collection or condition,",
+      "classification": "documentation assertion",
+      "release": "26D",
+      "captureSha256": "2c29eac11bf65e6980d092d26e56100ffef0d2c227b8289c935403a041c135e6"
+    },
+    {
+      "id": 17,
+      "url": "https://docs.oracle.com/en/cloud/saas/fusion-ai/26d/aiaas/build-agentic-applications-using-applications-builder.html",
+      "title": "🐴 Build Agentic Applications Using App Builder",
+      "quote": "Only the workflows that are enabled for using in agentic apps are available for selection.",
+      "classification": "documentation assertion",
+      "release": "26D",
+      "captureSha256": "c1a1099e7d436451a940f10c0fbc6d90ea407682dac0eb4d5f68116167093ef4"
+    },
+    {
+      "id": 18,
+      "url": "https://docs.oracle.com/en/cloud/saas/fusion-ai/26d/aiaas/create-and-enable-workflows-for-using-in-agentic-apps.html",
+      "title": "🐴 Create and Enable Workflows for Using in Agentic Applications",
+      "quote": "From the Details tab, enable Expose to agentic apps.",
+      "classification": "documentation assertion",
+      "release": "26D",
+      "captureSha256": "172805428f7d7c9ed1d37c0a1de4569ffccdda8fa9114b2f74d105c945b2f842"
+    },
+    {
+      "id": 19,
+      "url": "https://docs.oracle.com/en/cloud/saas/fusion-ai/26d/aiaas/create-and-configure-workflows-for-use-in-agentic-apps.html",
+      "title": "🐴 Create and Configure Workflows for Use in Agentic Applications",
+      "quote": "Pass user input and history explicitly.",
+      "classification": "documentation assertion",
+      "release": "26D",
+      "captureSha256": "c0a4bd0ce689dc9813961e772cf3ec916ce16f52fcbe76a8d57883eb02500f0e"
+    },
+    {
+      "id": 20,
+      "url": "https://docs.oracle.com/en/cloud/saas/fusion-ai/26d/aiaas/anatomy-of-an-agentic-app.html",
+      "title": "🐴 Anatomy of an Agentic Application",
+      "quote": "Any subsequent questions, actions, and communications are then scoped to the selected agent.",
+      "classification": "documentation assertion",
+      "release": "26D",
+      "captureSha256": "f06a9ed3acb8d3badfcdc78305c9ff2cb189fc4da5ea77c41ceb8cb8703ad58f"
+    },
+    {
+      "id": 21,
+      "url": "https://docs.oracle.com/en/cloud/saas/fusion-ai/26d/aiaas/monitor-and-evaluate-ai-agents.html",
+      "title": "🐴 Monitor and Evaluate AI Agents",
+      "quote": "Test your agents for response correctness, response time, and token usage to meet your quality standards.",
+      "classification": "documentation assertion",
+      "release": "26D",
+      "captureSha256": "e4924253cbd12c68a91ec04b1be43729598500aedd44c0d83df93db8f60a56e5"
+    },
+    {
+      "id": 22,
+      "url": "https://docs.oracle.com/en/cloud/saas/fusion-ai/26d/aiaas/override-node-configuration.html",
+      "title": "🐴 Override Node Configuration",
+      "quote": "If the override fixes the issue, select Accept to apply it to the workflow.",
+      "classification": "documentation assertion",
+      "release": "26D",
+      "captureSha256": "1a6cdb4927c15299fa139f0b070584f99a06cfde13cecae89bdd21b9bd0da600"
+    },
+    {
+      "id": 23,
+      "url": "https://docs.oracle.com/en/cloud/saas/fusion-ai/26d/aiaas/rerun-step-through-or-resume-a-workflow.html",
+      "title": "🐴 Rerun, Step Through, or Resume a Workflow",
+      "quote": "Step: Run the next node and pause again.",
+      "classification": "documentation assertion",
+      "release": "26D",
+      "captureSha256": "625347fa6d5abc4b9ae0555e9d45e014b134f6b16025d219c22c5e8920820583"
+    },
+    {
+      "id": 24,
+      "url": "https://docs.oracle.com/en/cloud/saas/fusion-ai/26d/aiaas/overview-of-agentic-apps.html",
+      "title": "🐴 Overview of Agentic Applications",
+      "quote": "Communications always initiate outbound messages; they never intercept or receive incoming messages.",
+      "classification": "documentation assertion",
+      "release": "26D",
+      "captureSha256": "fe706684615464cb36f15f9a6a3feae7559f9df205a138b28194f9daa35b4f26"
+    },
+    {
+      "id": 25,
+      "url": "https://www.oracle.com/applications/fusion-ai/#agentic",
+      "title": "Public Fusion AI demo link",
+      "quote": "Watch the agentic app builder demo (1:51)",
+      "classification": "public DOM observation, not video playback",
+      "release": "not specified",
+      "captureSha256": "5288b5216ce7b92a7601bbb6a890487366b250e4b91d179f25705a93a8a6b4ca"
+    },
+    {
+      "id": 26,
+      "url": "https://docs.oracle.com/en/cloud/saas/fusion-ai/26c/aiaas/nodes-in-workflows.html",
+      "title": "Nodes in Workflows — REA 26C capture",
+      "quote": "Here are some of the nodes that are available for workflows:",
+      "classification": "parent REA public-page capture, independently read text artifact",
+      "release": "26C",
+      "captureSha256": "fbcc00beb368b32f67dc9d59e317d78108b6a6cbaea25b1c4c3e7324138fc7b8"
+    }
+  ]
+}

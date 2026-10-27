@@ -110,8 +110,8 @@ export function registerStudioRoutes(app: FastifyInstance, ctx: RegisterRoutesCt
     } catch (err) {
       return mapError(err, reply);
     }
-    const caps = await ctx.capabilitiesFor(rt.id);
     try {
+      const caps = await ctx.capabilitiesFor(rt.id, req);
       return { proposals: caps.listOwnInboxProposals() };
     } catch (err) {
       return mapError(err, reply);
@@ -168,8 +168,8 @@ export function registerStudioRoutes(app: FastifyInstance, ctx: RegisterRoutesCt
       });
     }
 
-    const caps = await ctx.capabilitiesFor(rt.id);
     try {
+      const caps = await ctx.capabilitiesFor(rt.id, req);
       // Idempotency, read back from the only durable state a database-free
       // sub-app has: the filenames it wrote itself.
       const already = findFiledProposal(caps.listOwnInboxProposals(), bundle.subAppId);
@@ -190,7 +190,7 @@ export function registerStudioRoutes(app: FastifyInstance, ctx: RegisterRoutesCt
         ? { username: req.principal.username, displayName: req.principal.displayName }
         : null;
 
-      const proposalPath = caps.writeInboxProposal(
+      const proposalPath = await caps.writeInboxProposal(
         proposalFileNameFor(bundle.subAppId, Date.now()),
         buildProposalBody(bundle, admission, proposedBy, new Date().toISOString()),
       );

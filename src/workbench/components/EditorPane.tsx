@@ -112,10 +112,14 @@ export function EditorPane({
   return (
     <div className="fd-source">
       <header className="fd-source__head">
-        <span className="fd-source__path">
+        <div className="fd-source__identity">
+        <span className="fd-source__path" title={file.path}>
           {file.path.slice(0, file.path.length - name.length)}
           <b>{name}</b>
         </span>
+        <span className="fd-source-kind">{file.kind === "unknown" ? "Unknown generated file kind" : file.kind} · {file.path.endsWith(".tsx") ? "TypeScript / JSX" : file.path.endsWith(".ts") ? "TypeScript" : file.path.endsWith(".sql") ? "SQL" : file.path.endsWith(".patch") ? "Patch" : "Plain text"}</span>
+        </div>
+        <div className="fd-source__actions" role="group" aria-label="Source actions" tabIndex={0}>
         {dirty && (
           <span className="fd-dirty" title="unsaved changes">
             ● unsaved
@@ -166,9 +170,11 @@ export function EditorPane({
             Restore generated
           </button>
         )}
+        {generated !== null && draft !== null && draft.saved !== null && conflict === null && <span className="fd-source__delta"><EditDelta before={generated.contents} after={draft.saved} /></span>}
         <span className="fd-tabs__id">
           {countLines(text)} line{countLines(text) === 1 ? "" : "s"}
         </span>
+        </div>
       </header>
 
       {conflict !== null && (
@@ -187,10 +193,9 @@ export function EditorPane({
       )}
       {refused !== null && editable && <p className="fd-note fd-note--warn">{refused}</p>}
 
-      {dirty && findings.length > 0 && (
+      {(dirty || (draft?.saved != null && draft.saved !== draft.generated)) && findings.length > 0 && (
         <p className="fd-note">
-          The gate's line numbers below are from the last text Studio saw. You have unsaved changes, so they may
-          point at lines that have moved — re-run to re-check.
+          These annotations describe the generated snapshot, not your manual working-source edits. Line numbers may have moved. Saving does not rerun checks.
         </p>
       )}
 
@@ -214,11 +219,6 @@ export function EditorPane({
         <AnnotatedSource text={text} findings={findings} />
       )}
 
-      {generated !== null && draft !== null && draft.saved !== null && conflict === null && (
-        <footer className="fd-source__foot">
-          <EditDelta before={generated.contents} after={draft.saved} />
-        </footer>
-      )}
     </div>
   );
 }
@@ -269,17 +269,16 @@ function AnnotatedSource({ text, findings }: { readonly text: string; readonly f
   );
 }
 
-/** How far the saved edit has moved from Studio's text. Small, and at the
- * bottom, because the number a person wants at a glance is "did I change
- * anything and roughly how much", not a second diff pane. */
+/** Saved versus generated delta lives in the stable source action rail,
+ * not a new footer that takes editing height after the first save. */
 function EditDelta({ before, after }: { readonly before: string; readonly after: string }) {
   const delta = useMemo(() => diffLines(before, after), [before, after]);
   if (delta.added === 0 && delta.removed === 0) {
-    return <span className="fd-ledger__note">Your saved copy is identical to what Studio generated.</span>;
+    return <span className="fd-ledger__note">Saved copy matches generated source.</span>;
   }
   return (
     <span className="fd-ledger__note">
-      Your edit, against what Studio generated this round:{" "}
+      Saved vs generated:{" "}
       <span className="fd-delta__add">+{delta.added}</span>{" "}
       <span className="fd-delta__del">−{delta.removed}</span>
     </span>

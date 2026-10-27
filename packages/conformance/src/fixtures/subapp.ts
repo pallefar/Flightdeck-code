@@ -184,7 +184,7 @@ export function registerWcClockEntriesRoutes(app: FastifyInstance, ctx: Register
       if (!parsed.success) {
         return reply.code(400).send({ error: "invalid body", code: "invalid_body" });
       }
-      const caps = ctx.capabilitiesFor(WC_CLOCK_SUBAPP_ID);
+      const caps = await ctx.capabilitiesFor(rt.id, req);
       await rt.db.run(
         "INSERT INTO subapp_wc_clock_entries(id, ticket, minutes, created_at, created_by) VALUES(?, ?, ?, ?, ?)",
         [crypto.randomUUID(), parsed.data.ticket, parsed.data.minutes, new Date().toISOString(), req.principal?.username ?? "anonymous"],

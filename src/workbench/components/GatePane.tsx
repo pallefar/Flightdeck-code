@@ -18,6 +18,7 @@ interface Props {
   readonly onFilter: (filter: Severity | "all") => void;
   readonly onFocusRule: (rule: string | null) => void;
   readonly onReveal: (path: string) => void;
+  readonly sourceEdited?: boolean;
 }
 
 export function GatePane({
@@ -28,6 +29,7 @@ export function GatePane({
   onFilter,
   onFocusRule,
   onReveal,
+  sourceEdited = false,
 }: Props) {
   if (candidate === null) {
     return <div className="fd-empty">No round selected.</div>;
@@ -41,6 +43,8 @@ export function GatePane({
 
   return (
     <div className="fd-gate">
+      <p className="fd-ledger__note"><strong>Static conformance snapshot</strong> · not installed-host verification. Counts and findings are the checks reported for the generated candidate, not a production approval.</p>
+      {sourceEdited && <p className="fd-note fd-note--warn">Manual working-source edits have not been rechecked. Saving applies local sources; it does not rerun conformance, typecheck, mount or install the sub-app.</p>}
       <div className="fd-gate__summary">
         <Stat n={summary.errors} k="blocking" tone={summary.errors > 0 ? "error" : "ok"} />
         <Stat n={summary.warnings} k="warnings" tone={summary.warnings > 0 ? "warn" : "ok"} />

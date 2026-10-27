@@ -1,0 +1,9 @@
+# Optional overlay only. Do not apply to a running companion without approval.
+services:
+  studio-backend:
+    image: flightdeck-studio-production:local
+    build:
+      context: .
+      dockerfile: deploy/studio-docker/Dockerfile.production
+    environment:
+      STUDIO_FRONTEND_ASSET_ROOT: /app/dist

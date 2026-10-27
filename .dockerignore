@@ -1,0 +1,31 @@
+# Allowlist: never send local keys, .env, .studio, git or node_modules.
+**
+!package.json
+!package-lock.json
+!tsconfig.json
+# Exact nonsecret inputs to the API default RUN tests/context contract.
+!.gitignore
+!.dockerignore
+!server/
+!server/**
+!packages/
+!packages/**
+!deploy/
+!deploy/studio-docker/
+!deploy/studio-docker/**
+# Directory exceptions include descendants: close each parent before exact files.
+!src/
+src/**
+!src/process-studio/
+src/process-studio/**
+!src/process-studio/plan.ts
+!src/process-studio/roi.ts
+!src/process-studio/contracts.ts
+**/node_modules
+**/.env*
+**/*.pem
+**/*.key
+**/.studio
+**/.git
+**/credentials*
+**/secrets.json

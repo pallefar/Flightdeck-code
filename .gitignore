@@ -12,8 +12,10 @@ coverage/
 
 # local env — never commit keys
 .env
-.env.local
-.env.*.local
+.env.*
+!.env.example
+!.env.sample
+!.env.template
 
 # editor / OS
 .DS_Store
@@ -29,3 +31,10 @@ coverage/
 .fd-virtual/
 **/__tests__/tmp/
 .studio/
+
+# Local validation archives: retain locally, never publish by default.
+**/evidence/
+**/node-compile-cache/
+
+# Machine-approved public trust roots: explicit local deployment input only.
+deploy/studio-docker/trust/*.pem

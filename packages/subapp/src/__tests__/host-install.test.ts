@@ -35,6 +35,7 @@
  * `npm run promote` and `scripts/mount-in-host.sh` remain the real answer,
  * against the real repository. This is the one that runs in two seconds on
  * every commit. */
+import { hasHostSdk, typecheckSdk } from "../../../codegen/src/__tests__/sdk-test-support.js";
 import { execFileSync } from "node:child_process";
 import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -156,6 +157,9 @@ function tsc(project: string): { ok: boolean; output: string } {
 }
 
 describe("a Flightdeck host can BUILD the emitted sub-app", () => {
+  it.skipIf(!hasHostSdk)("typechecks copied Studio routes against the live host SDK declarations", () => {
+    expect(typecheckSdk(root, "server/subapps/studio/routes/index.ts", true)).toBe("");
+  });
   it(
     "typechecks the server tier under NodeNext, strict, with no path alias at all",
     () => {

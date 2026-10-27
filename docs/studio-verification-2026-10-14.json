@@ -1,0 +1,84 @@
+{
+  "schema_version": 1,
+  "date": "2026-10-14",
+  "verdict": "engineering-staging-verified-production-blocked",
+  "repository": "/Users/te451223/Flightdeck-code",
+  "git_head": "f80ad1f05018b8a38e720c3df59bff5ff0950cba",
+  "working_tree": "uncommitted",
+  "source_snapshot": {
+    "files": 501,
+    "sha256": "26325db95dcb9cf13176c790d3d724307660b22951309ed91eab7646439677d0",
+    "lock_sha256": "0abeee58636d14e173ad201a43c5bc3da5ca2fc0143b128e3dbf4c1723d239bc",
+    "scope": "Sorted git cached/untracked nonignored regular nonsymlink source files under src/server/packages/scripts/deploy/studio-docker plus package/lock/tsconfig/Vite/Vitest/index files. Markdown excluded. Each path and SHA-256 serialized as compact UTF-8 JSON. Covers tested source, not an exact Docker-context attestation.",
+    "signed_provenance": false
+  },
+  "full_suite": {
+    "command": "FLIGHTDECK_HOST_ROOT=/Users/te451223/project-contract npm test -- --maxWorkers=4 --minWorkers=1",
+    "exit_code": 0,
+    "vitest_files_passed": 186,
+    "vitest_tests_passed": 2864,
+    "vitest_failed": 0,
+    "vitest_skipped": 0,
+    "node_tests_passed": 16,
+    "node_failed": 0,
+    "node_skipped": 0,
+    "typecheck": "passed",
+    "production_build": "passed",
+    "diff_whitespace_check": "passed",
+    "large_chunk_advisory": "568.46 kB JavaScript entry; unsilenced",
+    "output_log": "/Users/te451223/.hermes/cache/terminal-output/out-1791979088-66267-50f0.log"
+  },
+  "manifest_conformance": {
+    "historical_failures_resolved": ["docusign", "maps", "advantage"],
+    "scope": "Bounded static live-host core metadata/source-schema conformance and unchanged strict generated admission",
+    "not_proved": ["optional additive-schema validity", "callback runtime", "installed-host boot", "host deployment"],
+    "host_source_executed": false
+  },
+  "staging": {
+    "origin": "http://127.0.0.1:8790",
+    "demo_path": "/demo",
+    "image_tag": "flightdeck-studio-staging:verified-20261014",
+    "image_id": "sha256:53ce57e036909d5ac4330255b519569971a32f40daea1515e1b8066f2f2debfc",
+    "health": "healthy",
+    "built_assets_same_origin": true,
+    "browser_render": "passed",
+    "main_landmarks": 1,
+    "rendered_template_nodes": 4,
+    "document_horizontal_overflow": false,
+    "mapped_original_run_exact_readback_after_recreation": true,
+    "unconfigured_approval_exact_readback_after_recreation": true,
+    "real_review_runtime": "unconfigured",
+    "companion_unchanged": true,
+    "os_unchanged": true
+  },
+  "runtime_artifact": {
+    "node": "v22.23.3",
+    "uid": 1000,
+    "physical_installed_application_packages": 63,
+    "locked_graph_valid": true,
+    "unnecessary_development_tools_absent": true,
+    "source_tests_absent": true,
+    "actual_image_application_npm_audit_known_findings": 0,
+    "separate_development_graph_findings": 6,
+    "os_and_global_tool_audit": "not performed",
+    "no_selection_build_status": 409,
+    "unauthenticated_api_status": 401,
+    "real_provider_call": false
+  },
+  "release_blockers_remaining": [
+    "Trusted production identity and project membership; independent reviewer/queue authority and session/CSRF integration",
+    "HTTPS deployment/origin policy and signed/approved CI artifact promotion",
+    "Server-only live model credential and actual authorized end-to-end completion",
+    "Production externally monotonic restore authority, enforced quarantine, encryption and recovery drill",
+    "Development-toolchain advisory migration and separate OS/global-tool supply-chain scan",
+    "Model egress policy, retention/privacy authority, operational key lifecycle, readiness/observability and other open audit gates",
+    "Installed-host workflow runtime integration and bounded agent/subflow composition"
+  ],
+  "historical_audit_ledger": "studio-production-gates.json",
+  "latest_gate_override": {
+    "G14": {
+      "state": "verified",
+      "scope": "Full host-aware tests and strict generated admission plus live-host core metadata drift checks; not full host boot"
+    }
+  }
+}

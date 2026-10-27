@@ -1,0 +1,12 @@
+# Explicit opt-in, for a token owned by the same human's password manager.
+services:
+  studio-backend:
+    environment:
+      STUDIO_OPERATOR_TOKEN_FILE: /run/studio-secrets/operator-token
+    volumes:
+      - type: bind
+        source: ${STUDIO_OPERATOR_SECRET_FILE:?Set the path to a private operator token file}
+        target: /run/studio-secrets/operator-token
+        read_only: true
+        bind:
+          create_host_path: false

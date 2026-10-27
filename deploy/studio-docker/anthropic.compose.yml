@@ -1,0 +1,12 @@
+# Explicit opt-in; default compose has no credential mount.
+services:
+  studio-backend:
+    environment:
+      ANTHROPIC_API_KEY_FILE: /run/studio-secrets/anthropic-key
+    volumes:
+      - type: bind
+        source: ${STUDIO_ANTHROPIC_SECRET_FILE:?Set the path to a private Anthropic API key file}
+        target: /run/studio-secrets/anthropic-key
+        read_only: true
+        bind:
+          create_host_path: false
