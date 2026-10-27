@@ -48,7 +48,10 @@ export async function requestJson(destination:string, options:{method:'GET'|'POS
       const started = performance.now();
       const req = (url.protocol==='https:' ? httpsRequest : httpRequest)(url, { method:options.method, headers:{accept:'application/json, text/event-stream',...(payload ? {'content-type':'application/json','content-length':String(Buffer.byteLength(payload))} : {}),...options.headers}, signal:controller.signal, agent:false,
         // Pin the checked address; never resolve a second time at connect.
-        lookup:(_hostname,_options,callback)=>callback(null,address.address,address.family)
+        lookup:(_hostname,lookupOptions,callback)=>{
+          if(lookupOptions.all) callback(null,[{...address}]);
+          else callback(null,address.address,address.family);
+        }
       },res=>{
         const fail = (status:number)=>{ res.destroy(); reject(new ResourceError(status)); };
         if(options.notification && res.statusCode===202) {res.resume(); resolve({value:null,headers:res.headers,durationMs:performance.now()-started}); return;}
