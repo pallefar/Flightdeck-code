@@ -5,10 +5,9 @@ import type {ProcessDraft,ProcessTemplateId} from './contracts';
 import {generateSubApp} from '../../packages/codegen/src/pure';
 import {buildSubAppFromSpec} from '../../packages/pipeline/src/build-subapp-spec';
 import {createHash} from 'node:crypto';
-import fs from 'node:fs';
-import path from 'node:path';
+
 import {fileURLToPath} from 'node:url';
-import ts from 'typescript';
+import {runtimeImportClosure} from '../../test-helpers/runtime-import-closure';
 
 function completeDraft(templateId:ProcessTemplateId='operations-queue'):ProcessDraft {
  const draft=emptyProcessDraft();
@@ -251,21 +250,7 @@ it('never invokes nested property or array accessors and accepts ordinary null-p
 });
 
 it('keeps the complete runtime import closure browser-safe without IO, model or host modules',()=>{
- const pending=[fileURLToPath(new URL('./plan.ts',import.meta.url))];
- const seen=new Set<string>(),bare=new Set<string>();
- while(pending.length){
-  const file=pending.pop()!;if(seen.has(file))continue;seen.add(file);
-  const source=ts.createSourceFile(file,fs.readFileSync(file,'utf8'),ts.ScriptTarget.Latest,true);
-  for(const statement of source.statements){
-   if((!ts.isImportDeclaration(statement)&&!ts.isExportDeclaration(statement))||!statement.moduleSpecifier||!ts.isStringLiteral(statement.moduleSpecifier))continue;
-   const id=statement.moduleSpecifier.text;
-   if(!id.startsWith('.')){bare.add(id);continue;}
-   const resolved=path.resolve(path.dirname(file),id.replace(/\.js$/,''));
-   const target=[resolved,`${resolved}.ts`,`${resolved}.tsx`,path.join(resolved,'index.ts')].find(p=>fs.existsSync(p)&&fs.statSync(p).isFile());
-   if(!target)throw Error(`Unresolved ${id}`);
-   pending.push(target);
-  }
- }
+ const {seen,bare}=runtimeImportClosure(fileURLToPath(new URL('../../',import.meta.url)),[fileURLToPath(new URL('./plan.ts',import.meta.url))]);
  expect([...bare]).toEqual(['zod']);
  expect([...seen].some(p=>p.includes('/server/')||p.includes('/pipeline/')||p.includes('/apply.ts'))).toBe(false);
 });

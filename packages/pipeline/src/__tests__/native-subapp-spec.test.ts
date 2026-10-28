@@ -1,8 +1,7 @@
 import { createHash } from "node:crypto";
-import fs from "node:fs";
-import path from "node:path";
+
 import { fileURLToPath } from "node:url";
-import ts from "typescript";
+import { runtimeImportClosure } from "../../../../test-helpers/runtime-import-closure";
 import { expect, it, vi } from "vitest";
 import { buildSubAppFromSpec } from "../build-subapp-spec";
 import * as codegen from "../../../codegen/src/pure";
@@ -185,23 +184,7 @@ it("asks stable targeted human choices before calling the generator", async () =
 });
 
 it("keeps the native builder import closure route-safe without loading CLI or IO modules", () => {
-  const pending = [fileURLToPath(new URL("../build-subapp-spec.ts", import.meta.url))];
-  const seen = new Set<string>(), bare = new Set<string>();
-  while (pending.length) {
-    const file = pending.pop()!;
-    if (seen.has(file)) continue;
-    seen.add(file);
-    const source = ts.createSourceFile(file, fs.readFileSync(file, "utf8"), ts.ScriptTarget.Latest, true);
-    for (const statement of source.statements) {
-      if ((!ts.isImportDeclaration(statement) && !ts.isExportDeclaration(statement)) || !statement.moduleSpecifier || !ts.isStringLiteral(statement.moduleSpecifier)) continue;
-      const id = statement.moduleSpecifier.text;
-      if (!id.startsWith(".")) { bare.add(id); continue; }
-      const resolved = path.resolve(path.dirname(file), id.replace(/\.js$/, ""));
-      const target = [resolved, `${resolved}.ts`, `${resolved}.tsx`, path.join(resolved, "index.ts")].find(p => fs.existsSync(p) && fs.statSync(p).isFile());
-      expect(target, `${file}: ${id}`).toBeDefined();
-      pending.push(target!);
-    }
-  }
+  const { seen, bare } = runtimeImportClosure(fileURLToPath(new URL("../../../../", import.meta.url)), [fileURLToPath(new URL("../build-subapp-spec.ts", import.meta.url))]);
   expect([...bare].sort()).toEqual(["zod"]);
   expect([...seen].some(file => /packages\/codegen\/src\/(?:cli|apply)\.ts$/.test(file))).toBe(false);
   expect([...seen].some(file => file.endsWith("/codegen/src/generate.ts"))).toBe(true);

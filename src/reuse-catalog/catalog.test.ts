@@ -1,8 +1,8 @@
 import {z} from 'zod';
-import {readFileSync,existsSync} from 'node:fs';
+import {readFileSync} from 'node:fs';
 import {resolve,dirname} from 'node:path';
 import {fileURLToPath} from 'node:url';
-import ts from 'typescript';
+import {runtimeImportClosure} from '../../test-helpers/runtime-import-closure';
 import {it,expect,vi} from 'vitest';
 import {builtinRegistry,configSchemas} from '../../packages/workflow/graph';
 import {PROCESS_TEMPLATES} from '../process-studio/plan';
@@ -173,24 +173,8 @@ it('S11 detail/default fingerprints match their named exact JSON UTF-8 projectio
 });
 
 it('S12 browser runtime import closure has only zod bare imports and no server, Node, dependency mutation or storage root',()=>{
- const own=dirname(fileURLToPath(import.meta.url)),seen=new Set<string>(),bare=new Set<string>(),queue=[resolve(own,'catalog.ts'),resolve(own,'controller.ts')];
- while(queue.length){
-  const file=queue.pop()!;if(seen.has(file))continue;seen.add(file);
-  const text=readFileSync(file,'utf8'),tree=ts.createSourceFile(file,text,ts.ScriptTarget.Latest,true),imports:string[]=[];
-  const walk=(node:ts.Node)=>{
-   if(ts.isImportDeclaration(node)&&ts.isStringLiteral(node.moduleSpecifier)){
-    const c=node.importClause;
-    if(!c?.isTypeOnly&&!(c?.namedBindings&&ts.isNamedImports(c.namedBindings)&&!c.name&&c.namedBindings.elements.every(e=>e.isTypeOnly)))imports.push(node.moduleSpecifier.text);
-   }
-   if(ts.isExportDeclaration(node)&&!node.isTypeOnly&&node.moduleSpecifier&&ts.isStringLiteral(node.moduleSpecifier))imports.push(node.moduleSpecifier.text);
-   if(ts.isCallExpression(node)&&(node.expression.kind===ts.SyntaxKind.ImportKeyword||ts.isIdentifier(node.expression)&&node.expression.text==='require')){expect(node.arguments[0]&&ts.isStringLiteral(node.arguments[0])).toBe(true);imports.push((node.arguments[0] as ts.StringLiteral).text);}
-   ts.forEachChild(node,walk);
-  };walk(tree);
-  for(const specifier of imports){
-   if(!specifier.startsWith('.')){bare.add(specifier);continue;}
-   const target=resolve(dirname(file),specifier),found=[target,target+'.ts',target+'.tsx',resolve(target,'index.ts')].find(existsSync);expect(found).toBeDefined();if(found)queue.push(found);
-  }
- }
+ const own=dirname(fileURLToPath(import.meta.url));
+ const {seen,bare}=runtimeImportClosure(resolve(own,'../..'),[resolve(own,'catalog.ts'),resolve(own,'controller.ts')]);
  expect([...bare].sort()).toEqual(['zod']);
  for(const file of seen){expect(file).not.toContain('/server/');expect(file).not.toContain('/authoring-harness/');expect(file).not.toContain('/node_modules/');}
  const production=[resolve(own,'catalog.ts'),resolve(own,'controller.ts')].map(p=>readFileSync(p,'utf8')).join('\n');

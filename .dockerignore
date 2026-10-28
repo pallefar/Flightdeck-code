@@ -22,6 +22,7 @@ src/process-studio/**
 !src/process-studio/roi.ts
 !src/process-studio/contracts.ts
 **/node_modules
+packages/studio-drafts/dist
 **/.env*
 **/*.pem
 **/*.key
