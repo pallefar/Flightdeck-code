@@ -4,6 +4,7 @@ import { StudioApp, WorkflowReview, reviewedHandoff } from "../StudioApp";
 import { StudioController } from "../controller";
 import { parseStudioResult } from "../result";
 import { workflow } from "./fixtures";
+import {hasClass,semanticBlockers,ssrTags} from './ordinary-ssr-contract';
 
 it('shows four explicit destinations without credentials and refuses creation until checked and selected', () => {
   const html = renderToStaticMarkup(<StudioApp />);
@@ -11,7 +12,16 @@ it('shows four explicit destinations without credentials and refuses creation un
   for (const id of ['codex-chatgpt', 'flightdeck', 'local', 'anthropic']) expect(html).toContain(`value="${id}" disabled`);
   expect(html).toContain('configured does not mean connected');
   expect(html).toContain('No backend credentials supplied');
-  expect(html).toMatch(/type="submit" disabled=""[^>]*>Create draft/);
+  // Keep the no-generation security oracle, independent of attribute order.
+  // The separate reachable setup action must not be disabled to satisfy it.
+  const tags=ssrTags(html),create=tags.find(n=>n.tag==='button'&&n.attrs.type==='submit'&&n.ancestors.some(a=>hasClass(a,'studio-send-row')));
+  expect(create).toBeDefined();
+  expect(create!.attrs).toHaveProperty('disabled');
+  expect(create!.attrs).toHaveProperty('hidden');
+  const setup=tags.find(n=>n.tag==='button'&&n.attrs['data-primary-action']==='true'&&n.ancestors.some(a=>hasClass(a,'studio-send-row')));
+  expect(setup).toBeDefined();expect(setup!.attrs.type).toBe('button');
+  expect(setup!.attrs).not.toHaveProperty('disabled');
+  expect(semanticBlockers(setup!)).toEqual([]);
 });
 
 it("mounts an idle authenticated composer without fixture generation or model calls", () => {

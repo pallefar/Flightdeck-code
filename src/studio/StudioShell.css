@@ -82,3 +82,32 @@
 }
 @media(prefers-reduced-motion:reduce){.studio-shell *,.studio-shell *::before,.studio-shell *::after{animation:none!important;transition:none!important;scroll-behavior:auto!important}}
 .studio-shell[data-motion=off] *,.studio-shell[data-motion=off] *::before,.studio-shell[data-motion=off] *::after{animation:none!important;transition:none!important;scroll-behavior:auto!important}
+
+/* Command / Inspect: compact navigation, one authoring plane, Atlas tokens.
+ * Paper warmth is derived, not a replacement host palette or downloaded theme. */
+.studio.studio-shell{--studio-paper:color-mix(in srgb,var(--te,#e98300) 3%,var(--surface,#fff));--studio-background:var(--studio-paper);--studio-sidebar-width:148px;grid-template-rows:56px 32px minmax(0,1fr)}
+.studio-shell .studio-sidebar{padding:22px 10px 14px;background:var(--studio-paper)}
+.studio-shell .studio-brand{padding:0 10px 25px}
+.studio-shell .studio-brand strong{font-size:16px;letter-spacing:.4px}
+.studio-shell .studio-brand strong>span{font-size:11px;margin-top:4px}
+.studio-shell .studio-workspace-label{font-size:9px;margin:0 10px 10px}
+.studio-shell .studio-navigation{gap:5px}
+.studio-shell .studio-navigation button{font-size:14px;padding:10px;min-height:44px}
+.studio-shell .studio-sidebar-bottom{padding:20px 10px 0;font-size:10px}
+.studio-shell .studio-appbar{padding-inline:18px;gap:12px;background:var(--surface,#fff)}
+.studio-shell .studio-breadcrumbs{gap:9px;font-size:12px}
+.studio-shell .studio-context{padding-inline:18px;gap:12px;background:var(--studio-paper);border-bottom:0;font-size:10px}
+.studio-shell .studio-context-details summary{min-height:32px}
+.studio-shell .studio-main{padding:8px 16px 16px}
+.studio-shell .studio-tools-panel{z-index:35}
+@media(max-width:1100px){.studio-shell .studio-appbar,.studio-shell .studio-context{padding-inline:12px}.studio-shell .studio-main{padding:8px 12px 12px}}
+@media(max-width:850px){
+ .studio.studio-shell{grid-template-columns:minmax(0,1fr);grid-template-rows:56px 32px minmax(0,1fr)}
+ .studio-shell .studio-appbar{padding-inline:8px;gap:6px}
+ .studio-shell .studio-ai-setup-button{max-width:110px;white-space:normal;font-size:11px;line-height:1.25;padding:5px 7px}
+ .studio-shell .studio-context{padding-inline:10px;gap:8px;font-size:9px}
+ .studio-shell .studio-context-project{max-width:30%;flex:1}
+ .studio-shell .studio-model-context{flex:1}
+ .studio-shell .studio-context-status{position:static;width:auto;height:auto;clip-path:none;overflow:visible;font-size:9px}
+ .studio-shell .studio-main{padding:6px 8px 8px}
+}

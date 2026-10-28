@@ -1,0 +1,25 @@
+/* Owned host adapter only. Exact reviewed module and portable pd CSS remain immutable.
+   The 1280x600 host pane is 760px, not the viewport: its original 816px grid clipped
+   the inspector. Use actual slot width, retaining scrollable editing and all controls. */
+.studio-shell .studio-page-workspace-slot { container: studio-page / inline-size; min-width: 0; }
+/* Keep the pinned primary pair when its generic enabled hover rule applies. */
+.studio-page-workspace-slot .fd-app-designer .fd-primary:not(:disabled):is(:hover, :active, :focus-visible) {
+  background: var(--te);
+  color: #21180d;
+}
+@container studio-page (max-width: 850px) {
+  .studio-page-workspace-slot .fd-app-designer .fd-workspace { display: grid; grid-template-columns: 190px minmax(0, 1fr); }
+  .studio-page-workspace-slot .fd-app-designer .fd-inspector { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 25px; border-top: 1px solid var(--line); border-left: 0; }
+  .studio-page-workspace-slot .fd-app-designer .fd-inspector-head { grid-column: 1 / -1; }
+  .studio-page-workspace-slot .fd-app-designer .fd-stage { padding-inline: 16px; }
+}
+@container studio-page (max-width: 520px) {
+  .studio-page-workspace-slot .fd-app-designer .fd-workspace { display: flex; flex-direction: column; }
+  .studio-page-workspace-slot .fd-app-designer .fd-inspector { display: block; }
+  .studio-page-workspace-slot .fd-app-designer .fd-left { border-right: 0; }
+  .studio-page-workspace-slot .fd-app-designer .fd-library .fd-palette { grid-template-columns: minmax(0, 1fr); }
+  .studio-page-workspace-slot .fd-app-designer .fd-palette-card button { min-width: 44px; min-height: 44px; flex: 0 0 44px; }
+  .studio-page-workspace-slot .fd-app-designer .fd-outline { max-height: 110px; overflow: auto; }
+  .studio-page-workspace-slot .fd-app-designer .fd-toolbar .fd-work-title { width: 100%; }
+  .studio-page-workspace-slot .fd-app-designer .fd-palette-card { min-width: 0; }
+}

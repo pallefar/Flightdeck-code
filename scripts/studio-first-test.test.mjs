@@ -1,6 +1,9 @@
-import { describe, expect, it } from 'vitest';
-import { existsSync, readFileSync } from 'node:fs';
+import { afterEach, describe, expect, it } from 'vitest';
+import { constants, existsSync, readFileSync } from 'node:fs';
+import { createOwnedFixture, fixtureCleanupReceipt } from './test-fixtures/owned-root';
 import * as launcher from './studio-first-test.mjs';
+
+afterEach(() => fixtureCleanupReceipt(expect.getState().currentTestName));
 
 const goodInspection = () => ({
   id: 'a'.repeat(64), name: '/'+launcher.TARGET.container, image: launcher.TARGET.image,
@@ -251,8 +254,11 @@ describe('safe end-to-end check orchestration', () => {
 describe('bounded executable launcher', () => {
   it('rejects clipboard intent without acknowledgment before accessing any secret', async () => {
     const {spawnSync}=await import('node:child_process');
-    const r=spawnSync(process.execPath,[source.pathname,'--copy-operator-token'],{encoding:'utf8',timeout:5000,env:{PATH:'/usr/bin:/bin',HOME:'/nonexistent',TMPDIR:'/Users/te451223/.hermes/cache/scratch'}});
-    expect(r.status).toBe(1);expect(JSON.parse(r.stdout)).toEqual({schemaVersion:1,status:'broken',check:'arguments-refused'});expect(r.stderr).toBe('');
+    const f = await createOwnedFixture('first-test-cli-');
+    try {
+      const r=spawnSync(process.execPath,[source.pathname,'--copy-operator-token'],{encoding:'utf8',timeout:5000,env:f.env});
+      expect(r.status).toBe(1);expect(JSON.parse(r.stdout)).toEqual({schemaVersion:1,status:'broken',check:'arguments-refused'});expect(r.stderr).toBe('');
+    } finally { await f.clean(); }
   });
   it('bounds child output and execution with fixed nonsecret errors', async () => {
     expect(typeof launcher.runProcess).toBe('function');
@@ -274,24 +280,127 @@ describe('bounded executable launcher', () => {
   });
 });
 
+describe('portable invocation-owned fixture controls', () => {
+  const helper = () => import('./test-fixtures/owned-root.ts');
+  it('uses explicit private TMPDIR rather than a personal Mac path and supports only an existing private home anchor', async () => {
+    const { createOwnedFixture, ownedFixtureParent } = await helper();
+    const { dirname, join } = await import('node:path');
+    const { mkdir, lstat } = await import('node:fs/promises');
+    const parent = await ownedFixtureParent();
+    const f = await createOwnedFixture('portable-control-');
+    try {
+      expect(dirname(f.dir)).toBe(parent);
+      expect(f.dir.startsWith(parent + '/')).toBe(true);
+      for (const key of ['HOME', 'TMPDIR', 'XDG_CONFIG_HOME', 'XDG_CACHE_HOME']) {
+        expect(dirname(f.env[key])).toBe(f.dir);
+        const info = await lstat(f.env[key]);
+        expect(info.isDirectory() && !info.isSymbolicLink()).toBe(true);
+        expect(info.uid).toBe(process.getuid()); expect(info.mode & 0o7777).toBe(0o700);
+      }
+      const homeAnchor = join(f.env.HOME, '.hermes/cache/scratch');
+      await expect(ownedFixtureParent({ tmpdir: undefined, home: f.env.HOME })).rejects.toThrow();
+      await mkdir(homeAnchor, { recursive: true, mode: 0o700 });
+      expect(await ownedFixtureParent({ tmpdir: undefined, home: f.env.HOME })).toBe(homeAnchor);
+    } finally { await f.clean(); }
+  });
+  it('refuses escape syntax, symlink ancestry and nonprivate invocation roots without allocating a fixture', async () => {
+    const { createOwnedFixture, ownedFixtureParent } = await helper();
+    const { mkdir, chmod, symlink, readdir } = await import('node:fs/promises');
+    const { join } = await import('node:path');
+    const f = await createOwnedFixture('portable-refusal-');
+    try {
+      const loose = join(f.dir, 'loose'), alias = join(f.dir, 'alias');
+      await mkdir(loose, { mode: 0o700 }); await chmod(loose, 0o755); await symlink(f.env.TMPDIR, alias);
+      const before = await readdir(f.dir);
+      for (const tmpdir of [loose, alias, join(alias, 'child'), f.dir + '/', f.dir + '/.', f.dir + '/..', f.dir + '//tmp', 'relative', '/', f.dir + '/bad\npath', f.dir + '/bad\\path']) {
+        await expect(ownedFixtureParent({ tmpdir })).rejects.toThrow('owned fixture refused');
+        await expect(createOwnedFixture('forbidden-', { tmpdir })).rejects.toThrow('owned fixture refused');
+      }
+      expect(await readdir(f.dir)).toEqual(before);
+    } finally { await f.clean(); }
+  });
+  it('refuses a replaced root and cleans only its exact owned inode, leaving a sibling fixture untouched', async () => {
+    const { createOwnedFixture } = await helper();
+    const { rename, symlink, unlink, writeFile, readFile } = await import('node:fs/promises');
+    const f = await createOwnedFixture('portable-cleanup-'), sibling = await createOwnedFixture('portable-sibling-');
+    const retained = f.dir + '.retained', sentinel = sibling.dir + '/sentinel';
+    try {
+      await writeFile(sentinel, 'NONSECRET SIBLING', { flag: 'wx', mode: 0o600 });
+      await rename(f.dir, retained); await symlink(sibling.dir, f.dir);
+      try { await expect(f.clean()).rejects.toThrow('owned fixture refused'); }
+      finally { await unlink(f.dir); await rename(retained, f.dir); }
+      await f.clean();
+      expect(await readFile(sentinel, 'utf8')).toBe('NONSECRET SIBLING');
+    } finally { await f.clean(); await sibling.clean(); }
+  });
+  it('passes an explicit credential-free effective child environment and records only its actual finite owned PID', async () => {
+    const { createOwnedFixture } = await helper();
+    const { spawnSync } = await import('node:child_process');
+    const f = await createOwnedFixture('portable-child-env-');
+    let pid;
+    try {
+      const text = `const fs=require('node:fs'),path=require('node:path');const marker=path.join(process.env.TMPDIR,'effective-child.json');const value={pid:process.pid,ppid:process.ppid,uid:process.getuid(),env:process.env};fs.writeFileSync(marker,JSON.stringify(value),{flag:'wx',mode:0o600});process.stdout.write(JSON.stringify(value));`;
+      const child = spawnSync(process.execPath, ['-e', text], { env: f.env, encoding: 'utf8', timeout: 5000 });
+      expect(child.error).toBeUndefined(); expect(child.status).toBe(0); expect(child.stderr).toBe('');
+      const actual = JSON.parse(child.stdout); pid = child.pid;
+      expect(actual).toEqual({ pid, ppid: process.pid, uid: process.getuid(), env: f.env });
+      expect(Object.keys(actual.env).sort()).toEqual(Object.keys(f.env).sort());
+      expect(pid).toBeGreaterThan(1); expect(pid).not.toBe(process.pid);
+      expect(() => process.kill(pid, 0)).toThrow();
+      process.stdout.write('[owned-fixture-child]' + JSON.stringify(actual) + '\n');
+    } finally { await f.clean({ pids: pid ? [pid] : [] }); }
+  });
+});
+
 describe('L1 owned child lifecycle', () => {
-  const scratch='/Users/te451223/.hermes/cache/scratch/';
   const delay=ms=>new Promise(resolve=>setTimeout(resolve,ms));
   const alive=pid=>{try{process.kill(pid,0);return true;}catch{return false;}};
   async function fixture() {
     const fs=await import('node:fs/promises');
-    const dir=await fs.mkdtemp(scratch+'first-test-owned-child-');
-    const marker=dir+'/pids.json';
+    const owned=await createOwnedFixture('first-test-owned-child-');
+    const marker=owned.dir+'/pids.json';
     let pids=[];
-    return {marker,async pids(){for(let i=0;i<200;i++){try{pids=JSON.parse(await fs.readFile(marker,'utf8'));return pids;}catch{await delay(5);}}throw new Error('fixture-pid-timeout');},async clean(){for(const pid of pids)if(alive(pid))try{process.kill(pid,'SIGKILL');}catch{}for(let i=0;i<100&&pids.some(alive);i++)await delay(5);await fs.rm(dir,{recursive:true,force:true});expect(pids.filter(alive),'all owned fixture children must be gone').toEqual([]);}};
+    async function privateJSON(path) {
+      const handle=await fs.open(path,constants.O_RDONLY|constants.O_NOFOLLOW);
+      try {
+        const stat=await handle.stat();
+        expect(stat.isFile()&&stat.nlink===1&&stat.uid===process.getuid()&&(stat.mode&0o7777)===0o600).toBe(true);
+        return JSON.parse(await handle.readFile('utf8'));
+      } finally { await handle.close(); }
+    }
+    return {...owned,marker,async pids(){
+      for(let i=0;i<200;i++){
+        let record;
+        try { record=await privateJSON(marker); }
+        catch(error){if(error.code!=='ENOENT')throw error;await delay(5);continue;}
+        expect(record.pids).toHaveLength(2);
+        expect(record.pids.every(pid=>Number.isSafeInteger(pid)&&pid>1&&pid!==process.pid)).toBe(true);
+        expect(new Set(record.pids).size).toBe(2);pids=record.pids;
+        expect(record.uid).toBe(process.getuid());expect(record.env).toEqual(owned.env);
+        process.stdout.write('[owned-fixture-child]'+JSON.stringify({pids,uid:record.uid,env:record.env})+'\n');
+        return pids;
+      }
+      throw new Error('fixture-pid-timeout');
+    },async clean(){
+      for(const pid of pids)if(alive(pid))try{process.kill(pid,'SIGKILL');}catch{}
+      for(let i=0;i<100&&pids.some(alive);i++)await delay(5);
+      expect(pids.filter(alive),'all owned fixture children must be gone').toEqual([]);
+      await owned.clean({pids,alive:pids.filter(alive)});
+    }};
   }
-  function code(marker,{escape=false,exit=false}={}) {
-    return `const {spawn}=require('node:child_process');const fs=require('node:fs');const child=spawn(process.execPath,['-e','setTimeout(()=>{},3000)'],{detached:${escape},stdio:['ignore','inherit','inherit']});fs.writeFileSync(${JSON.stringify(marker)},JSON.stringify([process.pid,child.pid]));${exit?'process.stdout.write("NONSECRET");process.exit(0);':'setTimeout(()=>process.exit(0),3000);'}`;
+  function program(text) {
+    process.stdout.write('[owned-fixture-program]'+JSON.stringify({text})+'\n');return text;
+  }
+  function code(f,{escape=false,exit=false}={}) {
+    // runProcess's production environment is intentionally unchanged. This fixed
+    // test program explicitly rebases its own environment before its only spawn.
+    const child='setTimeout(()=>{},3000)';
+    return program(`for(const key of Object.keys(process.env))delete process.env[key];Object.assign(process.env,${JSON.stringify(f.env)});const {spawn}=require('node:child_process');const fs=require('node:fs');const child=spawn(process.execPath,['-e',${JSON.stringify(child)}],{detached:${escape},stdio:['ignore','inherit','inherit']});fs.writeFileSync(${JSON.stringify(f.marker)},JSON.stringify({pids:[process.pid,child.pid],uid:process.getuid(),env:process.env}),{flag:'wx',mode:0o600});${exit?'process.stdout.write("NONSECRET");process.exit(0);':'setTimeout(()=>process.exit(0),3000);'}`);
   }
   it('kills an owned process group on timeout without waiting for inherited pipes', async () => {
     const f=await fixture();let work;
     try {
-      work=launcher.runProcess(process.execPath,['-e',code(f.marker)],{limit:128,timeoutMs:150}).then(()=> 'resolved',e=>e.message);
+      work=launcher.runProcess(process.execPath,['-e',code(f)],{limit:128,timeoutMs:150}).then(()=> 'resolved',e=>e.message);
       const pids=await f.pids();const status=await Promise.race([work,delay(650).then(()=> 'pending')]);
       expect(status).toBe('process-check-failed');
       for(let i=0;i<100&&pids.some(alive);i++)await delay(5);
@@ -301,7 +410,7 @@ describe('L1 owned child lifecycle', () => {
   it('reaps same-group descendants when the direct child successfully exits', async () => {
     const f=await fixture();let work;
     try {
-      work=launcher.runProcess(process.execPath,['-e',code(f.marker,{exit:true})],{limit:128,timeoutMs:2000}).then(b=>b.toString(),e=>e.message);
+      work=launcher.runProcess(process.execPath,['-e',code(f,{exit:true})],{limit:128,timeoutMs:2000}).then(b=>b.toString(),e=>e.message);
       const pids=await f.pids();expect(await Promise.race([work,delay(650).then(()=> 'pending')])).toBe('NONSECRET');
       for(let i=0;i<100&&pids.some(alive);i++)await delay(5);
       expect(pids.filter(alive)).toEqual([]);
@@ -310,7 +419,7 @@ describe('L1 owned child lifecycle', () => {
   it('bounds stream closure even when an owned fixture escapes its process group', async () => {
     const f=await fixture();let work;
     try {
-      work=launcher.runProcess(process.execPath,['-e',code(f.marker,{escape:true})],{limit:128,timeoutMs:150}).then(()=> 'resolved',e=>e.message);
+      work=launcher.runProcess(process.execPath,['-e',code(f,{escape:true})],{limit:128,timeoutMs:150}).then(()=> 'resolved',e=>e.message);
       await f.pids();expect(await Promise.race([work,delay(650).then(()=> 'pending')])).toBe('process-check-failed');
       // Only this harness knows the escaped PID; it is cleaned below, not claimed killed by runProcess.
     }finally{await f.clean();await work;}
@@ -319,8 +428,8 @@ describe('L1 owned child lifecycle', () => {
     const f=await fixture();let wrapper;
     const {spawn}=await import('node:child_process');
     try {
-      const body=`import {runProcess} from ${JSON.stringify(source.href)};import {existsSync} from 'node:fs';const poll=setInterval(()=>{if(existsSync(${JSON.stringify(f.marker)}))process.exit(0);},5);await runProcess(process.execPath,['-e',${JSON.stringify(code(f.marker))}],{limit:128,timeoutMs:2500}).catch(()=>{});clearInterval(poll);`;
-      wrapper=spawn(process.execPath,['--input-type=module','-e',body],{env:{PATH:'/usr/bin:/bin',HOME:scratch,TMPDIR:scratch},stdio:'ignore'});
+      const body=`import {runProcess} from ${JSON.stringify(source.href)};import {existsSync} from 'node:fs';const poll=setInterval(()=>{if(existsSync(${JSON.stringify(f.marker)}))process.exit(0);},5);await runProcess(process.execPath,['-e',${JSON.stringify(code(f))}],{limit:128,timeoutMs:2500}).catch(()=>{});clearInterval(poll);`;
+      wrapper=spawn(process.execPath,['--input-type=module','-e',program(body)],{env:f.env,stdio:'ignore'});
       const exit=new Promise(resolve=>wrapper.once('exit',(code,signal)=>resolve({code,signal})));
       const pids=await f.pids();expect(await Promise.race([exit,delay(1000).then(()=> 'pending')])).toEqual({code:0,signal:null});
       for(let i=0;i<100&&pids.some(alive);i++)await delay(5);
@@ -331,8 +440,8 @@ describe('L1 owned child lifecycle', () => {
     const f=await fixture();let wrapper;
     const {spawn}=await import('node:child_process');
     try {
-      const body=`import {runProcess} from ${JSON.stringify(source.href)};await runProcess(process.execPath,['-e',${JSON.stringify(code(f.marker))}],{limit:128,timeoutMs:2500}).catch(()=>{});`;
-      wrapper=spawn(process.execPath,['--input-type=module','-e',body],{env:{PATH:'/usr/bin:/bin',HOME:scratch,TMPDIR:scratch},stdio:'ignore'});
+      const body=`import {runProcess} from ${JSON.stringify(source.href)};await runProcess(process.execPath,['-e',${JSON.stringify(code(f))}],{limit:128,timeoutMs:2500}).catch(()=>{});`;
+      wrapper=spawn(process.execPath,['--input-type=module','-e',program(body)],{env:f.env,stdio:'ignore'});
       const exit=new Promise(resolve=>wrapper.once('exit',(code,signal)=>resolve({code,signal})));
       const pids=await f.pids();wrapper.kill(signal);
       const result=await Promise.race([exit,delay(1000).then(()=> 'pending')]);

@@ -67,7 +67,7 @@ describe.skipIf(!available)("bounded live host metadata projection", () => {
   });
 
   it("detects drift in local rules independently of host examples", () => {
-    expect(() => readHostManifestContract(host, local.replace('visibleToRoles: z.array(z.enum(WORKSPACE_ROLES)).min(1)', 'visibleToRoles: z.array(z.enum(WORKSPACE_ROLES))'), spec)).toThrow(/drift/);
+    expect(() => readHostManifestContract(host, local.replace('visibleToRoles: z.array(z.enum(HOST_WORKSPACE_ROLES)).min(1)', 'visibleToRoles: z.array(z.enum(HOST_WORKSPACE_ROLES))'), spec)).toThrow(/drift/);
   });
 
   it.each(['id', 'navSection', 'visibleToRoles', 'routePrefix'])('checks malformed %s against the boot metadata rules', (name) => {

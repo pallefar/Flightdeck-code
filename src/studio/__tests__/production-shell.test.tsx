@@ -1,6 +1,7 @@
 import {renderToStaticMarkup} from 'react-dom/server';
 import {expect,it,vi} from 'vitest';
 import {StudioApp} from '../StudioApp';
+import {hasClass,semanticBlockers,ssrTags} from './ordinary-ssr-contract';
 
 it('offers a shared named application bar, explicit context and a keyboard skip target without authenticating',()=>{
  const fetcher=vi.fn<typeof fetch>();
@@ -33,7 +34,24 @@ it('keeps run and save boundaries discoverable in closed editor help rather than
 
 it('puts the authoring request before disclosed setup and explains unavailable creation',()=>{
  const html=renderToStaticMarkup(<StudioApp/>);
- expect(html.indexOf('<span class="studio-request-label">Your request')).toBeLessThan(html.indexOf('<summary>Project &amp; model setup'));
+ const tags=ssrTags(html),request=tags.find(n=>n.tag==='textarea'&&n.ancestors.some(a=>hasClass(a,'studio-compose')));
+ const settings=tags.find(n=>n.tag==='dialog'&&n.attrs['aria-label']==='Connection settings');
+ expect(request).toBeDefined();expect(settings).toBeDefined();
+ expect(tags.indexOf(request!)).toBeLessThan(tags.indexOf(settings!));
+ expect(semanticBlockers(request!)).toEqual([]);
+ expect(settings!.attrs).not.toHaveProperty('open');
+ expect(html).toContain('<span class="studio-request-label">Your request');
+ for(const name of ['studio-authoring-options','studio-config']){
+  const disclosure=tags.find(n=>n.tag==='details'&&hasClass(n,name));
+  expect(disclosure).toBeDefined();expect(disclosure!.attrs).not.toHaveProperty('open');
+  expect(disclosure!.ancestors).toContain(settings);
+ }
+ const controls=tags.filter(n=>n.tag==='input'||n.tag==='select');
+ for(const name of ['Operator token','Anthropic API key','Model connection']){
+  const control=controls.find(n=>n.attrs['aria-label']===name);
+  expect(control).toBeDefined();expect(control!.ancestors).toContain(settings);
+  expect(control!.ancestors.some(n=>hasClass(n,'studio-compose'))).toBe(false);
+ }
  expect(html).toContain('Select a configured model in Connection settings before creating a draft');
  expect(html).toContain('Authoring only — saved-revision execution is separate');
 });

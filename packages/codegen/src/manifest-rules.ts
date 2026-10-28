@@ -13,7 +13,7 @@
  * callback implementations are explicitly outside this projection. These
  * checks do not establish full host boot/runtime or installed-host validation. */
 import { z } from "zod";
-import { CAPABILITY_SCOPES, HOST_VERSION, NAV_SECTIONS, SUBAPP_ID_RE, WORKSPACE_ROLES } from "./spec-contract";
+import { CAPABILITY_SCOPES, HOST_VERSION, NAV_SECTIONS, SUBAPP_ID_RE, HOST_WORKSPACE_ROLES } from "./spec-contract";
 
 const ROUTE_PREFIX_RE = /^\/api\/apps\/[a-z0-9-]+$/;
 
@@ -36,7 +36,7 @@ export const subAppManifestSchema = z.object({
   routePrefix: z.string().regex(ROUTE_PREFIX_RE),
   webModuleId: z.string().min(1),
   capabilities: z.array(z.enum(CAPABILITY_SCOPES)),
-  visibleToRoles: z.array(z.enum(WORKSPACE_ROLES)).min(1),
+  visibleToRoles: z.array(z.enum(HOST_WORKSPACE_ROLES)).min(1),
   settingsPanel: settingsPanelSchema.optional(),
 });
 

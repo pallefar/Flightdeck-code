@@ -2,6 +2,7 @@ import {readFileSync} from 'node:fs';
 import {renderToStaticMarkup} from 'react-dom/server';
 import {expect,it,vi} from 'vitest';
 import {StudioApp} from '../StudioApp';
+import {hasClass,semanticBlockers,ssrTags} from './ordinary-ssr-contract';
 
 const builderCss=readFileSync(new URL('../StudioBuilder.css',import.meta.url),'utf8');
 const shellCss=readFileSync(new URL('../StudioShell.css',import.meta.url),'utf8');
@@ -36,20 +37,24 @@ it('retains the source overflow route to the existing main scroller without shri
   expect(shellCss).toContain('.studio-shell .studio-main :is(button,summary):not(:where(.wf-editor *,.fd-wb *)){min-height:44px}');
 });
 
-it('keeps the real unauthenticated Browse entry inside the visible empty-home command before the request form',()=>{
+it('keeps the real unauthenticated Browse entry in the visible command after the prompt and before setup form disclosure',()=>{
   const fetcher=vi.fn<typeof fetch>(async()=>{throw Error('Unexpected network access in static mobile entry test.');});
   const html=renderToStaticMarkup(<StudioApp fetcher={fetcher}/>);
   const grid=html.match(/<div\b[^>]*class="studio-builder-grid"[^>]*>/)?.[0];
   expect(grid).toContain('data-home="empty"');
   expect(grid).toContain('data-area="studio"');
   expect(grid).not.toMatch(/\b(?:hidden|inert)(?:[\s=>])/);
-  const commandStart=html.indexOf('class="studio-command"'),setupStart=html.indexOf('class="studio-chat-setup"');
-  expect(commandStart).toBeGreaterThan(-1);
-  expect(setupStart).toBeGreaterThan(commandStart);
-  const command=html.slice(commandStart,setupStart);
-  const trigger=command.match(/<button\b[^>]*aria-label="Browse reusable sources"[^>]*>/)?.[0];
-  expect(trigger).toContain('aria-haspopup="dialog"');
-  expect(trigger).not.toMatch(/\b(?:disabled|hidden|inert)(?:[\s=>])/);
-  expect(command.indexOf('aria-label="Browse reusable sources"')).toBeLessThan(command.indexOf('aria-label="Studio connection and request"'));
+  const tags=ssrTags(html),trigger=tags.find(n=>n.tag==='button'&&n.attrs['aria-label']==='Browse reusable sources');
+  const request=tags.find(n=>n.tag==='textarea'&&n.ancestors.some(a=>hasClass(a,'studio-compose')));
+  const setup=tags.find(n=>n.tag==='dialog'&&n.attrs['aria-label']==='Connection settings');
+  expect(trigger).toBeDefined();expect(request).toBeDefined();expect(setup).toBeDefined();
+  expect(trigger!.attrs['aria-haspopup']).toBe('dialog');
+  expect(trigger!.attrs).not.toHaveProperty('disabled');
+  expect(semanticBlockers(trigger!)).toEqual([]);
+  expect(trigger!.ancestors.some(n=>hasClass(n,'studio-command'))).toBe(true);
+  expect(trigger!.ancestors.some(n=>hasClass(n,'studio-compose'))).toBe(true);
+  expect(tags.indexOf(request!)).toBeLessThan(tags.indexOf(trigger!));
+  expect(tags.indexOf(trigger!)).toBeLessThan(tags.indexOf(setup!));
+  expect(setup!.attrs).not.toHaveProperty('open');
   expect(fetcher).not.toHaveBeenCalled();
 });

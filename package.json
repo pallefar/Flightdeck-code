@@ -10,7 +10,10 @@
   "scripts": {
     "dev": "vite",
     "dev:server": "tsx watch server/index.ts",
-    "build": "tsc -b && vite build",
+    "build:designer": "node designer-source/build.mjs",
+    "check:designer": "node designer-source/build.mjs --check",
+    "test:designer": "node designer-source/tests/run.mjs",
+    "build": "node designer-source/build.mjs && tsc -b && vite build",
     "typecheck": "tsc --noEmit",
     "test": "node scripts/test-all.mjs",
     "test:vitest": "vitest run",

@@ -1,0 +1,15 @@
+{
+  "name": "@flightdeck/app-designer-source",
+  "version": "0.1.0",
+  "private": true,
+  "license": "UNLICENSED",
+  "type": "module",
+  "description": "Private source projection; public import requires rights-holder clearance",
+  "scripts": {
+    "build": "node build.mjs",
+    "test": "node tests/run.mjs"
+  },
+  "peerDependencies": { "react": "^19.0.0", "react-dom": "^19.0.0" },
+  "dependencies": { "zod": "3.25.76" },
+  "devDependencies": { "typescript": "5.9.3", "esbuild": "0.28.2", "@types/react": "19.3.0", "@types/react-dom": "19.3.0" }
+}

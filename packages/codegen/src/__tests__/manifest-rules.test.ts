@@ -6,6 +6,9 @@ import fs from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { assertManifestWouldBoot, subAppManifestSchema } from "../manifest-rules";
+import { WORKSPACE_ROLES, miniAppSpecSchema } from "../spec-contract";
+import { generateSubApp } from "../pure";
+import { readEmittedManifest } from "../testing/readEmittedManifest";
 import { readHostManifestContract, readHostManifestMetadata } from "../testing/readHostManifestMetadata";
 import { HOST_ROOT } from "../../../guardrails/src/host-source";
 
@@ -60,6 +63,24 @@ describe("the boot rules the host applies", () => {
     capabilities: [],
     visibleToRoles: ["admin"],
   };
+
+  it("models all seven declared host roles without admitting HRSS roles to generated apps", () => {
+    expect(subAppManifestSchema.shape.visibleToRoles.element.options).toEqual([
+      "hr_preparer", "hr_reviewer", "wc_liaison", "legal", "hrss_team_lead", "hrss_manager", "admin",
+    ]);
+    expect(WORKSPACE_ROLES).toEqual(["hr_preparer", "hr_reviewer", "wc_liaison", "legal", "admin"]);
+    const input = { id: "demo-app", label: "Demo", icon: "X", navSection: "Admin", capabilities: ["read:contracts"], visibleToRoles: [...WORKSPACE_ROLES], domains: [{ name: "contracts", routes: [{ method: "GET", path: "/contracts", operation: { kind: "list-contracts" } }] }] };
+    const generated = generateSubApp(input);
+    const emitted = generated.files.find(f => f.path === "server/subapps/demo-app/manifest.ts");
+    expect(emitted).toBeDefined();
+    expect(readEmittedManifest(emitted!.contents).visibleToRoles).toEqual(WORKSPACE_ROLES);
+    for (const role of ["hrss_team_lead", "hrss_manager"]) {
+      // Metadata vocabulary describes an existing host declaration, not an app grant.
+      expect(subAppManifestSchema.safeParse({ ...base, visibleToRoles: [role] }).success).toBe(true);
+      expect(miniAppSpecSchema.safeParse({ ...input, visibleToRoles: [role] }).success).toBe(false);
+      expect(() => generateSubApp({ ...input, visibleToRoles: [role] })).toThrow();
+    }
+  });
 
   it("accepts a well-formed manifest", () => {
     expect(() => assertManifestWouldBoot(base)).not.toThrow();

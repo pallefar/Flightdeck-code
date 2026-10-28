@@ -1,5 +1,5 @@
 import { afterEach, expect, it, vi } from 'vitest';
-import { mkdtemp, mkdir, readdir, realpath, rm, writeFile, chmod, lstat, symlink } from 'node:fs/promises';
+import { mkdir, readdir, writeFile, chmod, lstat, symlink } from 'node:fs/promises';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
@@ -13,12 +13,16 @@ import { WorkflowApprovalStore } from '../workflow-approval-store';
 import { createOfflineSnapshot } from '../workflow-backup';
 import { encryptOfflineBackup, decryptOfflineBackup } from '../workflow-backup-envelope';
 import { runSyntheticRecoveryDrill } from '../../scripts/studio-recovery-drill';
+import { createOwnedFixture, fixtureCleanupReceipt } from '../../scripts/test-fixtures/owned-root';
 
-const SCRATCH = '/Users/te451223/.hermes/cache/scratch';
-const cleanup: string[] = [];
-afterEach(async () => { for (const path of cleanup.splice(0)) await rm(path, { recursive: true, force: true }); });
+const cleanup: Awaited<ReturnType<typeof createOwnedFixture>>[] = [];
+afterEach(async () => {
+  try { for (const owned of cleanup.splice(0)) await owned.clean(); }
+  finally { fixtureCleanupReceipt(expect.getState().currentTestName); }
+});
 async function fixture() {
-  const dir = await mkdtemp(join(await realpath(SCRATCH), 'envelope-test-')); cleanup.push(dir);
+  const owned = await createOwnedFixture('envelope-test-'); cleanup.push(owned);
+  const { dir } = owned;
   const root = join(dir, 'state'); await mkdir(root, { mode: 0o700 });
   await mkdir(join(root, 'resources'), { mode: 0o700 });
   await mkdir(join(root, 'approvals'), { mode: 0o700 });
@@ -27,7 +31,7 @@ async function fixture() {
   await writeFile(join(root, 'approvals/.integrity-key'), randomBytes(32), { mode: 0o600 });
   const snapshot = await createOfflineSnapshot(root, { serverId: randomUUID(), epoch: randomUUID(), generation: 1, quiescence: 'all-writers-stopped' });
   const reference = Buffer.from(JSON.stringify(snapshot.reference));
-  return { dir, root, snapshot, reference, key: randomBytes(32), fence: async () => reference };
+  return { ...owned, root, snapshot, reference, key: randomBytes(32), fence: async () => reference };
 }
 it('authenticates an encrypted bounded archive and returns exact validated bytes with restore blocked', async () => {
   const f = await fixture(); const before = await readdir(f.dir);
@@ -210,7 +214,7 @@ it('runs the synthetic-only CLI in a separate real process and refuses other com
   const script = fileURLToPath(new URL('../../scripts/studio-recovery-drill.ts', import.meta.url));
   const run = (args: string[]) => spawnSync(process.execPath, ['--import', 'tsx', script, ...args], {
     cwd: fileURLToPath(new URL('../../', import.meta.url)), encoding: 'utf8', timeout: 15_000, maxBuffer: 65_536,
-    env: { TMPDIR: SCRATCH, TSX_DISABLE_CACHE: '1' },
+    env: f.env,
   });
   const child = run(['synthetic', f.dir]);
   expect(child.error).toBeUndefined(); expect(child.status).toBe(0); expect(child.stderr).toBe(''); expect(child.stdout).not.toBe('');

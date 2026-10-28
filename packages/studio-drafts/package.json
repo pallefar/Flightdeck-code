@@ -1,0 +1,66 @@
+{
+  "name": "@flightdeck/studio-drafts-source",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "zod": "3.25.76"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json"
+  },
+  "exports": {
+    "./browser": {
+      "types": "./dist/browser/client.d.ts",
+      "default": "./dist/browser/client.js"
+    },
+    "./context-ui": {
+      "types": "./dist/browser/context-ui.d.ts",
+      "default": "./dist/browser/context-ui.js"
+    },
+    "./server": {
+      "types": "./dist/server/workflow-workspace-store.d.ts",
+      "default": "./dist/server/workflow-workspace-store.js"
+    },
+    "./graph": {
+      "types": "./dist/packages/workflow/graph.d.ts",
+      "default": "./dist/packages/workflow/graph.js"
+    },
+    "./data": {
+      "types": "./dist/packages/workflow/data.d.ts",
+      "default": "./dist/packages/workflow/data.js"
+    },
+    "./engine": {
+      "types": "./dist/packages/workflow/engine.d.ts",
+      "default": "./dist/packages/workflow/engine.js"
+    },
+    "./checkpoint": {
+      "types": "./dist/packages/workflow/checkpoint.d.ts",
+      "default": "./dist/packages/workflow/checkpoint.js"
+    },
+    "./approval-lock": {
+      "types": "./dist/server/workflow-approval-lock.d.ts",
+      "default": "./dist/server/workflow-approval-lock.js"
+    },
+    "./guardrails/findings": {
+      "types": "./dist/packages/guardrails/src/findings.d.ts",
+      "default": "./dist/packages/guardrails/src/findings.js"
+    },
+    "./guardrails/lists": {
+      "types": "./dist/packages/guardrails/src/lists.d.ts",
+      "default": "./dist/packages/guardrails/src/lists.js"
+    },
+    "./guardrails/names": {
+      "types": "./dist/packages/guardrails/src/names.d.ts",
+      "default": "./dist/packages/guardrails/src/names.js"
+    },
+    "./guardrails/scrub": {
+      "types": "./dist/packages/guardrails/src/scrub.d.ts",
+      "default": "./dist/packages/guardrails/src/scrub.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "license": "UNLICENSED"
+}

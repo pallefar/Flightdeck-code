@@ -1,0 +1,11 @@
+{
+ "compilerOptions": {
+  "target":"ES2022","module":"NodeNext","moduleResolution":"NodeNext",
+  "lib":["ES2022","DOM","DOM.Iterable"],"types":["node"],
+  "strict":true,"noUncheckedIndexedAccess":true,"exactOptionalPropertyTypes":true,
+  "noImplicitOverride":true,"forceConsistentCasingInFileNames":true,
+  "esModuleInterop":true,"skipLibCheck":true,
+  "declaration":true,"noEmitOnError":true,"rootDir":".","outDir":"dist"
+ },
+ "include":["browser/**/*.ts","server/**/*.ts","packages/**/*.ts"]
+}

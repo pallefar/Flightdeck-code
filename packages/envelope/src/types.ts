@@ -273,6 +273,8 @@ export type RefusalCode =
   | "not-an-object"
   | "unknown-top-level-field"
   | "unknown-task"
+  | "unsupported-task"
+  | "unsupported-fact-channel"
   | "provider-not-selectable"
   | "model-not-known"
   | "facts-not-an-object"
