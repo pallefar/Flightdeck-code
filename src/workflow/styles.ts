@@ -373,6 +373,8 @@ export const WORKFLOW_CSS=`
 .wf-editor .wf-body.has-inspector{grid-template-columns:minmax(0,1fr)}
 .wf-editor .wf-body.has-palette.has-inspector{grid-template-columns:260px minmax(0,1fr)}
 .wf-editor .wf-settings-dialog:not([open]){position:absolute;left:var(--wf-inspector-left,8px);top:var(--wf-inspector-top,8px);width:var(--wf-inspector-width,min(320px,calc(100% - 16px)));max-width:none;max-height:var(--wf-inspector-height,360px);min-height:0;margin:0;padding:0;z-index:8;overflow:auto;overscroll-behavior:contain;border:1px solid var(--wf-border);border-radius:8px;box-shadow:var(--shadow,0 12px 36px #0002);scrollbar-gutter:stable}
+/* Explicit JSON transfer must remain above retained quick controls at narrow sizes. */
+.wf-editor>section[aria-label="Draft JSON transfer"]{position:relative;z-index:9;background:var(--wf-panel)}
 .wf-settings-dialog:not([open]) .wf-inspector{padding:10px;border:0;animation:wf-quick-inspector-in 150ms ease-out both}
 .wf-quick-header{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:7px;font-size:11px;color:var(--wf-muted)}
 .wf-editor.wf-editor .wf-quick-header button{min-height:24px;padding:2px 7px;font-size:14px}
@@ -397,4 +399,14 @@ export const WORKFLOW_CSS=`
 .wf-settings-dialog:not([open]) :is(input,select){padding:6px}
 .wf-settings-dialog:not([open]) :is([data-block-type="manual"],[data-block-type="output"]) .wf-parameters [role="status"]{display:none}
 .wf-manual-input-action{width:100%;margin:6px 0}
+/* Mobile hit areas only: keep the graph, quick overlay and retained form intact. */
+@media(max-width:760px){
+ .wf-editor .wf-app-menus.wf-app-menus :is(.wf-app-menu-trigger,.wf-app-menu-entry){min-height:44px;min-width:44px}
+ .wf-editor .wf-settings-dialog:not([open]) :is(input,select,textarea,button){min-height:44px;min-width:44px}
+ .wf-editor.wf-editor .wf-quick-header button{min-height:44px;min-width:44px}
+ /* Reserve a dismiss gutter: the retained sticky close must not cover scrolled fields. */
+ .wf-editor .wf-settings-dialog:not([open]) .wf-inspector{padding-right:64px}
+ .wf-editor .wf-settings-dialog:not([open]) .wf-quick-header{margin-right:-54px}
+ .wf-settings-dialog:not([open]) .wf-block-purpose{padding-right:0}
+}
 `;

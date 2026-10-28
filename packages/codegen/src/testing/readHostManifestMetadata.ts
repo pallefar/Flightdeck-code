@@ -106,6 +106,12 @@ export function readHostManifestContract(hostText: string, localText: string, sp
   const hd = declarations(host);
   const ld = declarations(parse(localText));
   for (const [name, value] of declarations(parse(specText))) if (!ld.has(name)) ld.set(name, value);
+  // The full host vocabulary is NOT generated-app admission. Pin the separate
+  // general-role declaration too, so owner-only HRSS admission cannot leak into
+  // the input contract while the seven-role metadata schema still agrees.
+  const generalRoles = hd.get("GENERAL_ROLE_VALUES");
+  const generatedRoles = ld.get("WORKSPACE_ROLES");
+  if (!generalRoles || !generatedRoles || canonical(generalRoles, hd) !== canonical(generatedRoles, ld)) fail("general generated-app role admission drift");
   const hostFields = fields(objectSchema(hd.get("subAppManifestSchema")));
   const localFields = fields(objectSchema(ld.get("subAppManifestSchema")));
   for (const [name, prop] of localFields) {

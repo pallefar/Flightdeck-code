@@ -108,6 +108,8 @@ import { admitTierClaim } from "./tier-claim";
 import { utf8ByteLength } from "./utf8";
 import {
   AI_TASKS,
+  HOST_AI_TASKS,
+  HOST_FACT_KEY_POLICY,
   COUNT_LADDER,
   FACT_KEY_POLICY,
   FIELD_NAME_ALLOWLIST,
@@ -406,7 +408,10 @@ export function buildEnvelope(input: unknown, opts: BuildOptions = {}): BuildRes
   // The offending task id is NOT echoed. It is caller free text like any other
   // unlisted string.
   const task = typeof rawTask === "string" && AI_TASKS.includes(rawTask) ? rawTask : null;
-  if (task === null) failures.push({ code: "unknown-task", at: "task", expected: "a member of AI_TASKS" });
+  if (task === null) failures.push({
+    code: typeof rawTask === "string" && (HOST_AI_TASKS as readonly string[]).includes(rawTask) ? "unsupported-task" : "unknown-task",
+    at: "task", expected: "a member of AI_TASKS",
+  });
 
   // ── Top-level shape. An unrecognised member is a free-text channel by
   // another name — `{ task, facts, notes: "confirm with …" }` is how the data
@@ -438,7 +443,7 @@ export function buildEnvelope(input: unknown, opts: BuildOptions = {}): BuildRes
           // ⚠ POSITIONAL. The key is not in the policy, so the key is caller
           // data, so naming it here would put it in the log — the fourth
           // exposure the host's key policy closes.
-          failures.push({ code: "key-not-in-policy", at: `facts.#${index}` });
+          failures.push({ code: Object.hasOwn(HOST_FACT_KEY_POLICY, key) ? "unsupported-fact-channel" : "key-not-in-policy", at: `facts.#${index}` });
           index += 1;
           continue;
         }

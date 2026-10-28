@@ -414,6 +414,51 @@ export const WORKBENCH_CSS = `
   .fd-wb .fd-composer { padding: 8px; }
   .fd-wb .fd-composer textarea { min-height: 44px; }
 }
+/* Keep optional inspection out of source flow; the full original tour remains
+   mounted behind its disclosure, with its real artifacts and playback. */
+.fd-wb { --wb-surface2: color-mix(in srgb, var(--te, #e98300) 3%, var(--surface, #fff)); box-shadow: none; }
+.fd-wb .fd-artifact { min-height: 36px; padding: 4px 10px; gap: 8px; flex-wrap: nowrap; }
+.fd-wb .fd-artifact__mark { display: none; }
+.fd-wb .fd-artifact__identity { flex: 1; }
+.fd-wb .fd-artifact__eyebrow { font-size: 8px; letter-spacing: .06em; }
+.fd-wb .fd-artifact__name { font-size: 13px; line-height: 1.3; }
+.fd-wb .fd-artifact__facts { display: grid; gap: 0; max-width: 48%; width: auto; margin-left: auto; justify-items: end; font-size: 9px; }
+.fd-wb .fd-artifact__facts > .mono { max-width: 100%; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.fd-wb .fd-artifact__draft { border: 0; padding: 0; background: transparent; font-size: 9px; }
+.fd-wb .fd-command-bar { background: var(--wb-surface); }
+.fd-wb .fd-tab { padding-inline: 11px; font-size: 11px; }
+.fd-wb .fd-architecture { position: relative; flex: none; border-bottom: 1px solid var(--wb-line); background: var(--wb-surface2); min-width: 0; }
+.fd-wb .fd-architecture > summary { cursor: pointer; display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 36px; padding: 5px 10px; font-size: 10px; color: var(--wb-muted); }
+.fd-wb .fd-architecture > summary span { font: 9px var(--mono); }
+.fd-wb .fd-architecture > summary:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.fd-wb .fd-architecture-panel { position: absolute; top: 100%; left: 0; right: 0; z-index: 12; max-height: 260px; overflow: auto; border: 1px solid var(--wb-line); border-radius: 0 0 8px 8px; background: var(--wb-surface); box-shadow: var(--wb-shadow); }
+.fd-wb .fd-architecture-panel .fd-tour__presentation { position: static; max-height: 220px; width: 100%; }
+.fd-wb .fd-architecture-panel .fd-tour { border-bottom: 0; }
+.fd-wb .fd-explorer { width: clamp(140px, 24%, 192px); background: var(--wb-surface2); }
+.fd-wb .fd-explorer__search { padding: 8px; }
+.fd-wb .fd-tree__tier { padding: 9px 8px 6px; }
+.fd-wb .fd-source__head { gap: 2px 8px; }
+.fd-wb .fd-source__actions { gap: 5px; }
+.fd-wb .fd-editor, .fd-wb .fd-code { min-height: 64px; }
+.fd-wb .fd-editor { padding: 8px 12px; font-size: 12px; line-height: 1.7; }
+.fd-wb .fd-workspace-status { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px 10px; padding: 5px 9px; font-size: 9px; line-height: 1.4; }
+.fd-wb .fd-workspace-status > :first-child { grid-column: 1; grid-row: 1; }
+.fd-wb .fd-workspace-status > :last-child { grid-column: 2; grid-row: 1; margin: 0; }
+.fd-wb .fd-workspace-status > :last-child:not(:first-child) { border: 0; padding-left: 0; }
+.fd-wb .fd-workspace-limit { grid-column: 1; grid-row: 2; order: 0; margin: 0; }
+.fd-wb .fd-status-edits { grid-column: 2; grid-row: 2; gap: 5px; font-size: 9px; flex-wrap: wrap; justify-content: end; }
+@container (max-width: 540px) {
+ .fd-wb .fd-artifact { padding: 3px 8px; }
+ .fd-wb .fd-tab { padding-inline: 7px; }
+ .fd-wb .fd-architecture > summary { min-height: 44px; font-size: 10px; }
+ .fd-wb .fd-architecture > summary span { font-size: 8px; }
+ .fd-wb .fd-source__head { padding: 2px 8px; }
+ .fd-wb .fd-source__identity { min-height: 20px; }
+ .fd-wb .fd-source__path { font-size: 10px; }
+ .fd-wb .fd-source-kind { font-size: 9px; }
+ .fd-wb .fd-source__actions { min-height: 44px; }
+ .fd-wb .fd-explorer { width: min(148px, 45%); }
+}
 @media (prefers-reduced-motion: reduce) {
   .fd-wb *, .fd-wb *::before, .fd-wb *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
 }

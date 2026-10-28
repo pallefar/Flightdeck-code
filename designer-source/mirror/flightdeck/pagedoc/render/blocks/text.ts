@@ -1,0 +1,14 @@
+// Small shared pieces: a block heading (h2) and a localized plain-text element.
+// PORTABLE: mirrored byte for byte into Atlas lib/pagedoc, so only react,
+// react-dom, 'zod/v4' and relative paths inside flightdeck/pagedoc may be
+// imported (scripts/check-pagedoc-portable.mjs).
+import { createElement as h, type ReactNode } from "react";
+import { langAttrs, pickLocalized, type RenderContext } from "../context.js";
+
+type Localized = { en?: string | undefined; de?: string | undefined } | undefined;
+
+/** A localized plain text in the given element, or nothing when absent. */
+export function localizedText(tag: string, className: string, value: Localized, ctx: RenderContext): ReactNode {
+  const t = pickLocalized(value, ctx.locale, ctx.sourceLocale);
+  return t ? h(tag, { className, ...langAttrs(t, ctx.locale) }, t.value) : null;
+}

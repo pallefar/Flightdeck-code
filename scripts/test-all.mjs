@@ -8,6 +8,7 @@ export function createTestCommands(vitestArgs = []) {
   return [
     [process.execPath, [fileURLToPath(new URL("../node_modules/vitest/vitest.mjs", import.meta.url)), "run", ...vitestArgs]],
     [process.execPath, ["--test", "deploy/studio-docker/*.test.mjs"]],
+    [process.execPath, [fileURLToPath(new URL("../designer-source/tests/run.mjs", import.meta.url))]],
   ];
 }
 

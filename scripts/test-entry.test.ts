@@ -38,6 +38,7 @@ describe("default test entry", () => {
     expect(commands).toEqual([
       [process.execPath, [`${root}node_modules/vitest/vitest.mjs`, "run", "server", "--reporter=dot", "literal;echo forbidden"]],
       [process.execPath, ["--test", "deploy/studio-docker/*.test.mjs"]],
+      [process.execPath, [`${root}designer-source/tests/run.mjs`]],
     ]);
     const fixture = mkdtempSync(join(tmpdir(), "flightdeck-test-entry-"));
     const marker = join(fixture, "second-family-ran");

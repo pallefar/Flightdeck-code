@@ -1,0 +1,59 @@
+/* Source-derived native theme tokens; scoped standalone defaults, host tokens inherit in embedded mode. */
+.fd-app-designer.fd-standalone {
+  --bg: #f3f6f7;
+  --bg2: #edf3f6;
+  --surface: #fff;
+  --surface2: #f8fafb;
+  --ink: #253d4b;
+  --muted: #586e7c;
+  --line: #d5dfe5;
+  --te: #e98300;
+  --te2: #eb8f1a;
+  --green: #367956;
+  --amber: #806620;
+  --red: #aa3122;
+  --blue: #30648f;
+  --mono: Arial, Helvetica, "Segoe UI", sans-serif;
+  --shadow: 0 4px 16px #233e4d09, 0 1px 3px #233e4d08;
+  --shadow-strong: 0 10px 35px #0003;
+}
+.fd-app-designer[data-appearance="dark"] {
+  --bg: #0e1720;
+  --bg2: #1c2e3a;
+  --surface: #17242f;
+  --surface2: #182833;
+  --ink: #eef2f7;
+  --muted: #a7b6c3;
+  --line: #304553;
+  --green: #87c3a7;
+  --amber: #c9b687;
+  --red: #ff807d;
+  --blue: #8eb6e6;
+  --shadow: 0 8px 26px #00000025, 0 1px 2px #00000020;
+  --shadow-strong: 0 14px 28px #0005;
+ color-scheme:dark;
+}
+/* The OS console's mapping of the portable PageDoc colours (--pd-*, listed in
+   flightdeck/pagedoc/pagedoc.css) onto the console theme's EXISTING tokens
+   (theme.css). pages-reader-thin-slice. It declares only --pd-* properties and
+   reuses the theme's variables, so it adds no console token (theme.css's D-02
+   pin) and light/dark follow the theme toggle with no rule of its own. The
+   calm and accent doc themes read the same mapping for now. */
+.fd-app-designer .pd-root {
+  --pd-fg: var(--ink);
+  --pd-bg: var(--bg);
+  --pd-muted: var(--muted);
+  --pd-border: var(--line);
+  --pd-link: var(--blue);
+  --pd-surface-subtle: var(--bg2);
+  --pd-surface-strong: var(--surface);
+  --pd-fg-strong: var(--ink);
+  --pd-code-bg: var(--bg2);
+  --pd-error-fg: var(--red);
+  --pd-error-bg: var(--surface);
+  --pd-button-bg: var(--te);
+  /* theme.css's button.primary text: dark on the orange in both themes. */
+  --pd-button-fg: #21180d;
+  --pd-focus: var(--te);
+}
+

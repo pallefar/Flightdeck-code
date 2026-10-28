@@ -1,0 +1,39 @@
+// TEST ONLY: native gestures, real StudioApp/client/controller; NONSECRET fixtures.
+import {StrictMode} from 'react';import {createRoot} from 'react-dom/client';
+import {StudioApp} from '../StudioApp';import {StudioController} from '../controller';
+const host=document.getElementById('fixture')!,root=createRoot(host),checks:string[]=[],calls:Array<{method:string;path:string}>=[];
+const prompt='NONSECRET first prompt retained for explicit review',operator='NONSECRET_OPERATOR_FIRST_PROMPT',key='NONSECRET_KEY_FIRST_PROMPT';
+const before={available:true,persistence:'server-memory',model:'claude-fixture',status:'unavailable',revision:'11111111-1111-4111-8111-111111111111'},after={...before,status:'configured',revision:'22222222-2222-4222-8222-222222222222'};
+let saved=false;
+const json=(body:unknown)=>new Response(JSON.stringify(body),{headers:{'content-type':'application/json'}});
+const fetcher:typeof fetch=async(url,init)=>{const path=String(url),method=init?.method??'GET';calls.push({method,path});
+ if(path==='/api/studio/model-connections/anthropic/setup'){
+  if(method==='POST'){const body=JSON.parse(String(init?.body));assert(body.apiKey===key&&body.expectedRevision===before.revision,'Save carries only synthetic key and exact fresh CAS revision');assert(init?.credentials==='omit'&&init.redirect==='error'&&init.cache==='no-store','Save preserves existing private client policy');saved=true;return json(after);}
+  assert(method==='GET','Setup permits only explicit GET or POST');return json(saved?after:before);
+ }
+ if(path==='/api/studio/create'&&method==='POST'){const body=JSON.parse(String(init?.body));assert(body.connectionId==='local','Explicit existing local provider remains honored');submits++;return new Response('',{status:503});}
+ assert(method==='GET','No generation/mutation permitted before explicit send');
+ if(path==='/api/studio/health')return json({ok:true,selectedId:null,model:null,modelStatus:'unselected',verification:'not-probed'});
+ if(path==='/api/studio/model-connections')return json({connections:['codex-chatgpt','flightdeck','local','anthropic'].map(id=>({id,label:id,model:id==='local'?'NONSECRET_local_fixture':id==='anthropic'&&saved?'claude-fixture':null,status:id==='local'||id==='anthropic'&&saved?'configured':'unavailable',verification:'not-probed'})),selectedId:null});
+ if(path==='/api/studio/projects/fixture-project/skills')return json({projectId:'fixture-project',skillSourceState:'empty',skillSources:[]});
+ throw Error('Unexpected synthetic route');
+};
+window.fetch=async()=>{throw Error('Native API disabled');};const controller=new StudioController(fetcher);let submits=0;
+root.render(<StrictMode><StudioApp controller={controller} fetcher={fetcher}/></StrictMode>);
+function assert(v:unknown,label:string):asserts v{if(!v)throw Error(label);checks.push(label);}
+function get<T extends Element=HTMLElement>(s:string){const n=host.querySelector<T>(s);if(!n)throw Error('Missing '+s);return n;}
+const pause=()=>new Promise(r=>setTimeout(r,30));
+async function input(n:HTMLInputElement|HTMLTextAreaElement|HTMLSelectElement,v:string){const proto=n instanceof HTMLSelectElement?HTMLSelectElement.prototype:n instanceof HTMLTextAreaElement?HTMLTextAreaElement.prototype:HTMLInputElement.prototype;Object.getOwnPropertyDescriptor(proto,'value')!.set!.call(n,v);n.dispatchEvent(new Event(n instanceof HTMLSelectElement?'change':'input',{bubbles:true}));await pause();}
+const panel=()=>get<HTMLDialogElement>('.studio-connection-panel'),field=()=>get<HTMLInputElement>('[aria-label="Anthropic API key"]');
+const result=()=>({checks:[...checks],calls:[...calls],submits,configured:saved,panelOpen:panel().open,promptRetained:get<HTMLTextAreaElement>('.studio-compose textarea').value===prompt});
+async function initial(){await pause();assert(calls.length===0,'Mount has zero transport effects');await input(get<HTMLTextAreaElement>('.studio-compose textarea'),prompt);get<HTMLTextAreaElement>('.studio-compose textarea').focus();return result();}
+function opened(){assert(panel().open&&panel().matches(':modal'),'First nonempty keyboard submit opens actual masked setup/access modal');assert(field().type==='password'&&field().autocomplete==='off','Actual secure uncontrolled key field is masked');assert(field().disabled&&document.activeElement===get('[aria-label="Operator token"]'),'No operator access focuses separate private authentication, not decorative key entry');assert(panel().textContent?.includes('Private access'),'First prompt explains private access before key entry');assert(calls.length===0&&submits===0,'Opening and first submit do not fetch or send');return result();}
+async function authenticate(){await input(get<HTMLInputElement>('[aria-label="Operator token"]'),operator);await input(get<HTMLInputElement>('input[placeholder="For project skills and page suggestions"]'),'fixture-project');assert(!field().disabled,'Real setup form becomes editable with separate operator context');await input(field(),key);assert(calls.length===0&&submits===0,'Typing operator, project and synthetic key has zero requests');return result();}
+function cancelled(){assert(!panel().open&&field().value==='','Native cancel closes and releases field');assert(result().promptRetained&&submits===0&&calls.length===0,'Cancel retains unsent prompt with no requests');return result();}
+function direct(){assert(panel().open&&document.activeElement===field(),'Plain direct Add Anthropic API key action discloses and focuses actual editable masked form');return result();}
+async function prepareSave(){await input(field(),key);get<HTMLInputElement>('.studio-anthropic-consent input').click();await pause();return result();}
+async function savedCheck(){for(let i=0;i<120&&!panel().textContent?.includes('Session key configured — not probed.');i++)await pause();assert(saved&&calls.map(c=>c.method).join(',')==='GET,POST','One explicit save reaches real client fresh-read then CAS exactly once');assert(field().value===''&&get<HTMLSelectElement>('[aria-label="Model connection"]').value==='','Save clears field and does not select model');assert(submits===0&&result().promptRetained&&controller.getState().transcript.length===0,'Save retains unsent composer and creates no conversation/model request');assert(!host.innerHTML.includes(key)&&!JSON.stringify(controller.getState()).includes(key)&&localStorage.length===0&&sessionStorage.length===0,'Synthetic key absent from markup, controller and browser storage');return result();}
+function selectionGuidance(){assert(panel().open&&document.activeElement===get('[aria-label="Model connection"]'),'Configured key without model guides explicit selection, not repeated key setup');assert(panel().textContent?.includes('Choose a model explicitly'),'Selection guidance is visible and no auto-send');assert(calls.length===2&&submits===0&&result().promptRetained,'Reopening selection has zero metadata or send effects');return result();}
+async function chooseLocal(){for(let i=0;i<120&&get<HTMLOptionElement>('[aria-label="Model connection"] option[value=local]').disabled;i++)await pause();await input(get<HTMLSelectElement>('[aria-label="Model connection"]'),'local');return result();}
+function existingProvider(){assert(!panel().open&&submits===1,'Usable explicit provider submits without forced Anthropic modal');assert(get<HTMLSelectElement>('[aria-label="Model connection"]').value==='local','No forced Anthropic or silent fallback');assert(calls.length===6&&calls.slice(2,-1).every(c=>c.method==='GET')&&calls.at(-1)?.path==='/api/studio/create','Only explicit Check and final user submit performed additional reads/send');root.unmount();return {checks:[...checks],calls:[...calls],submits};}
+Object.assign(window,{firstPromptFixture:{initial,opened,authenticate,cancelled,direct,prepareSave,savedCheck,selectionGuidance,chooseLocal,existingProvider,result}});

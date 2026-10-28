@@ -1,0 +1,1147 @@
+{
+  "status": "FINITE_PUBLIC_REDISTRIBUTION_AUTHORIZED_BY_RIGHTS_HOLDER",
+  "upstreamAnonymousApi": "404 for pallefar/project-contract; not proof of public availability",
+  "studioAnonymousApi": "200 public pallefar/Flightdeck-code, license:null",
+  "localLicenseInspection": "No repository-wide license; flightdeck/package.json private:true with no license. Portable does not mean public-domain or licensed.",
+  "upstreamCommit": "a2fe29b48425a32d00c8b4c73ba20ce10c5137d9",
+  "files": [
+    {
+      "path": "app/AppDesigner.tsx",
+      "sha256": "42ef1dfbdec0090e8df0011d6888db6cfad913d5808ad3eafb9338cff7df5680",
+      "bytes": 36043,
+      "origin": "LATEST_DESIGNER_CANDIDATE"
+    },
+    {
+      "path": "app/adapters.tsx",
+      "sha256": "2cf4d61634d6f96911ad1fff3420174ab899570a2c8729b7c3fbe264ddfb89f2",
+      "bytes": 1078,
+      "origin": "LATEST_DESIGNER_CANDIDATE"
+    },
+    {
+      "path": "app/editor.css",
+      "sha256": "af1cee111fa8feffab37c4435edbb3e9281b7a201a195414976ac03d48ebc680",
+      "bytes": 13337,
+      "origin": "LATEST_DESIGNER_CANDIDATE"
+    },
+    {
+      "path": "app/model.ts",
+      "sha256": "4a8dfcc7dd1680b70b42a4310f2c6a5be6cb15a1a022f54a9645fef91f5912e1",
+      "bytes": 8002,
+      "origin": "LATEST_DESIGNER_CANDIDATE"
+    },
+    {
+      "path": "app/native-tokens.css",
+      "sha256": "e5b1b2ddbe14acf382edf64a064eda55feca7521a841b1e4f5c5b0b957a91128",
+      "bytes": 1869,
+      "origin": "LATEST_DESIGNER_CANDIDATE"
+    },
+    {
+      "path": "app/native.ts",
+      "sha256": "fcb54b5d9e0c69c8f80bf3e03c17bc450d10c7b303ba00e53e6d9743ff0aee53",
+      "bytes": 6455,
+      "origin": "LATEST_DESIGNER_CANDIDATE"
+    },
+    {
+      "path": "app/public.ts",
+      "sha256": "87e0f7a7e6bdbe8a70c6e34bf615c174beed400300767d67d8bd166059fa9fe9",
+      "bytes": 1470,
+      "origin": "LATEST_DESIGNER_CANDIDATE"
+    },
+    {
+      "path": "app/widget-host-seam.ts",
+      "sha256": "ab30311bde83b6a9633659c4fe94c069e0401de3c6735caf934945b98a1ddb52",
+      "bytes": 425,
+      "origin": "LATEST_DESIGNER_CANDIDATE"
+    },
+    {
+      "path": "contracts/os/flightdeck/server/widgets/types.ts",
+      "sha256": "aeefe95702be28b3abe060c7ea99a25e7be55dd7ab19c571183b7cdc413f2a17",
+      "bytes": 26185,
+      "origin": "PRIVATE_OS_DERIVED_CLEARANCE_REQUIRED",
+      "osPinnedPath": "flightdeck/server/widgets/types.ts",
+      "osPinnedCommit": "a2fe29b48425a32d00c8b4c73ba20ce10c5137d9",
+      "matchesPinnedOS": true
+    },
+    {
+      "path": "mirror/flightdeck/editor-core/history.ts",
+      "sha256": "c5a1f9bb4c39fa68646ab74ca32e4a9755f053038938061475a86bea08be9685",
+      "bytes": 5159,
+      "origin": "PRIVATE_OS_DERIVED_CLEARANCE_REQUIRED",
+      "osPinnedPath": "flightdeck/editor-core/history.ts",
+      "osPinnedCommit": "a2fe29b48425a32d00c8b4c73ba20ce10c5137d9",
+      "matchesPinnedOS": true
+    },
+    {
+      "path": "mirror/flightdeck/editor-core/result.ts",
+      "sha256": "b6478552112fad15b65bb0774e07b5afd2e0a09ea8b8ed7aadd566a328fec648",
+      "bytes": 1616,
+      "origin": "PRIVATE_OS_DERIVED_CLEARANCE_REQUIRED",
+      "osPinnedPath": "flightdeck/editor-core/result.ts",
+      "osPinnedCommit": "a2fe29b48425a32d00c8b4c73ba20ce10c5137d9",
+      "matchesPinnedOS": true
+    },
+    {
+      "path": "mirror/flightdeck/editor-core/savepoint.ts",
+      "sha256": "bb5278b343bfcab73073b551237d5ae01987a526df9191907f8b62af9098c519",
+      "bytes": 2381,
+      "origin": "PRIVATE_OS_DERIVED_CLEARANCE_REQUIRED",
+      "osPinnedPath": "flightdeck/editor-core/savepoint.ts",
+      "osPinnedCommit": "a2fe29b48425a32d00c8b4c73ba20ce10c5137d9",
+      "matchesPinnedOS": true
+    },
+    {
+      "path": "mirror/flightdeck/pagedoc/adapters.ts",
+      "sha256": "bff4bac17289152c93998623d353b699c3e55614532be8e1d9a2ed7af4ca802c",
+      "bytes": 4183,
+      "origin": "PRIVATE_OS_DERIVED_CLEARANCE_REQUIRED",
+      "osPinnedPath": "flightdeck/pagedoc/adapters.ts",
+      "osPinnedCommit": "a2fe29b48425a32d00c8b4c73ba20ce10c5137d9",
+      "matchesPinnedOS": true
+    },
+    {
+      "path": "mirror/flightdeck/pagedoc/pagedoc.css",
+      "sha256": "106827fdb4dce4fcf3b2f6898801a67d306006296dc8b49385dffbae40222e20",
+      "bytes": 7675,
+      "origin": "PRIVATE_OS_DERIVED_CLEARANCE_REQUIRED",
+      "osPinnedPath": "flightdeck/pagedoc/pagedoc.css",
+      "osPinnedCommit": "a2fe29b48425a32d00c8b4c73ba20ce10c5137d9",
+      "matchesPinnedOS": true
+    },
+    {
+      "path": "mirror/flightdeck/pagedoc/render/BlockBoundary.ts",
+      "sha256": "36a76087d39c744bfb0d888951d25508817125b1b2b183e548f29a858dd29e3c",
+      "bytes": 1884,
+      "origin": "PRIVATE_OS_DERIVED_CLEARANCE_REQUIRED",
+      "osPinnedPath": "flightdeck/pagedoc/render/BlockBoundary.ts",
+      "osPinnedCommit": "a2fe29b48425a32d00c8b4c73ba20ce10c5137d9",
+      "matchesPinnedOS": true
+    },
+    {
+      "path": "mirror/flightdeck/pagedoc/render/PageDocRenderer.ts",
+      "sha256": "dd1753e08a311c613ea381cd9c2704aaba042d5a58761de5a2de5bf29b36fce2",
+      "bytes": 1625,
+      "origin": "PRIVATE_OS_DERIVED_CLEARANCE_REQUIRED",
+      "osPinnedPath": "flightdeck/pagedoc/render/PageDocRenderer.ts",
+      "osPinnedCommit": "a2fe29b48425a32d00c8b4c73ba20ce10c5137d9",
+      "matchesPinnedOS": true
+    },
+    {
+      "path": "mirror/flightdeck/pagedoc/render/Section.ts",
+      "sha256": "2ed9492ea4d81d0e1a5f1d38a723bca86c064d37ef7cab2f51cd54277d29a1bf",
+      "bytes": 3808,
+      "origin": "PRIVATE_OS_DERIVED_CLEARANCE_REQUIRED",
+      "osPinnedPath": "flightdeck/pagedoc/render/Section.ts",
+      "osPinnedCommit": "a2fe29b48425a32d00c8b4c73ba20ce10c5137d9",
+      "matchesPinnedOS": true
+    },
+    {
+      "path": "mirror/flightdeck/pagedoc/render/blocks/appCards.ts",
+      "sha256": "d1dadffbb67782080ec248a154b6843fd981f788f649f228ef7aa4be16e23d2a",
+      "bytes": 1739,
+      "origin": "PRIVATE_OS_DERIVED_CLEARANCE_REQUIRED",
+      "osPinnedPath": "flightdeck/pagedoc/render/blocks/appCards.ts",
+      "osPinnedCommit": "a2fe29b48425a32d00c8b4c73ba20ce10c5137d9",
+      "matchesPinnedOS": true
+    },
+    {
+      "path": "mirror/flightdeck/pagedoc/render/blocks/benefits.ts",
+      "sha256": "7cca665ceb8c2c278880125bacdcff090aad96da04a21391f6711c0ed85ab347",
+      "bytes": 1099,
+      "origin": "PRIVATE_OS_DERIVED_CLEARANCE_REQUIRED",
+      "osPinnedPath": "flightdeck/pagedoc/render/blocks/benefits.ts",
+      "osPinnedCommit": "a2fe29b48425a32d00c8b4c73ba20ce10c5137d9",
+      "matchesPinnedOS": true
+    },
+    {
+      "path": "mirror/flightdeck/pagedoc/render/blocks/cta.ts",
+      "sha256": "94caacc5adce1bbe1f1f97b90a3cf1d083652ec36ba6512050de1598471f8ecb",
+      "bytes": 4715,
+      "origin": "PRIVATE_OS_DERIVED_CLEARANCE_REQUIRED",
+      "osPinnedPath": "flightdeck/pagedoc/render/blocks/cta.ts",
+      "osPinnedCommit": "a2fe29b48425a32d00c8b4c73ba20ce10c5137d9",
+      "matchesPinnedOS": true
+    },
+    {
+      "path": "mirror/flightdeck/pagedoc/render/blocks/divider.ts",
+      "sha256": "e0aad54002deac9ea50b0318c699efd8eedfd20e8507a0b101e6e5ea482de3bc",
+      "bytes": 395,
+      "origin": "PRIVATE_OS_DERIVED_CLEARANCE_REQUIRED",
+      "osPinnedPath": "flightdeck/pagedoc/render/blocks/divider.ts",
+      "osPinnedCommit": "a2fe29b48425a32d00c8b4c73ba20ce10c5137d9",
+      "matchesPinnedOS": true
+    },
+    {
+      "path": "mirror/flightdeck/pagedoc/render/blocks/faq.ts",
+      "sha256": "a875eae8beb7506749d5f74e5e404b957c9321916035cc6b9aa10258a845676d",
+      "bytes": 1328,
+      "origin": "PRIVATE_OS_DERIVED_CLEARANCE_REQUIRED",
+      "osPinnedPath": "flightdeck/pagedoc/render/blocks/faq.ts",
+      "osPinnedCommit": "a2fe29b48425a32d00c8b4c73ba20ce10c5137d9",
+      "matchesPinnedOS": true
+    },
+    {
+      "path": "mirror/flightdeck/pagedoc/render/blocks/featureGrid.ts",
+      "sha256": "965ce692b9ab75df6379b3c404418027569c1d136309751d1dd3e99711e4e609",
+      "bytes": 1445,
+      "origin": "PRIVATE_OS_DERIVED_CLEARANCE_REQUIRED",
+      "osPinnedPath": "flightdeck/pagedoc/render/blocks/featureGrid.ts",
+      "osPinnedCommit": "a2fe29b48425a32d00c8b4c73ba20ce10c5137d9",
+      "matchesPinnedOS": true
+    },
+    {
+      "path": "mirror/flightdeck/pagedoc/render/blocks/gallery.ts",
+      "sha256": "cdefaed8690602dc3551f698033f9690d3ab7fad855a5cd4227ef56dab2b79bf",
+      "bytes": 1158,
+      "origin": "PRIVATE_OS_DERIVED_CLEARANCE_REQUIRED",
+      "osPinnedPath": "flightdeck/pagedoc/render/blocks/gallery.ts",
+      "osPinnedCommit": "a2fe29b48425a32d00c8b4c73ba20ce10c5137d9",
+      "matchesPinnedOS": true
+    },
+    {
+      "path": "mirror/flightdeck/pagedoc/render/blocks/hero.ts",
+      "sha256": "571274f38f4c78f0c5b8a1be7a4a551429776a3adbfe73fb8fc41a1f5c041c38",
+      "bytes": 1720,
+      "origin": "PRIVATE_OS_DERIVED_CLEARANCE_REQUIRED",
+      "osPinnedPath": "flightdeck/pagedoc/render/blocks/hero.ts",
+      "osPinnedCommit": "a2fe29b48425a32d00c8b4c73ba20ce10c5137d9",
+      "matchesPinnedOS": true
+    },
+    {
+      "path": "mirror/flightdeck/pagedoc/render/blocks/media.ts",
+      "sha256": "3f67f692deb02aa2e2e419d553d320de325ed44d7aa7458c8a1031a096902e1d",
+      "bytes": 9061,
+      "origin": "PRIVATE_OS_DERIVED_CLEARANCE_REQUIRED",
+      "osPinnedPath": "flightdeck/pagedoc/render/blocks/media.ts",
+      "osPinnedCommit": "a2fe29b48425a32d00c8b4c73ba20ce10c5137d9",
+      "matchesPinnedOS": true
+    },
+    {
+      "path": "mirror/flightdeck/pagedoc/render/blocks/richText.ts",
+      "sha256": "37bf2d33f7c6fb8e8ac396eaa67a0de6eba366ccfa97d16aede39d1263e9fba2",
+      "bytes": 840,
+      "origin": "PRIVATE_OS_DERIVED_CLEARANCE_REQUIRED",
+      "osPinnedPath": "flightdeck/pagedoc/render/blocks/richText.ts",
+      "osPinnedCommit": "a2fe29b48425a32d00c8b4c73ba20ce10c5137d9",
+      "matchesPinnedOS": true
+    },
+    {
+      "path": "mirror/flightdeck/pagedoc/render/blocks/tabs.ts",
+      "sha256": "df5d825b09b7eb4c12195db80eb69f8d991bd464e13002cb4ae82cf03866d4a2",
+      "bytes": 4423,
+      "origin": "PRIVATE_OS_DERIVED_CLEARANCE_REQUIRED",
+      "osPinnedPath": "flightdeck/pagedoc/render/blocks/tabs.ts",
+      "osPinnedCommit": "a2fe29b48425a32d00c8b4c73ba20ce10c5137d9",
+      "matchesPinnedOS": true
+    },
+    {
+      "path": "mirror/flightdeck/pagedoc/render/blocks/text.ts",
+      "sha256": "4986e3ca16952123964cc7ae26b0c30c721aac89d333cd013f523be3a62e0bf7",
+      "bytes": 840,
+      "origin": "PRIVATE_OS_DERIVED_CLEARANCE_REQUIRED",
+      "osPinnedPath": "flightdeck/pagedoc/render/blocks/text.ts",
+      "osPinnedCommit": "a2fe29b48425a32d00c8b4c73ba20ce10c5137d9",
+      "matchesPinnedOS": true
+    },
+    {
+      "path": "mirror/flightdeck/pagedoc/render/blocks/widget.ts",
+      "sha256": "c00a83947ee50f782a4519462a8e2f59c8f1e3265bda46bf0e1842cd9bc21157",
+      "bytes": 1009,
+      "origin": "PRIVATE_OS_DERIVED_CLEARANCE_REQUIRED",
+      "osPinnedPath": "flightdeck/pagedoc/render/blocks/widget.ts",
+      "osPinnedCommit": "a2fe29b48425a32d00c8b4c73ba20ce10c5137d9",
+      "matchesPinnedOS": true
+    },
+    {
+      "path": "mirror/flightdeck/pagedoc/render/context.ts",
+      "sha256": "6c7a10e4a97439628d7f2f917b5f6da575d0b9a1e9d898f1053455a25daa7380",
+      "bytes": 3437,
+      "origin": "PRIVATE_OS_DERIVED_CLEARANCE_REQUIRED",
+      "osPinnedPath": "flightdeck/pagedoc/render/context.ts",
+      "osPinnedCommit": "a2fe29b48425a32d00c8b4c73ba20ce10c5137d9",
+      "matchesPinnedOS": true
+    },
+    {
+      "path": "mirror/flightdeck/pagedoc/render/index.ts",
+      "sha256": "ec728bcd463fafbe2a8178db567acdc215fa0b9990b73f766e815fec94959f47",
+      "bytes": 1006,
+      "origin": "PRIVATE_OS_DERIVED_CLEARANCE_REQUIRED",
+      "osPinnedPath": "flightdeck/pagedoc/render/index.ts",
+      "osPinnedCommit": "a2fe29b48425a32d00c8b4c73ba20ce10c5137d9",
+      "matchesPinnedOS": true
+    },
+    {
+      "path": "mirror/flightdeck/pagedoc/render/richText.ts",
+      "sha256": "382a52bf5abd885cc84dbc61c3600985464b6526debee52879dd8fde7413a6c2",
+      "bytes": 3391,
+      "origin": "PRIVATE_OS_DERIVED_CLEARANCE_REQUIRED",
+      "osPinnedPath": "flightdeck/pagedoc/render/richText.ts",
+      "osPinnedCommit": "a2fe29b48425a32d00c8b4c73ba20ce10c5137d9",
+      "matchesPinnedOS": true
+    },
+    {
+      "path": "mirror/flightdeck/pagedoc/render/root.ts",
+      "sha256": "f6342fd9066ab76ef4dfa3d3d2c3b301521c08538cf62c3b05db8fb99afb5e4c",
+      "bytes": 1026,
+      "origin": "PRIVATE_OS_DERIVED_CLEARANCE_REQUIRED",
+      "osPinnedPath": "flightdeck/pagedoc/render/root.ts",
+      "osPinnedCommit": "a2fe29b48425a32d00c8b4c73ba20ce10c5137d9",
+      "matchesPinnedOS": true
+    },
+    {
+      "path": "mirror/flightdeck/pagedoc/schema/blocksContent.ts",
+      "sha256": "1fbf7171c08240d7431264f5aafcc3c870478db1bf3028f0654631fdf49d48c3",
+      "bytes": 7418,
+      "origin": "PRIVATE_OS_DERIVED_CLEARANCE_REQUIRED",
+      "osPinnedPath": "flightdeck/pagedoc/schema/blocksContent.ts",
+      "osPinnedCommit": "a2fe29b48425a32d00c8b4c73ba20ce10c5137d9",
+      "matchesPinnedOS": true
+    },
+    {
+      "path": "mirror/flightdeck/pagedoc/schema/blocksCore.ts",
+      "sha256": "beafe42d1081569b63287c813945be823344af68fe4037f773ed611f93d7b3a1",
+      "bytes": 4114,
+      "origin": "PRIVATE_OS_DERIVED_CLEARANCE_REQUIRED",
+      "osPinnedPath": "flightdeck/pagedoc/schema/blocksCore.ts",
+      "osPinnedCommit": "a2fe29b48425a32d00c8b4c73ba20ce10c5137d9",
+      "matchesPinnedOS": true
+    },
+    {
+      "path": "mirror/flightdeck/pagedoc/schema/envelope.ts",
+      "sha256": "fd6b36cfa4190f75f864035e0e6a84997dedaec05400ef5fae95210db38678de",
+      "bytes": 1475,
+      "origin": "PRIVATE_OS_DERIVED_CLEARANCE_REQUIRED",
+      "osPinnedPath": "flightdeck/pagedoc/schema/envelope.ts",
+      "osPinnedCommit": "a2fe29b48425a32d00c8b4c73ba20ce10c5137d9",
+      "matchesPinnedOS": true
+    },
+    {
+      "path": "mirror/flightdeck/pagedoc/schema/index.ts",
+      "sha256": "4b7f8c3e380690373aa6571d660cc0e00509f43c9725e444943ab6de27bbf8b6",
+      "bytes": 11603,
+      "origin": "PRIVATE_OS_DERIVED_CLEARANCE_REQUIRED",
+      "osPinnedPath": "flightdeck/pagedoc/schema/index.ts",
+      "osPinnedCommit": "a2fe29b48425a32d00c8b4c73ba20ce10c5137d9",
+      "matchesPinnedOS": true
+    },
+    {
+      "path": "mirror/flightdeck/pagedoc/schema/layout.ts",
+      "sha256": "e627dbd8ecaabeda4bc2cfd30ceb219281a1882b9e2824c46f395118ab6dfd23",
+      "bytes": 2455,
+      "origin": "PRIVATE_OS_DERIVED_CLEARANCE_REQUIRED",
+      "osPinnedPath": "flightdeck/pagedoc/schema/layout.ts",
+      "osPinnedCommit": "a2fe29b48425a32d00c8b4c73ba20ce10c5137d9",
+      "matchesPinnedOS": true
+    },
+    {
+      "path": "mirror/flightdeck/pagedoc/schema/limits.ts",
+      "sha256": "7b552efa66255b4c13f23c5bf7628ca397a5964134ed4e0d00b623b40ac2ca02",
+      "bytes": 2131,
+      "origin": "PRIVATE_OS_DERIVED_CLEARANCE_REQUIRED",
+      "osPinnedPath": "flightdeck/pagedoc/schema/limits.ts",
+      "osPinnedCommit": "a2fe29b48425a32d00c8b4c73ba20ce10c5137d9",
+      "matchesPinnedOS": true
+    },
+    {
+      "path": "mirror/flightdeck/pagedoc/schema/localized.ts",
+      "sha256": "01afa46223b93baf2fe5cc4b1a3b0abcdee8c8c5b49b76d3f123d82abf8d44d8",
+      "bytes": 2269,
+      "origin": "PRIVATE_OS_DERIVED_CLEARANCE_REQUIRED",
+      "osPinnedPath": "flightdeck/pagedoc/schema/localized.ts",
+      "osPinnedCommit": "a2fe29b48425a32d00c8b4c73ba20ce10c5137d9",
+      "matchesPinnedOS": true
+    },
+    {
+      "path": "mirror/flightdeck/pagedoc/schema/text.ts",
+      "sha256": "4bc73b5d5131c1610067c7cf1908e6fa3e408ce7ce305e44edadc4426a6c5208",
+      "bytes": 3296,
+      "origin": "PRIVATE_OS_DERIVED_CLEARANCE_REQUIRED",
+      "osPinnedPath": "flightdeck/pagedoc/schema/text.ts",
+      "osPinnedCommit": "a2fe29b48425a32d00c8b4c73ba20ce10c5137d9",
+      "matchesPinnedOS": true
+    },
+    {
+      "path": "mirror/flightdeck/web/src/pagedoc-editor/transactions.ts",
+      "sha256": "4d43f3cd7fd0fc6996d18a644b273e0211e83697bd2076b485f4a22910be4161",
+      "bytes": 33312,
+      "origin": "PRIVATE_OS_DERIVED_CLEARANCE_REQUIRED",
+      "osPinnedPath": "flightdeck/web/src/pagedoc-editor/transactions.ts",
+      "osPinnedCommit": "a2fe29b48425a32d00c8b4c73ba20ce10c5137d9",
+      "matchesPinnedOS": true
+    },
+    {
+      "path": "mirror/flightdeck/web/src/widgets/parts/StatTile.tsx",
+      "sha256": "e302822ab6af3fcc85810e8aa1ff441d8ff4095f4f131fb340c4c1750e0f7af0",
+      "bytes": 3780,
+      "origin": "PRIVATE_OS_DERIVED_CLEARANCE_REQUIRED",
+      "osPinnedPath": "flightdeck/web/src/widgets/parts/StatTile.tsx",
+      "osPinnedCommit": "a2fe29b48425a32d00c8b4c73ba20ce10c5137d9",
+      "matchesPinnedOS": true
+    }
+  ],
+  "edges": [
+    {
+      "from": "app/AppDesigner.tsx",
+      "specifier": "react",
+      "external": true
+    },
+    {
+      "from": "app/AppDesigner.tsx",
+      "specifier": "../mirror/flightdeck/pagedoc/render/index.js",
+      "resolved": "mirror/flightdeck/pagedoc/render/index.ts"
+    },
+    {
+      "from": "app/AppDesigner.tsx",
+      "specifier": "../mirror/flightdeck/pagedoc/schema/index.js",
+      "resolved": "mirror/flightdeck/pagedoc/schema/index.ts"
+    },
+    {
+      "from": "app/AppDesigner.tsx",
+      "specifier": "./adapters.js",
+      "resolved": "app/adapters.tsx"
+    },
+    {
+      "from": "app/AppDesigner.tsx",
+      "specifier": "./model.js",
+      "resolved": "app/model.ts"
+    },
+    {
+      "from": "app/AppDesigner.tsx",
+      "specifier": "./native.js",
+      "resolved": "app/native.ts"
+    },
+    {
+      "from": "app/AppDesigner.tsx",
+      "specifier": "./public.js",
+      "resolved": "app/public.ts"
+    },
+    {
+      "from": "app/AppDesigner.tsx",
+      "specifier": "../mirror/flightdeck/pagedoc/pagedoc.css",
+      "resolved": "mirror/flightdeck/pagedoc/pagedoc.css"
+    },
+    {
+      "from": "app/AppDesigner.tsx",
+      "specifier": "./editor.css",
+      "resolved": "app/editor.css"
+    },
+    {
+      "from": "app/public.ts",
+      "specifier": "../mirror/flightdeck/pagedoc/schema/index.js",
+      "resolved": "mirror/flightdeck/pagedoc/schema/index.ts"
+    },
+    {
+      "from": "app/public.ts",
+      "specifier": "../mirror/flightdeck/pagedoc/adapters.js",
+      "resolved": "mirror/flightdeck/pagedoc/adapters.ts"
+    },
+    {
+      "from": "app/public.ts",
+      "specifier": "../contracts/os/flightdeck/server/widgets/types.js",
+      "resolved": "contracts/os/flightdeck/server/widgets/types.ts"
+    },
+    {
+      "from": "app/public.ts",
+      "specifier": "./native.js",
+      "resolved": "app/native.ts"
+    },
+    {
+      "from": "app/model.ts",
+      "specifier": "zod/v4",
+      "external": true
+    },
+    {
+      "from": "app/model.ts",
+      "specifier": "../mirror/flightdeck/pagedoc/schema/index.js",
+      "resolved": "mirror/flightdeck/pagedoc/schema/index.ts"
+    },
+    {
+      "from": "app/model.ts",
+      "specifier": "../mirror/flightdeck/web/src/pagedoc-editor/transactions.js",
+      "resolved": "mirror/flightdeck/web/src/pagedoc-editor/transactions.ts"
+    },
+    {
+      "from": "app/model.ts",
+      "specifier": "../contracts/os/flightdeck/server/widgets/types.js",
+      "resolved": "contracts/os/flightdeck/server/widgets/types.ts"
+    },
+    {
+      "from": "app/native.ts",
+      "specifier": "zod/v4",
+      "external": true
+    },
+    {
+      "from": "app/native.ts",
+      "specifier": "../mirror/flightdeck/pagedoc/schema/index.js",
+      "resolved": "mirror/flightdeck/pagedoc/schema/index.ts"
+    },
+    {
+      "from": "app/adapters.tsx",
+      "specifier": "../mirror/flightdeck/pagedoc/adapters.js",
+      "resolved": "mirror/flightdeck/pagedoc/adapters.ts"
+    },
+    {
+      "from": "app/adapters.tsx",
+      "specifier": "../mirror/flightdeck/web/src/widgets/parts/StatTile.js",
+      "resolved": "mirror/flightdeck/web/src/widgets/parts/StatTile.tsx"
+    },
+    {
+      "from": "app/adapters.tsx",
+      "specifier": "./model.js",
+      "resolved": "app/model.ts"
+    },
+    {
+      "from": "mirror/flightdeck/pagedoc/render/index.ts",
+      "specifier": "./root.js",
+      "resolved": "mirror/flightdeck/pagedoc/render/root.ts"
+    },
+    {
+      "from": "mirror/flightdeck/pagedoc/render/index.ts",
+      "specifier": "./PageDocRenderer.js",
+      "resolved": "mirror/flightdeck/pagedoc/render/PageDocRenderer.ts"
+    },
+    {
+      "from": "mirror/flightdeck/pagedoc/render/index.ts",
+      "specifier": "./Section.js",
+      "resolved": "mirror/flightdeck/pagedoc/render/Section.ts"
+    },
+    {
+      "from": "mirror/flightdeck/pagedoc/render/index.ts",
+      "specifier": "./BlockBoundary.js",
+      "resolved": "mirror/flightdeck/pagedoc/render/BlockBoundary.ts"
+    },
+    {
+      "from": "mirror/flightdeck/pagedoc/render/index.ts",
+      "specifier": "./context.js",
+      "resolved": "mirror/flightdeck/pagedoc/render/context.ts"
+    },
+    {
+      "from": "mirror/flightdeck/pagedoc/render/index.ts",
+      "specifier": "./richText.js",
+      "resolved": "mirror/flightdeck/pagedoc/render/richText.ts"
+    },
+    {
+      "from": "mirror/flightdeck/pagedoc/schema/index.ts",
+      "specifier": "zod/v4",
+      "external": true
+    },
+    {
+      "from": "mirror/flightdeck/pagedoc/schema/index.ts",
+      "specifier": "./envelope.js",
+      "resolved": "mirror/flightdeck/pagedoc/schema/envelope.ts"
+    },
+    {
+      "from": "mirror/flightdeck/pagedoc/schema/index.ts",
+      "specifier": "./limits.js",
+      "resolved": "mirror/flightdeck/pagedoc/schema/limits.ts"
+    },
+    {
+      "from": "mirror/flightdeck/pagedoc/schema/index.ts",
+      "specifier": "./localized.js",
+      "resolved": "mirror/flightdeck/pagedoc/schema/localized.ts"
+    },
+    {
+      "from": "mirror/flightdeck/pagedoc/schema/index.ts",
+      "specifier": "./text.js",
+      "resolved": "mirror/flightdeck/pagedoc/schema/text.ts"
+    },
+    {
+      "from": "mirror/flightdeck/pagedoc/schema/index.ts",
+      "specifier": "./blocksCore.js",
+      "resolved": "mirror/flightdeck/pagedoc/schema/blocksCore.ts"
+    },
+    {
+      "from": "mirror/flightdeck/pagedoc/schema/index.ts",
+      "specifier": "./blocksContent.js",
+      "resolved": "mirror/flightdeck/pagedoc/schema/blocksContent.ts"
+    },
+    {
+      "from": "mirror/flightdeck/pagedoc/schema/index.ts",
+      "specifier": "./layout.js",
+      "resolved": "mirror/flightdeck/pagedoc/schema/layout.ts"
+    },
+    {
+      "from": "app/editor.css",
+      "specifier": "./native-tokens.css",
+      "resolved": "app/native-tokens.css"
+    },
+    {
+      "from": "mirror/flightdeck/pagedoc/adapters.ts",
+      "specifier": "react",
+      "external": true
+    },
+    {
+      "from": "contracts/os/flightdeck/server/widgets/types.ts",
+      "specifier": "zod",
+      "external": true
+    },
+    {
+      "from": "mirror/flightdeck/web/src/pagedoc-editor/transactions.ts",
+      "specifier": "../../../editor-core/history.js",
+      "resolved": "mirror/flightdeck/editor-core/history.ts"
+    },
+    {
+      "from": "mirror/flightdeck/web/src/pagedoc-editor/transactions.ts",
+      "specifier": "../../../editor-core/result.js",
+      "resolved": "mirror/flightdeck/editor-core/result.ts"
+    },
+    {
+      "from": "mirror/flightdeck/web/src/pagedoc-editor/transactions.ts",
+      "specifier": "../../../pagedoc/schema/index.js",
+      "resolved": "mirror/flightdeck/pagedoc/schema/index.ts"
+    },
+    {
+      "from": "mirror/flightdeck/web/src/pagedoc-editor/transactions.ts",
+      "specifier": "../../../editor-core/savepoint.js",
+      "resolved": "mirror/flightdeck/editor-core/savepoint.ts"
+    },
+    {
+      "from": "mirror/flightdeck/web/src/widgets/parts/StatTile.tsx",
+      "specifier": "react",
+      "external": true
+    },
+    {
+      "from": "mirror/flightdeck/web/src/widgets/parts/StatTile.tsx",
+      "specifier": "../../i18n",
+      "resolved": "app/widget-host-seam.ts"
+    },
+    {
+      "from": "mirror/flightdeck/web/src/widgets/parts/StatTile.tsx",
+      "specifier": "../../nav",
+      "resolved": "app/widget-host-seam.ts"
+    },
+    {
+      "from": "mirror/flightdeck/pagedoc/render/root.ts",
+      "specifier": "react",
+      "external": true
+    },
+    {
+      "from": "mirror/flightdeck/pagedoc/render/PageDocRenderer.ts",
+      "specifier": "react",
+      "external": true
+    },
+    {
+      "from": "mirror/flightdeck/pagedoc/render/PageDocRenderer.ts",
+      "specifier": "../adapters.js",
+      "resolved": "mirror/flightdeck/pagedoc/adapters.ts"
+    },
+    {
+      "from": "mirror/flightdeck/pagedoc/render/PageDocRenderer.ts",
+      "specifier": "../schema/index.js",
+      "resolved": "mirror/flightdeck/pagedoc/schema/index.ts"
+    },
+    {
+      "from": "mirror/flightdeck/pagedoc/render/PageDocRenderer.ts",
+      "specifier": "./context.js",
+      "resolved": "mirror/flightdeck/pagedoc/render/context.ts"
+    },
+    {
+      "from": "mirror/flightdeck/pagedoc/render/PageDocRenderer.ts",
+      "specifier": "./root.js",
+      "resolved": "mirror/flightdeck/pagedoc/render/root.ts"
+    },
+    {
+      "from": "mirror/flightdeck/pagedoc/render/PageDocRenderer.ts",
+      "specifier": "./Section.js",
+      "resolved": "mirror/flightdeck/pagedoc/render/Section.ts"
+    },
+    {
+      "from": "mirror/flightdeck/pagedoc/render/Section.ts",
+      "specifier": "react",
+      "external": true
+    },
+    {
+      "from": "mirror/flightdeck/pagedoc/render/Section.ts",
+      "specifier": "../schema/index.js",
+      "resolved": "mirror/flightdeck/pagedoc/schema/index.ts"
+    },
+    {
+      "from": "mirror/flightdeck/pagedoc/render/Section.ts",
+      "specifier": "./BlockBoundary.js",
+      "resolved": "mirror/flightdeck/pagedoc/render/BlockBoundary.ts"
+    },
+    {
+      "from": "mirror/flightdeck/pagedoc/render/Section.ts",
+      "specifier": "./context.js",
+      "resolved": "mirror/flightdeck/pagedoc/render/context.ts"
+    },
+    {
+      "from": "mirror/flightdeck/pagedoc/render/Section.ts",
+      "specifier": "./blocks/appCards.js",
+      "resolved": "mirror/flightdeck/pagedoc/render/blocks/appCards.ts"
+    },
+    {
+      "from": "mirror/flightdeck/pagedoc/render/Section.ts",
+      "specifier": "./blocks/benefits.js",
+      "resolved": "mirror/flightdeck/pagedoc/render/blocks/benefits.ts"
+    },
+    {
+      "from": "mirror/flightdeck/pagedoc/render/Section.ts",
+      "specifier": "./blocks/cta.js",
+      "resolved": "mirror/flightdeck/pagedoc/render/blocks/cta.ts"
+    },
+    {
+      "from": "mirror/flightdeck/pagedoc/render/Section.ts",
+      "specifier": "./blocks/divider.js",
+      "resolved": "mirror/flightdeck/pagedoc/render/blocks/divider.ts"
+    },
+    {
+      "from": "mirror/flightdeck/pagedoc/render/Section.ts",
+      "specifier": "./blocks/faq.js",
+      "resolved": "mirror/flightdeck/pagedoc/render/blocks/faq.ts"
+    },
+    {
+      "from": "mirror/flightdeck/pagedoc/render/Section.ts",
+      "specifier": "./blocks/featureGrid.js",
+      "resolved": "mirror/flightdeck/pagedoc/render/blocks/featureGrid.ts"
+    },
+    {
+      "from": "mirror/flightdeck/pagedoc/render/Section.ts",
+      "specifier": "./blocks/gallery.js",
+      "resolved": "mirror/flightdeck/pagedoc/render/blocks/gallery.ts"
+    },
+    {
+      "from": "mirror/flightdeck/pagedoc/render/Section.ts",
+      "specifier": "./blocks/hero.js",
+      "resolved": "mirror/flightdeck/pagedoc/render/blocks/hero.ts"
+    },
+    {
+      "from": "mirror/flightdeck/pagedoc/render/Section.ts",
+      "specifier": "./blocks/media.js",
+      "resolved": "mirror/flightdeck/pagedoc/render/blocks/media.ts"
+    },
+    {
+      "from": "mirror/flightdeck/pagedoc/render/Section.ts",
+      "specifier": "./blocks/richText.js",
+      "resolved": "mirror/flightdeck/pagedoc/render/blocks/richText.ts"
+    },
+    {
+      "from": "mirror/flightdeck/pagedoc/render/Section.ts",
+      "specifier": "./blocks/tabs.js",
+      "resolved": "mirror/flightdeck/pagedoc/render/blocks/tabs.ts"
+    },
+    {
+      "from": "mirror/flightdeck/pagedoc/render/Section.ts",
+      "specifier": "./blocks/widget.js",
+      "resolved": "mirror/flightdeck/pagedoc/render/blocks/widget.ts"
+    },
+    {
+      "from": "mirror/flightdeck/pagedoc/render/BlockBoundary.ts",
+      "specifier": "react",
+      "external": true
+    },
+    {
+      "from": "mirror/flightdeck/pagedoc/render/BlockBoundary.ts",
+      "specifier": "../schema/index.js",
+      "resolved": "mirror/flightdeck/pagedoc/schema/index.ts"
+    },
+    {
+      "from": "mirror/flightdeck/pagedoc/render/BlockBoundary.ts",
+      "specifier": "./context.js",
+      "resolved": "mirror/flightdeck/pagedoc/render/context.ts"
+    },
+    {
+      "from": "mirror/flightdeck/pagedoc/render/context.ts",
+      "specifier": "../adapters.js",
+      "resolved": "mirror/flightdeck/pagedoc/adapters.ts"
+    },
+    {
+      "from": "mirror/flightdeck/pagedoc/render/context.ts",
+      "specifier": "../schema/index.js",
+      "resolved": "mirror/flightdeck/pagedoc/schema/index.ts"
+    },
+    {
+      "from": "mirror/flightdeck/pagedoc/render/richText.ts",
+      "specifier": "react",
+      "external": true
+    },
+    {
+      "from": "mirror/flightdeck/pagedoc/render/richText.ts",
+      "specifier": "../schema/index.js",
+      "resolved": "mirror/flightdeck/pagedoc/schema/index.ts"
+    },
+    {
+      "from": "mirror/flightdeck/pagedoc/render/richText.ts",
+      "specifier": "./context.js",
+      "resolved": "mirror/flightdeck/pagedoc/render/context.ts"
+    },
+    {
+      "from": "mirror/flightdeck/pagedoc/schema/envelope.ts",
+      "specifier": "zod/v4",
+      "external": true
+    },
+    {
+      "from": "mirror/flightdeck/pagedoc/schema/envelope.ts",
+      "specifier": "./limits.js",
+      "resolved": "mirror/flightdeck/pagedoc/schema/limits.ts"
+    },
+    {
+      "from": "mirror/flightdeck/pagedoc/schema/envelope.ts",
+      "specifier": "./localized.js",
+      "resolved": "mirror/flightdeck/pagedoc/schema/localized.ts"
+    },
+    {
+      "from": "mirror/flightdeck/pagedoc/schema/envelope.ts",
+      "specifier": "./layout.js",
+      "resolved": "mirror/flightdeck/pagedoc/schema/layout.ts"
+    },
+    {
+      "from": "mirror/flightdeck/pagedoc/schema/localized.ts",
+      "specifier": "zod/v4",
+      "external": true
+    },
+    {
+      "from": "mirror/flightdeck/pagedoc/schema/text.ts",
+      "specifier": "zod/v4",
+      "external": true
+    },
+    {
+      "from": "mirror/flightdeck/pagedoc/schema/text.ts",
+      "specifier": "./limits.js",
+      "resolved": "mirror/flightdeck/pagedoc/schema/limits.ts"
+    },
+    {
+      "from": "mirror/flightdeck/pagedoc/schema/text.ts",
+      "specifier": "./localized.js",
+      "resolved": "mirror/flightdeck/pagedoc/schema/localized.ts"
+    },
+    {
+      "from": "mirror/flightdeck/pagedoc/schema/blocksCore.ts",
+      "specifier": "zod/v4",
+      "external": true
+    },
+    {
+      "from": "mirror/flightdeck/pagedoc/schema/blocksCore.ts",
+      "specifier": "./limits.js",
+      "resolved": "mirror/flightdeck/pagedoc/schema/limits.ts"
+    },
+    {
+      "from": "mirror/flightdeck/pagedoc/schema/blocksCore.ts",
+      "specifier": "./localized.js",
+      "resolved": "mirror/flightdeck/pagedoc/schema/localized.ts"
+    },
+    {
+      "from": "mirror/flightdeck/pagedoc/schema/blocksCore.ts",
+      "specifier": "./text.js",
+      "resolved": "mirror/flightdeck/pagedoc/schema/text.ts"
+    },
+    {
+      "from": "mirror/flightdeck/pagedoc/schema/blocksContent.ts",
+      "specifier": "zod/v4",
+      "external": true
+    },
+    {
+      "from": "mirror/flightdeck/pagedoc/schema/blocksContent.ts",
+      "specifier": "./blocksCore.js",
+      "resolved": "mirror/flightdeck/pagedoc/schema/blocksCore.ts"
+    },
+    {
+      "from": "mirror/flightdeck/pagedoc/schema/blocksContent.ts",
+      "specifier": "./limits.js",
+      "resolved": "mirror/flightdeck/pagedoc/schema/limits.ts"
+    },
+    {
+      "from": "mirror/flightdeck/pagedoc/schema/blocksContent.ts",
+      "specifier": "./localized.js",
+      "resolved": "mirror/flightdeck/pagedoc/schema/localized.ts"
+    },
+    {
+      "from": "mirror/flightdeck/pagedoc/schema/blocksContent.ts",
+      "specifier": "./text.js",
+      "resolved": "mirror/flightdeck/pagedoc/schema/text.ts"
+    },
+    {
+      "from": "mirror/flightdeck/pagedoc/schema/layout.ts",
+      "specifier": "zod/v4",
+      "external": true
+    },
+    {
+      "from": "mirror/flightdeck/pagedoc/schema/layout.ts",
+      "specifier": "./blocksCore.js",
+      "resolved": "mirror/flightdeck/pagedoc/schema/blocksCore.ts"
+    },
+    {
+      "from": "mirror/flightdeck/pagedoc/schema/layout.ts",
+      "specifier": "./blocksContent.js",
+      "resolved": "mirror/flightdeck/pagedoc/schema/blocksContent.ts"
+    },
+    {
+      "from": "mirror/flightdeck/pagedoc/schema/layout.ts",
+      "specifier": "./limits.js",
+      "resolved": "mirror/flightdeck/pagedoc/schema/limits.ts"
+    },
+    {
+      "from": "mirror/flightdeck/editor-core/history.ts",
+      "specifier": "./result.js",
+      "resolved": "mirror/flightdeck/editor-core/result.ts"
+    },
+    {
+      "from": "mirror/flightdeck/editor-core/savepoint.ts",
+      "specifier": "./history.js",
+      "resolved": "mirror/flightdeck/editor-core/history.ts"
+    },
+    {
+      "from": "mirror/flightdeck/pagedoc/render/blocks/appCards.ts",
+      "specifier": "react",
+      "external": true
+    },
+    {
+      "from": "mirror/flightdeck/pagedoc/render/blocks/appCards.ts",
+      "specifier": "../../schema/index.js",
+      "resolved": "mirror/flightdeck/pagedoc/schema/index.ts"
+    },
+    {
+      "from": "mirror/flightdeck/pagedoc/render/blocks/appCards.ts",
+      "specifier": "../context.js",
+      "resolved": "mirror/flightdeck/pagedoc/render/context.ts"
+    },
+    {
+      "from": "mirror/flightdeck/pagedoc/render/blocks/appCards.ts",
+      "specifier": "./cta.js",
+      "resolved": "mirror/flightdeck/pagedoc/render/blocks/cta.ts"
+    },
+    {
+      "from": "mirror/flightdeck/pagedoc/render/blocks/appCards.ts",
+      "specifier": "./text.js",
+      "resolved": "mirror/flightdeck/pagedoc/render/blocks/text.ts"
+    },
+    {
+      "from": "mirror/flightdeck/pagedoc/render/blocks/benefits.ts",
+      "specifier": "react",
+      "external": true
+    },
+    {
+      "from": "mirror/flightdeck/pagedoc/render/blocks/benefits.ts",
+      "specifier": "../../schema/index.js",
+      "resolved": "mirror/flightdeck/pagedoc/schema/index.ts"
+    },
+    {
+      "from": "mirror/flightdeck/pagedoc/render/blocks/benefits.ts",
+      "specifier": "../context.js",
+      "resolved": "mirror/flightdeck/pagedoc/render/context.ts"
+    },
+    {
+      "from": "mirror/flightdeck/pagedoc/render/blocks/benefits.ts",
+      "specifier": "./text.js",
+      "resolved": "mirror/flightdeck/pagedoc/render/blocks/text.ts"
+    },
+    {
+      "from": "mirror/flightdeck/pagedoc/render/blocks/cta.ts",
+      "specifier": "react",
+      "external": true
+    },
+    {
+      "from": "mirror/flightdeck/pagedoc/render/blocks/cta.ts",
+      "specifier": "../../adapters.js",
+      "resolved": "mirror/flightdeck/pagedoc/adapters.ts"
+    },
+    {
+      "from": "mirror/flightdeck/pagedoc/render/blocks/cta.ts",
+      "specifier": "../../schema/index.js",
+      "resolved": "mirror/flightdeck/pagedoc/schema/index.ts"
+    },
+    {
+      "from": "mirror/flightdeck/pagedoc/render/blocks/cta.ts",
+      "specifier": "../context.js",
+      "resolved": "mirror/flightdeck/pagedoc/render/context.ts"
+    },
+    {
+      "from": "mirror/flightdeck/pagedoc/render/blocks/cta.ts",
+      "specifier": "../richText.js",
+      "resolved": "mirror/flightdeck/pagedoc/render/richText.ts"
+    },
+    {
+      "from": "mirror/flightdeck/pagedoc/render/blocks/cta.ts",
+      "specifier": "./text.js",
+      "resolved": "mirror/flightdeck/pagedoc/render/blocks/text.ts"
+    },
+    {
+      "from": "mirror/flightdeck/pagedoc/render/blocks/divider.ts",
+      "specifier": "react",
+      "external": true
+    },
+    {
+      "from": "mirror/flightdeck/pagedoc/render/blocks/faq.ts",
+      "specifier": "react",
+      "external": true
+    },
+    {
+      "from": "mirror/flightdeck/pagedoc/render/blocks/faq.ts",
+      "specifier": "../../schema/index.js",
+      "resolved": "mirror/flightdeck/pagedoc/schema/index.ts"
+    },
+    {
+      "from": "mirror/flightdeck/pagedoc/render/blocks/faq.ts",
+      "specifier": "../context.js",
+      "resolved": "mirror/flightdeck/pagedoc/render/context.ts"
+    },
+    {
+      "from": "mirror/flightdeck/pagedoc/render/blocks/faq.ts",
+      "specifier": "../richText.js",
+      "resolved": "mirror/flightdeck/pagedoc/render/richText.ts"
+    },
+    {
+      "from": "mirror/flightdeck/pagedoc/render/blocks/faq.ts",
+      "specifier": "./text.js",
+      "resolved": "mirror/flightdeck/pagedoc/render/blocks/text.ts"
+    },
+    {
+      "from": "mirror/flightdeck/pagedoc/render/blocks/featureGrid.ts",
+      "specifier": "react",
+      "external": true
+    },
+    {
+      "from": "mirror/flightdeck/pagedoc/render/blocks/featureGrid.ts",
+      "specifier": "../../schema/index.js",
+      "resolved": "mirror/flightdeck/pagedoc/schema/index.ts"
+    },
+    {
+      "from": "mirror/flightdeck/pagedoc/render/blocks/featureGrid.ts",
+      "specifier": "../context.js",
+      "resolved": "mirror/flightdeck/pagedoc/render/context.ts"
+    },
+    {
+      "from": "mirror/flightdeck/pagedoc/render/blocks/featureGrid.ts",
+      "specifier": "./media.js",
+      "resolved": "mirror/flightdeck/pagedoc/render/blocks/media.ts"
+    },
+    {
+      "from": "mirror/flightdeck/pagedoc/render/blocks/featureGrid.ts",
+      "specifier": "./text.js",
+      "resolved": "mirror/flightdeck/pagedoc/render/blocks/text.ts"
+    },
+    {
+      "from": "mirror/flightdeck/pagedoc/render/blocks/gallery.ts",
+      "specifier": "react",
+      "external": true
+    },
+    {
+      "from": "mirror/flightdeck/pagedoc/render/blocks/gallery.ts",
+      "specifier": "../../schema/index.js",
+      "resolved": "mirror/flightdeck/pagedoc/schema/index.ts"
+    },
+    {
+      "from": "mirror/flightdeck/pagedoc/render/blocks/gallery.ts",
+      "specifier": "../context.js",
+      "resolved": "mirror/flightdeck/pagedoc/render/context.ts"
+    },
+    {
+      "from": "mirror/flightdeck/pagedoc/render/blocks/gallery.ts",
+      "specifier": "./media.js",
+      "resolved": "mirror/flightdeck/pagedoc/render/blocks/media.ts"
+    },
+    {
+      "from": "mirror/flightdeck/pagedoc/render/blocks/hero.ts",
+      "specifier": "react",
+      "external": true
+    },
+    {
+      "from": "mirror/flightdeck/pagedoc/render/blocks/hero.ts",
+      "specifier": "../../schema/index.js",
+      "resolved": "mirror/flightdeck/pagedoc/schema/index.ts"
+    },
+    {
+      "from": "mirror/flightdeck/pagedoc/render/blocks/hero.ts",
+      "specifier": "../context.js",
+      "resolved": "mirror/flightdeck/pagedoc/render/context.ts"
+    },
+    {
+      "from": "mirror/flightdeck/pagedoc/render/blocks/hero.ts",
+      "specifier": "./cta.js",
+      "resolved": "mirror/flightdeck/pagedoc/render/blocks/cta.ts"
+    },
+    {
+      "from": "mirror/flightdeck/pagedoc/render/blocks/hero.ts",
+      "specifier": "./media.js",
+      "resolved": "mirror/flightdeck/pagedoc/render/blocks/media.ts"
+    },
+    {
+      "from": "mirror/flightdeck/pagedoc/render/blocks/media.ts",
+      "specifier": "react",
+      "external": true
+    },
+    {
+      "from": "mirror/flightdeck/pagedoc/render/blocks/media.ts",
+      "specifier": "../../adapters.js",
+      "resolved": "mirror/flightdeck/pagedoc/adapters.ts"
+    },
+    {
+      "from": "mirror/flightdeck/pagedoc/render/blocks/media.ts",
+      "specifier": "../../schema/index.js",
+      "resolved": "mirror/flightdeck/pagedoc/schema/index.ts"
+    },
+    {
+      "from": "mirror/flightdeck/pagedoc/render/blocks/media.ts",
+      "specifier": "../context.js",
+      "resolved": "mirror/flightdeck/pagedoc/render/context.ts"
+    },
+    {
+      "from": "mirror/flightdeck/pagedoc/render/blocks/richText.ts",
+      "specifier": "react",
+      "external": true
+    },
+    {
+      "from": "mirror/flightdeck/pagedoc/render/blocks/richText.ts",
+      "specifier": "../../schema/index.js",
+      "resolved": "mirror/flightdeck/pagedoc/schema/index.ts"
+    },
+    {
+      "from": "mirror/flightdeck/pagedoc/render/blocks/richText.ts",
+      "specifier": "../context.js",
+      "resolved": "mirror/flightdeck/pagedoc/render/context.ts"
+    },
+    {
+      "from": "mirror/flightdeck/pagedoc/render/blocks/richText.ts",
+      "specifier": "../richText.js",
+      "resolved": "mirror/flightdeck/pagedoc/render/richText.ts"
+    },
+    {
+      "from": "mirror/flightdeck/pagedoc/render/blocks/tabs.ts",
+      "specifier": "react",
+      "external": true
+    },
+    {
+      "from": "mirror/flightdeck/pagedoc/render/blocks/tabs.ts",
+      "specifier": "../../schema/index.js",
+      "resolved": "mirror/flightdeck/pagedoc/schema/index.ts"
+    },
+    {
+      "from": "mirror/flightdeck/pagedoc/render/blocks/tabs.ts",
+      "specifier": "../context.js",
+      "resolved": "mirror/flightdeck/pagedoc/render/context.ts"
+    },
+    {
+      "from": "mirror/flightdeck/pagedoc/render/blocks/widget.ts",
+      "specifier": "react",
+      "external": true
+    },
+    {
+      "from": "mirror/flightdeck/pagedoc/render/blocks/widget.ts",
+      "specifier": "../../schema/index.js",
+      "resolved": "mirror/flightdeck/pagedoc/schema/index.ts"
+    },
+    {
+      "from": "mirror/flightdeck/pagedoc/render/blocks/widget.ts",
+      "specifier": "../context.js",
+      "resolved": "mirror/flightdeck/pagedoc/render/context.ts"
+    },
+    {
+      "from": "mirror/flightdeck/pagedoc/render/blocks/text.ts",
+      "specifier": "react",
+      "external": true
+    },
+    {
+      "from": "mirror/flightdeck/pagedoc/render/blocks/text.ts",
+      "specifier": "../context.js",
+      "resolved": "mirror/flightdeck/pagedoc/render/context.ts"
+    }
+  ],
+  "publicImportAuthorized": true,
+  "redistributionAuthorization": {
+    "date": "2026-10-27",
+    "basis": "Explicit rights-holder confirmation in user conversation",
+    "scope": "Only the finite OS-derived designer/shared source set reviewed for this Studio integration",
+    "record": "REDISTRIBUTION.md",
+    "hostAuthorityGranted": false,
+    "repositoryWideOSLicenseGranted": false
+  }
+}

@@ -32,6 +32,12 @@ export type NavSection = (typeof NAV_SECTIONS)[number];
 export const CAPABILITY_SCOPES = ["read:contracts", "write:inbox-proposal"] as const;
 export type CapabilityScope = (typeof CAPABILITY_SCOPES)[number];
 
+/** Host declaration vocabulary only. D-173 admits HRSS to Sign and four
+ * owner-selected tools, not arbitrary generated apps. */
+export const HOST_WORKSPACE_ROLES = ["hr_preparer", "hr_reviewer", "wc_liaison", "legal", "hrss_team_lead", "hrss_manager", "admin"] as const;
+
+/** General generated-app admission remains the host's GENERAL_ROLE_VALUES.
+ * Never substitute HOST_WORKSPACE_ROLES here: declaration is not a grant. */
 export const WORKSPACE_ROLES = ["hr_preparer", "hr_reviewer", "wc_liaison", "legal", "admin"] as const;
 export type WorkspaceRole = (typeof WORKSPACE_ROLES)[number];
 

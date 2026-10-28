@@ -21,14 +21,14 @@ it.each([
   expect(()=>parseAnthropicSetupMetadata(value)).toThrow('Invalid setup response. Reload setup status.');
 });
 
-it('offers explicit setup inside closed existing settings without keys, selection or network',()=>{
+it('renders direct masked session setup in a closed dedicated settings dialog without selection or network',()=>{
   const fetcher=vi.fn<typeof fetch>(),html=renderToStaticMarkup(<StudioApp fetcher={fetcher}/>);
-  expect(html).toContain('Anthropic API key setup');
   expect(html).toContain('Never enter a model API key here');
-  expect(html).not.toContain('aria-label="Anthropic API key"');
-  expect(html).not.toContain('<dialog class="studio-anthropic-setup');
+  expect(html).toContain('aria-label="Anthropic API key"');
+  expect(html).toContain('class="studio-connection-panel" aria-label="Connection settings"');
+  expect(html).not.toContain('class="studio-connection-panel" open');
+  expect(html).not.toContain('Anthropic API key setup</button>');
   expect(html).not.toMatch(/<option[^>]*selected[^>]*value="anthropic"/);
-  expect(html).toContain('<details class="studio-connection-help"><summary>Project &amp; model setup');
   expect(fetcher).not.toHaveBeenCalled();
 });
 

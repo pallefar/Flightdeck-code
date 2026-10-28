@@ -1,9 +1,16 @@
+/* Common manual page entry shares the retained host action, never AI send. */
+.studio-shell .studio-home-pages{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px 16px;padding:12px 14px;margin:0 0 12px;border:1px solid var(--line,#d5dfe5);border-radius:7px;background:var(--surface,#fff);flex:none}
+.studio-shell .studio-home-pages>div:first-child{min-width:0;flex:1 1 210px}
+.studio-shell .studio-home-pages strong{font-size:14px}
+.studio-shell .studio-home-pages small{display:block;font-size:12px;line-height:1.5;color:var(--muted,#586e7c);margin-top:3px}
+.studio-shell .studio-home-page-actions{display:flex;gap:8px;flex:none}
+.studio-shell .studio-home-page-actions button{font-size:12px;min-height:44px;padding:8px 12px}
 /* Command first; retained authoring panes never reparent their editors. */
 .studio-shell .studio-main>.studio-builder-grid{height:100%;min-height:0}
 .studio-shell .studio-builder-grid{display:grid;grid-template-columns:minmax(0,1fr);gap:14px;align-items:stretch;min-width:0;position:relative}
 .studio-shell .studio-builder-grid[data-area=studio]{width:min(800px,100%);margin-inline:auto}
-.studio-shell .studio-builder-grid:is([data-area=editor],[data-area=ide]){grid-template-columns:340px minmax(0,1fr)}
-.studio-shell .studio-builder-grid:is([data-area=editor],[data-area=ide])[data-conversation=hidden]{grid-template-columns:minmax(0,1fr)}
+.studio-shell .studio-builder-grid:is([data-area=editor],[data-area=ide],[data-area=pages]){grid-template-columns:340px minmax(0,1fr)}
+.studio-shell .studio-builder-grid:is([data-area=editor],[data-area=ide],[data-area=pages])[data-conversation=hidden]{grid-template-columns:minmax(0,1fr)}
 .studio-shell .studio-workspace-actions{display:flex;align-items:center;gap:6px}
 .studio-shell .studio-chat{height:100%;min-height:0;display:flex;flex-direction:column;min-width:0;overflow:hidden;background:var(--surface,#fff);border:1px solid var(--line,#d5dfe5);border-radius:12px}
 .studio-shell .studio-chat-header{flex:none;display:flex;justify-content:space-between;align-items:center;gap:12px;padding:12px 16px;border-bottom:1px solid var(--line,#d5dfe5)}
@@ -106,21 +113,9 @@
 .studio-shell .studio-ide-help .studio-ide-boundary{position:absolute;top:100%;left:0;z-index:15;width:min(340px,calc(100vw - 40px));font-size:12px;margin:8px 0;padding:14px;background:var(--surface,#fff);border:1px solid var(--line,#d5dfe5);border-radius:8px;box-shadow:var(--shadow,none)}
 .studio-shell .studio-ide-area{display:flex;flex-direction:column}
 .studio-shell .studio-ide-area .fd-wb{flex:1;min-height:0;height:auto;max-width:100%;border-radius:10px}
-/* Keep the transient receipt in a reserved workspace-header slot, never
-   over the actual source. Its timeout cannot move the retained editor. */
-.studio-shell .studio-ide-area .studio-workspace-heading{position:relative;height:44px;min-height:44px;flex:none;margin-bottom:0;padding:0;gap:8px}
-.studio-shell .studio-ide-area .studio-workspace-heading>div:first-child{margin-left:350px;flex-direction:row;align-items:center;gap:0}
-.studio-shell .studio-ide-area .studio-workspace-heading .studio-eyebrow{position:absolute;left:10px;top:15px}
+/* Received handoffs never reserve editor rows. A separate, pointer-transparent
+   receipt stays outside the source toolbar; editors remain mounted. */
 .studio-shell .studio-builder-grid:has(.studio-received-handoff[data-target=ide]) .studio-ide-area .studio-workspace-heading .studio-eyebrow{visibility:hidden}
-.studio-shell .studio-received-handoff[data-target=ide]{left:354px;right:auto;top:0;bottom:auto;width:340px;height:44px;padding:4px 34px 4px 9px;display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:0 8px;align-content:center;border-radius:6px;box-shadow:none}
-.studio-shell .studio-received-handoff[data-target=ide] .studio-handoff-path{position:absolute;width:1px;height:1px;padding:0;margin:0;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
-.studio-shell .studio-received-handoff[data-target=ide] .studio-handoff-title{grid-column:1;grid-row:1 / 3;font-size:11px;gap:0;line-height:1.35}
-.studio-shell .studio-received-handoff[data-target=ide] .studio-handoff-mark{display:none}
-.studio-shell .studio-received-handoff[data-target=ide] .studio-handoff-title button{position:absolute;right:1px;top:1px;min-height:40px!important;width:30px;min-width:30px;padding:0}
-.studio-shell .studio-received-handoff[data-target=ide] p{grid-column:2;font-size:10px;line-height:1.3;margin:0}
-.studio-shell .studio-received-handoff[data-target=ide] small{grid-column:2;font-size:9px;line-height:1.3}
-@media(min-width:851px) and (max-width:1100px){.studio-shell .studio-received-handoff[data-target=ide]{left:314px;width:280px}.studio-shell .studio-ide-area .studio-workspace-heading>div:first-child{margin-left:290px}}
-@media(max-width:850px){.studio-shell .studio-ide-area .studio-workspace-heading{height:88px;min-height:88px;align-items:flex-start;padding:0}.studio-shell .studio-ide-area .studio-workspace-heading>div:first-child{margin-left:0}.studio-shell .studio-ide-area .studio-workspace-heading .studio-eyebrow{top:59px}.studio-shell .studio-received-handoff[data-target=ide]{left:0;right:0;top:44px;width:100%;height:44px;padding-right:48px}.studio-shell .studio-received-handoff[data-target=ide] .studio-handoff-title button{width:44px;min-width:44px}}
 /* Transient handoff decorates only the receipt, not stable editor geometry. */
 .studio-shell .studio-received-handoff{position:absolute;right:18px;bottom:18px;z-index:10;width:min(340px,calc(100% - 36px));padding:16px 18px;border:1px solid color-mix(in srgb,var(--te,#e98300) 42%,var(--line,#d5dfe5));border-radius:12px;background:var(--surface,#fff);box-shadow:0 16px 44px #0003;pointer-events:none}
 .studio-shell .studio-handoff-path{display:flex;gap:10px;align-items:center;font-size:10px;color:var(--muted,#586e7c);margin-bottom:12px}
@@ -139,8 +134,8 @@
 @keyframes studio-handoff-trail{from{opacity:1;transform:translateX(-130%)}to{opacity:0;transform:translateX(130%)}}
 @keyframes studio-turn-arrival{from{opacity:.5}to{opacity:1}}
 @keyframes studio-await{0%,100%{opacity:.35;transform:scaleX(.45);transform-origin:left}50%{opacity:1;transform:scaleX(1);transform-origin:left}}
-@media(max-width:1100px){.studio-shell .studio-builder-grid:is([data-area=editor],[data-area=ide]){grid-template-columns:300px minmax(0,1fr)}.studio-shell .studio-chat-scroll{padding:16px 14px}.studio-shell .studio-workspace-heading>div:not(.studio-workspace-actions){align-items:flex-start;flex-direction:column;gap:2px}}
-@media(max-width:850px){.studio-shell .studio-builder-grid:is([data-area=editor],[data-area=ide]){grid-template-columns:minmax(0,1fr)}.studio-shell .studio-builder-grid:is([data-area=editor],[data-area=ide]) .studio-chat{display:none}.studio-shell .studio-command-intro{padding:16px 18px 0}.studio-shell .studio-command-intro .studio-eyebrow{display:none}.studio-shell .studio-command-intro h2{font-size:27px}.studio-shell .studio-command-intro p{font-size:13px}.studio-shell .studio-builder-grid[data-area=studio][data-home=empty] .studio-compose{padding:14px 18px}.studio-shell .studio-builder-grid[data-area=studio][data-home=empty] .studio-compose textarea{min-height:68px;font-size:16px}.studio-shell .studio-command-starters{padding:10px 18px}.studio-shell .studio-request-boundary>summary{min-height:44px!important}.studio-shell .studio-chat-setup>details>summary{min-height:44px}.studio-shell .studio-suggestions{gap:6px}.studio-shell .studio-suggestions button{width:100%;font-size:12px}.studio-shell .studio-home-example{gap:0 10px}.studio-shell .studio-compose{padding:10px 14px}.studio-shell .studio-composer-meta kbd{display:none}.studio-shell .studio-send-row p{font-size:10px}.studio-shell .studio-chat-scroll{padding:16px 14px}.studio-shell .studio-chat-setup{padding:0 10px;gap:10px}.studio-shell .studio-chat-setup .studio-connection,.studio-shell .studio-chat-setup .studio-config[open]{max-height:calc(var(--studio-viewport-height,100dvh) - 240px)}.studio-shell .studio-workspace-heading>div:not(.studio-workspace-actions){flex-direction:column;align-items:flex-start;gap:2px}.studio-shell .studio-editor-note{font-size:10px}.studio-shell .studio-editor-help{font-size:10px}.studio-shell .studio-ide-help>summary{min-height:44px!important}.studio-shell .studio-handoff-title button{min-height:44px!important;min-width:44px}}
+@media(max-width:1100px){.studio-shell .studio-builder-grid:is([data-area=editor],[data-area=ide],[data-area=pages]){grid-template-columns:300px minmax(0,1fr)}.studio-shell .studio-chat-scroll{padding:16px 14px}.studio-shell .studio-workspace-heading>div:not(.studio-workspace-actions){align-items:flex-start;flex-direction:column;gap:2px}}
+@media(max-width:850px){.studio-shell .studio-builder-grid:is([data-area=editor],[data-area=ide],[data-area=pages]){grid-template-columns:minmax(0,1fr)}.studio-shell .studio-builder-grid:is([data-area=editor],[data-area=ide],[data-area=pages]) .studio-chat{display:none}.studio-shell .studio-command-intro{padding:16px 18px 0}.studio-shell .studio-command-intro .studio-eyebrow{display:none}.studio-shell .studio-command-intro h2{font-size:27px}.studio-shell .studio-command-intro p{font-size:13px}.studio-shell .studio-builder-grid[data-area=studio][data-home=empty] .studio-compose{padding:14px 18px}.studio-shell .studio-builder-grid[data-area=studio][data-home=empty] .studio-compose textarea{min-height:68px;font-size:16px}.studio-shell .studio-command-starters{padding:10px 18px}.studio-shell .studio-request-boundary>summary{min-height:44px!important}.studio-shell .studio-chat-setup>details>summary{min-height:44px}.studio-shell .studio-suggestions{gap:6px}.studio-shell .studio-suggestions button{width:100%;font-size:12px}.studio-shell .studio-home-example{gap:0 10px}.studio-shell .studio-compose{padding:10px 14px}.studio-shell .studio-composer-meta kbd{display:none}.studio-shell .studio-send-row p{font-size:10px}.studio-shell .studio-chat-scroll{padding:16px 14px}.studio-shell .studio-chat-setup{padding:0 10px;gap:10px}.studio-shell .studio-chat-setup .studio-connection,.studio-shell .studio-chat-setup .studio-config[open]{max-height:calc(var(--studio-viewport-height,100dvh) - 240px)}.studio-shell .studio-workspace-heading>div:not(.studio-workspace-actions){flex-direction:column;align-items:flex-start;gap:2px}.studio-shell .studio-editor-note{font-size:10px}.studio-shell .studio-editor-help{font-size:10px}.studio-shell .studio-ide-help>summary{min-height:44px!important}.studio-shell .studio-handoff-title button{min-height:44px!important;min-width:44px}}
 @media(max-height:650px) and (min-width:851px){.studio-shell .studio-chat-header{padding:9px 14px}.studio-shell .studio-command-intro{padding:10px 24px 0}.studio-shell .studio-command-intro .studio-eyebrow{display:none}.studio-shell .studio-command-starters .studio-chat-boundary{display:none}.studio-shell .studio-command-intro h2{font-size:27px;margin:7px 0 5px}.studio-shell .studio-builder-grid[data-area=studio][data-home=empty] .studio-compose{padding:12px 24px 10px}.studio-shell .studio-builder-grid[data-area=studio][data-home=empty] .studio-compose textarea{min-height:52px;font-size:16px}.studio-shell .studio-command-starters{padding:10px 20px 8px}.studio-shell .studio-compose{padding:8px 14px}.studio-shell .studio-compose textarea{min-height:52px}.studio-shell .studio-send-row p{font-size:10px;margin:0 0 4px}.studio-shell .studio-composer-boundary{font-size:9px!important;margin-top:6px}.studio-shell .studio-composer-meta button{min-height:24px!important}.studio-shell .studio-chat-setup>details>summary{min-height:32px}.studio-shell .studio-main{padding-top:10px}}
 /* Explicit, memory-only Anthropic setup; no changes to shell/editor geometry. */
 .studio-shell .studio-anthropic-setup-launch{display:flex;flex-wrap:wrap;gap:6px 12px;align-items:center;margin:12px 0}
@@ -158,3 +153,108 @@
 .studio-shell .studio-anthropic-uncertain{border-left:3px solid var(--amber,#806620);padding:8px 10px;background:var(--surface2,#f8fafb)}
 .studio-shell .studio-anthropic-error{color:var(--red,#aa3122);border-left:3px solid var(--red,#aa3122);padding:8px 10px}
 @media(max-width:600px){.studio-shell dialog.studio-anthropic-setup{padding:16px}.studio-shell .studio-anthropic-setup header{gap:10px}.studio-shell .studio-anthropic-setup header button{max-width:112px;line-height:1.2}.studio-shell .studio-anthropic-setup .studio-eyebrow{font-size:9px;letter-spacing:1px}}
+
+/* Original Flightdeck command composition. Presentation only; no transport,
+   identities, persisted projects or generation progress are invented here. */
+.studio-shell .studio-builder-grid{--studio-chat-width:328px;gap:12px}
+.studio-shell .studio-builder-grid:is([data-area=editor],[data-area=ide],[data-area=pages]){grid-template-columns:var(--studio-chat-width) minmax(0,1fr)}
+.studio-shell .studio-builder-grid:is([data-area=editor],[data-area=ide],[data-area=pages])[data-conversation=hidden]{grid-template-columns:minmax(0,1fr)}
+.studio-shell .studio-chat{border-radius:10px;background:var(--studio-paper,var(--surface,#fff));border-color:var(--line,#d5dfe5)}
+.studio-shell .studio-chat-header{padding:12px 16px;background:transparent;border-bottom:0;min-height:44px}
+.studio-shell .studio-chat-header h1{font-size:13px;letter-spacing:0}
+.studio-shell .studio-chat-scroll{padding:16px;scrollbar-gutter:auto}
+.studio-shell .studio-chat-empty{font-size:12px;line-height:1.6;margin:8px 0;max-width:32ch}
+.studio-shell .studio-chat-turn-you{margin-left:14px;background:var(--surface,#fff);border-radius:9px}
+.studio-shell .studio-command{margin:0 10px 10px;border:1px solid var(--line,#d5dfe5);border-radius:10px;background:var(--surface,#fff);overflow:hidden}
+.studio-shell .studio-compose{padding:10px 12px 4px}
+.studio-shell .studio-compose textarea{min-height:74px;max-height:160px;padding:6px 0;font-size:13px}
+.studio-shell .studio-compose:focus-within{box-shadow:inset 0 0 0 2px color-mix(in srgb,var(--te,#e98300) 55%,transparent);border-radius:9px}
+.studio-shell .studio-send-row button[data-primary-action=true]{gap:12px;border-radius:7px}
+.studio-shell .studio-builder-grid[data-area=studio][data-home=empty]{width:min(720px,100%)}
+/* Empty-home alignment/overflow stays in the single rule above: safe center
+   centers fitting content and starts overflowing content at the reachable edge.
+   Keep overflow visible so the existing main scroller owns short/mobile overflow. */
+.studio-shell .studio-builder-grid[data-area=studio][data-home=empty] .studio-command{margin:12px 0 0;border-radius:12px;box-shadow:0 4px 18px color-mix(in srgb,var(--ink,#253d4b) 4%,transparent);flex-shrink:0}
+.studio-shell .studio-command-intro{padding:24px 26px 0}
+.studio-shell .studio-command-intro h2{font-size:24px;line-height:1.25;letter-spacing:-.6px;margin:9px 0 6px}
+.studio-shell .studio-command-intro p{font-size:13px}
+.studio-shell .studio-builder-grid[data-area=studio][data-home=empty] .studio-compose{padding:12px 26px 10px}
+.studio-shell .studio-builder-grid[data-area=studio][data-home=empty] .studio-compose textarea{min-height:100px;font-size:16px}
+.studio-shell .studio-command-starters{padding:12px 26px;background:var(--studio-paper,var(--surface,#fff));display:flex;flex-wrap:wrap;gap:6px 16px;align-items:center}
+.studio-shell .studio-command-starters>button{background:transparent;border:0;padding:6px 0;text-decoration:underline;text-underline-offset:3px;font-size:11px}
+.studio-shell .studio-suggestions{gap:6px;flex-basis:100%}
+.studio-shell .studio-suggestions button{font-size:11px;padding:7px 9px;gap:8px;border-radius:6px;background:transparent}
+.studio-shell .studio-command-starters .studio-chat-boundary{flex-basis:100%;margin:0}
+.studio-shell .studio-home-example{margin:0;gap:8px}
+.studio-shell .studio-home-example button{font-size:11px}
+.studio-shell .studio-chat-setup{background:transparent;padding:0 12px;border-top:0}
+.studio-shell .studio-chat-setup>details>summary{font-size:10px}
+.studio-shell .studio-ide-area{overflow:hidden;position:relative}
+.studio-shell .studio-ide-area .studio-workspace-heading{position:relative;height:44px;min-height:44px;flex:none;margin:0;padding:0 2px;border:0;gap:8px;align-items:center}
+.studio-shell .studio-ide-area .studio-workspace-heading>div:first-child{min-width:0;flex:1;margin:0;display:block}
+.studio-shell .studio-ide-area .studio-workspace-heading .studio-eyebrow{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
+.studio-shell .studio-ide-help{position:static}
+.studio-shell .studio-ide-help>summary{min-height:44px!important;font-size:11px;width:max-content;max-width:100%;white-space:nowrap}
+.studio-shell .studio-ide-help .studio-ide-boundary{left:0;top:44px;width:min(340px,100%);margin:0;max-height:calc(var(--studio-viewport-height,100dvh) - 190px);overflow:auto;z-index:25}
+.studio-shell .studio-ide-actions{flex:none;position:static}
+.studio-shell .studio-ide-actions>summary{display:flex;align-items:center;gap:8px;list-style:none;min-height:44px;padding:0 10px;border:1px solid var(--line,#d5dfe5);background:var(--surface,#fff);border-radius:6px;font-size:11px;white-space:nowrap}
+.studio-shell .studio-ide-actions>summary::-webkit-details-marker{display:none}
+.studio-shell .studio-ide-actions>summary::after{content:'⌄';color:var(--muted,#586e7c)}
+.studio-shell .studio-ide-action-panel{position:absolute;right:0;top:44px;z-index:26;width:min(272px,100%);max-height:calc(var(--studio-viewport-height,100dvh) - 180px);overflow:auto;background:var(--surface,#fff);border:1px solid var(--line,#d5dfe5);border-radius:9px;padding:8px;box-shadow:var(--shadow,none)}
+.studio-shell .studio-ide-action-panel .studio-workspace-actions{display:grid;gap:4px}
+.studio-shell .studio-ide-action-panel button{width:100%;min-height:44px!important;text-align:left;white-space:normal;border-color:transparent;background:transparent}
+.studio-shell .studio-ide-action-panel .studio-close-draft-actions{border-bottom:1px solid var(--line,#d5dfe5);margin-bottom:4px;border-radius:0;color:var(--muted,#586e7c)}
+.studio-shell .studio-ide-area .fd-wb{border-radius:9px;box-shadow:none}
+.studio-shell .studio-received-handoff[data-target=ide]{left:0;right:auto;top:0;bottom:auto;width:var(--studio-chat-width);max-height:150px;padding:12px;border-radius:9px}
+/* The transient receipt belongs to the conversation column, not the IDE.
+   Hide its paint with that column; keep its DOM and original expiry intact. */
+.studio-shell .studio-builder-grid[data-conversation=hidden] .studio-received-handoff[data-target=ide]{display:none}
+@media(min-width:851px) and (max-width:1100px){.studio-shell .studio-builder-grid{--studio-chat-width:284px}.studio-shell .studio-compose{padding:8px 10px 4px}.studio-shell .studio-chat-scroll{padding:12px}}
+@media(max-width:850px){
+ .studio-shell .studio-builder-grid:is([data-area=editor],[data-area=ide],[data-area=pages]){grid-template-columns:minmax(0,1fr)}
+ .studio-shell .studio-command-intro{padding:18px 18px 0}
+ .studio-shell .studio-command-intro h2{font-size:22px}
+ .studio-shell .studio-builder-grid[data-area=studio][data-home=empty] .studio-compose{padding:10px 18px 4px}
+ .studio-shell .studio-builder-grid[data-area=studio][data-home=empty] .studio-compose textarea{min-height:68px;font-size:15px}
+ .studio-shell .studio-command-starters{padding:8px 18px;gap:2px 12px}
+ .studio-shell .studio-suggestions button{width:auto;font-size:10px;flex:1}
+ .studio-shell .studio-ide-area .studio-workspace-heading>div:first-child{display:block}
+ .studio-shell .studio-received-handoff[data-target=ide]{display:none}
+}
+@media(max-height:650px){
+
+ .studio-shell .studio-command-intro{padding-top:12px}
+ .studio-shell .studio-command-intro .studio-eyebrow{display:none}
+ .studio-shell .studio-builder-grid[data-area=studio][data-home=empty] .studio-compose textarea{min-height:56px}
+ .studio-shell .studio-command-starters{padding-block:6px}
+ .studio-shell .studio-builder-grid:is([data-area=editor],[data-area=ide],[data-area=pages]) .studio-command{max-height:calc(100% - 92px);overflow:auto}
+}
+/* Focused command entry: prompt first, tools secondary; setup stays in settings. */
+.studio-shell .studio-send-row button[hidden]{display:none!important}
+.studio-shell .studio-composer-tools .reuse-picker-entry{display:flex;gap:8px;align-items:center}
+.studio-shell .studio-composer-tools .reuse-picker-entry>button{border:0;background:transparent;font-size:12px;padding:4px 0;min-height:44px;color:var(--muted,#586e7c)}
+.studio-shell .studio-builder-grid[data-area=studio][data-home=empty]{width:min(680px,100%)}
+.studio-shell .studio-builder-grid[data-area=studio][data-home=empty] .studio-command-intro{padding:0 2px 18px}
+.studio-shell .studio-command-intro h2{font-size:26px;font-weight:600;letter-spacing:-.65px;margin:0 0 8px}
+.studio-shell .studio-command-intro p{font-size:15px;color:var(--muted,#586e7c)}
+.studio-shell .studio-builder-grid[data-area=studio][data-home=empty] .studio-command{margin:0;border-radius:12px;box-shadow:0 4px 18px color-mix(in srgb,var(--ink,#253d4b) 4%,transparent)}
+.studio-shell .studio-builder-grid[data-area=studio][data-home=empty] .studio-compose{padding:18px 20px 10px}
+.studio-shell .studio-builder-grid[data-area=studio][data-home=empty] .studio-compose textarea{min-height:72px;font-size:16px;line-height:1.6}
+.studio-shell .studio-builder-grid[data-area=studio][data-home=empty] .studio-compose form{display:grid;grid-template-columns:minmax(0,1fr) auto;column-gap:14px}
+.studio-shell .studio-builder-grid[data-area=studio][data-home=empty] .studio-compose form>label,.studio-shell .studio-builder-grid[data-area=studio][data-home=empty] .studio-composer-meta{grid-column:1/-1}
+.studio-shell .studio-builder-grid[data-area=studio][data-home=empty] .studio-composer-tools{align-self:end;grid-column:1}
+.studio-shell .studio-builder-grid[data-area=studio][data-home=empty] .studio-send-row{grid-column:2;align-items:flex-end;justify-content:flex-end;max-width:260px}
+.studio-shell .studio-builder-grid[data-area=studio][data-home=empty] .studio-send-row p{font-size:11px;line-height:1.4;text-align:right;margin:0}
+.studio-shell .studio-command-starters{background:transparent;border:0;padding:16px 2px 0;gap:8px 16px}
+.studio-shell .studio-suggestions{order:-1}
+.studio-shell .studio-suggestions button{font-size:12px;padding:8px 12px;background:var(--surface,#fff)}
+.studio-shell .studio-command-starters .studio-chat-boundary{font-size:11px!important}
+.studio-shell .studio-command-starters>button,.studio-shell .studio-home-example button{font-size:12px}
+@media(max-width:500px){
+ .studio-shell .studio-command-intro h2{font-size:24px}
+ .studio-shell .studio-builder-grid[data-area=studio][data-home=empty] .studio-compose{padding:14px 14px 8px}
+ .studio-shell .studio-builder-grid[data-area=studio][data-home=empty] .studio-compose form{column-gap:8px}
+ .studio-shell .studio-builder-grid[data-area=studio][data-home=empty] .studio-send-row{max-width:154px}
+ .studio-shell .studio-builder-grid[data-area=studio][data-home=empty] .studio-compose textarea{min-height:68px}
+ .studio-shell .studio-suggestions button{font-size:12px;min-height:44px}
+}

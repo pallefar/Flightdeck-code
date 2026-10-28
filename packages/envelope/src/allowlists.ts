@@ -53,9 +53,10 @@
  * without the same edit in the host is not a fix; it is the divergence the
  * test exists to catch.
  *
- * ⛔ ADDING A KEY, A TASK, A VOCABULARY OR A FIELD NAME WIDENS WHAT MAY LEAVE
- * THIS PROCESS. It is a governance change, in the host's own words about its
- * own limits: "raising this is a governance change, not a tuning knob".
+ * ⛔ Widening RUNTIME admission (AI_TASKS, FACT_KEY_POLICY or FactKind) changes
+ * what may leave this process and requires owner egress review. HOST_* is
+ * declaration metadata, not automatic admission: converter.match and labels
+ * are transcribed for divergence checks but remain explicitly unsupported.
  */
 
 import { DEFAULT_MODEL } from "../../providers/src/models";
@@ -187,7 +188,11 @@ export function snapCount(value: number): number | null {
 // ─────────────────────────────────────────────────────────────────────────
 
 /** TRANSCRIBED from the host's `AI_TASKS`. */
-export const HOST_AI_TASKS = ["map.suggest", "intake.fieldmap", "kb.question"] as const;
+export const HOST_AI_TASKS = ["map.suggest", "intake.fieldmap", "kb.question", "converter.match"] as const;
+
+/** Wire admission is intentionally narrower than host declaration metadata.
+ * Supporting converter.match/labels requires separate owner egress review. */
+const SUPPORTED_HOST_AI_TASKS = ["map.suggest", "intake.fieldmap", "kb.question"] as const;
 
 /**
  * STUDIO-AUTHORED. Every id is prefixed `studio.` so it can never collide
@@ -211,8 +216,8 @@ export const STUDIO_AI_TASKS = [
   "studio.widget.suggest",
 ] as const;
 
-export const AI_TASKS: readonly string[] = [...HOST_AI_TASKS, ...STUDIO_AI_TASKS];
-export type AiTaskId = (typeof HOST_AI_TASKS)[number] | (typeof STUDIO_AI_TASKS)[number];
+export const AI_TASKS: readonly string[] = [...SUPPORTED_HOST_AI_TASKS, ...STUDIO_AI_TASKS];
+export type AiTaskId = (typeof SUPPORTED_HOST_AI_TASKS)[number] | (typeof STUDIO_AI_TASKS)[number];
 
 // ─────────────────────────────────────────────────────────────────────────
 // Vocabularies
@@ -323,6 +328,13 @@ export interface FactKeyPolicy {
   readonly max?: number;
 }
 
+/** Host metadata may describe a channel Studio deliberately does not support.
+ * This type must not widen FactKind, EnvelopeFact or runtime admission. */
+interface HostFactKeyPolicy {
+  readonly kind: FactKind | "labels";
+  readonly max?: number;
+}
+
 /**
  * TRANSCRIBED from the host's `FACT_KEY_POLICY`, which exists because a fact's
  * KEY was itself a free-text channel — "straight to (1) the wire, (2) the
@@ -334,7 +346,7 @@ export interface FactKeyPolicy {
  * semantically pinned: "a ceiling alone cannot tell 4,200 documents from a
  * €4,200 monthly gross, but a ceiling attached to `gatewayCount` can."
  */
-export const HOST_FACT_KEY_POLICY: Readonly<Record<string, FactKeyPolicy>> = {
+export const HOST_FACT_KEY_POLICY: Readonly<Record<string, HostFactKeyPolicy>> = {
   contractType: { kind: "enum" },
   country: { kind: "enum" },
   lifecycleStage: { kind: "enum" },
@@ -356,6 +368,8 @@ export const HOST_FACT_KEY_POLICY: Readonly<Record<string, FactKeyPolicy>> = {
   fieldCount: { kind: "count", max: 100 },
   docCount: { kind: "count", max: MAX_COUNT },
   hitCount: { kind: "count", max: 100 },
+  sourceLabels: { kind: "labels" },
+  templateLabels: { kind: "labels" },
 };
 
 /**
@@ -384,7 +398,9 @@ export const STUDIO_FACT_KEY_POLICY: Readonly<Record<string, FactKeyPolicy>> = {
 };
 
 export const FACT_KEY_POLICY: Readonly<Record<string, FactKeyPolicy>> = {
-  ...HOST_FACT_KEY_POLICY,
+  ...Object.fromEntries(Object.entries(HOST_FACT_KEY_POLICY).filter(
+    (entry): entry is [string, FactKeyPolicy] => (FACT_KINDS as readonly string[]).includes(entry[1].kind),
+  )),
   ...STUDIO_FACT_KEY_POLICY,
 };
 

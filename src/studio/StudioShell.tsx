@@ -2,19 +2,20 @@ import {useEffect,useRef,useState,type KeyboardEvent,type ReactNode} from 'react
 import './StudioShell.css';
 
 export type StudioAppearance='inherit'|'day'|'night';
-export type StudioArea='studio'|'process'|'editor'|'ide'|'resources'|'approvals';
+export type StudioArea='studio'|'process'|'editor'|'ide'|'pages'|'resources'|'approvals';
 const BUILDERS:ReadonlyArray<{id:StudioArea;label:string}>=[
  {id:'studio',label:'AI builder'},
  {id:'process',label:'Process discovery'},
  {id:'editor',label:'Workflow builder'},
  {id:'ide',label:'Sub-app IDE'},
+ {id:'pages',label:'Pages'},
 ];
-const AREA_LABELS:Record<StudioArea,string>={studio:'AI builder',process:'Process discovery',editor:'Workflow builder',ide:'Sub-app IDE',resources:'Resources',approvals:'Approvals'};
+const AREA_LABELS:Record<StudioArea,string>={studio:'AI builder',process:'Process discovery',editor:'Workflow builder',ide:'Sub-app IDE',pages:'Pages',resources:'Resources',approvals:'Approvals'};
 
 /** Standalone Studio chrome, not an OS sidebar, identity source or permission grant.
  * The parent owns routing and the same retained children remain in one stable slot.
  */
-export function StudioShell({area,onNavigate,onConnectionSettings,project,model,graphName,children,motion=true,voiceTools,appearance='inherit',onAppearance,onMotion}:{area:StudioArea;onNavigate:(area:StudioArea)=>void;onConnectionSettings:()=>void;project:string;model:string;graphName:string;children:ReactNode;motion?:boolean;voiceTools?:ReactNode;appearance?:StudioAppearance;onAppearance?:(appearance:StudioAppearance)=>void;onMotion?:()=>void}){
+export function StudioShell({area,onNavigate,onConnectionSettings,onAnthropicSetup,project,model,graphName,children,motion=true,voiceTools,appearance='inherit',onAppearance,onMotion}:{area:StudioArea;onNavigate:(area:StudioArea)=>void;onConnectionSettings:()=>void;onAnthropicSetup?:()=>void;project:string;model:string;graphName:string;children:ReactNode;motion?:boolean;voiceTools?:ReactNode;appearance?:StudioAppearance;onAppearance?:(appearance:StudioAppearance)=>void;onMotion?:()=>void}){
  const main=useRef<HTMLElement>(null),tools=useRef<HTMLDetailsElement>(null),sidebar=useRef<HTMLElement>(null),navigationToggle=useRef<HTMLButtonElement>(null);
  const navigationDialog=useRef<HTMLDialogElement>(null),navigationOpener=useRef<HTMLButtonElement|null>(null),navigationActive=useRef(false);
  const [navigationOpen,setNavigationOpen]=useState(false);
@@ -75,7 +76,7 @@ export function StudioShell({area,onNavigate,onConnectionSettings,project,model,
   <header className="studio-appbar">
    <button type="button" ref={navigationToggle} className="studio-navigation-toggle" aria-label="Open Studio navigation" aria-expanded={navigationOpen} aria-controls="studio-navigation-dialog" onClick={event=>openNavigation(event.currentTarget)}><span aria-hidden="true">☰</span></button>
    <div className="studio-breadcrumbs" aria-label="Studio breadcrumb"><span>Studio</span><span aria-hidden="true">/</span><strong>{AREA_LABELS[area]}</strong></div>
-   <div className="studio-shell-actions">{voiceTools}<button type="button" className="studio-settings-button" onClick={onConnectionSettings}>Connection settings</button>
+   <div className="studio-shell-actions">{voiceTools}{onAnthropicSetup&&<button type="button" className="studio-ai-setup-button" onClick={onAnthropicSetup}>Add Anthropic API key</button>}<button type="button" className="studio-settings-button" onClick={onConnectionSettings}>Connection settings</button>
     <details ref={tools} className="studio-tools" aria-label="Studio tools" onKeyDown={disclosureKeyDown}><summary>Tools</summary><div className="studio-tools-panel"><span className="studio-tool-label">Review &amp; reuse</span>{(['resources','approvals'] as const).map(id=><button key={id} type="button" aria-current={area===id?'page':undefined} onClick={()=>navigate(id)}>{AREA_LABELS[id]}</button>)}{onMotion&&<button type="button" className="studio-motion" aria-pressed={motion} onClick={onMotion}>Motion {motion?'on':'off'}</button>}{onAppearance&&<label className="studio-appearance">Appearance<select aria-label="Studio appearance" value={appearance} onChange={event=>onAppearance(event.target.value as StudioAppearance)}><option value="inherit">Follow host</option><option value="day">Day</option><option value="night">Night</option></select></label>}</div></details>
    </div>
   </header>
