@@ -1,3 +1,5 @@
+> **Current continuation checkpoint (October28,2026):** Read [the portable handover](docs/continuation/2026-10-28/README.md) and [paste-ready continuation prompt](docs/continuation/2026-10-28/CONTINUE.md) first. The historical test counts and environment claims below are not current product acceptance. Reviewed source is merged; deployment/authenticated end-to-end acceptance remains separate.
+
 # Flightdeck Studio — handover
 
 Everything below was **verified by running it** in the container this was built in,
